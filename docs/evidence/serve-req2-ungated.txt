@@ -1,0 +1,1 @@
+{"token_ids":[3324,236772,1437,236772,236751,2964,236772,1340],"generation_wall_us":4384183.25,"prefill_wall_us":2014577.5,"steps":7,"output_tokens":8,"plan_digest":"5ae137ee20aa3c7218dadca3a7a5496558b7f57dcbab47df93f47a7426cb84d9","median_wall_us_per_token":325149.5,"handler_wall_us":4384198.2920000004,"text":" upon-the-sands-of","gated":false} [200]

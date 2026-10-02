@@ -1,0 +1,12 @@
+hashing GGUF for plan identity (streaming, one pass)…
+plan identity validated: 5ae137ee20aa3c7218dadca3a7a5496558b7f57dcbab47df93f47a7426cb84d9
+disclosure: selected candidate GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: true, matvecTiledQ6: false, rmsnormTiled: true) was measured on the plan's profiling workload (2 prompt tokens, 4 decode tokens, workload digest ac0c38a0aa5d0a785f90cda470c1715d77dc6ff502a2d2e2ad4cc87cd1f44dd6); serving uses it as the engine configuration for a bounded greedy subset — no fastest-on-all-prompts claim
+serving http://127.0.0.1:8377/generate (serial, 20-request bound, prompt ≤ 512 chars, ≤ 16 tokens, body ≤ 4096 B, 15 s absolute read deadline)
+SERVE_READY
+served request 2/20: 7 steps, ids [3324, 236772, 1437, 236772, 236751, 2964, 236772, 1340]
+served request 3/20: 7 steps, ids [3324, 236772, 1437, 236772, 236751, 2964, 236772, 1340]
+served request 4/20: 0 steps, ids [3324]
+served request 5/20: 7 steps, ids [236777, 1006, 147224, 236743, 236812, 236764, 496, 2455]
+served request 20/20: 9 steps, ids [61659, 236888, 113648, 22478, 63949, 9554, 237774, 61487, 86595, 237223]
+request bound (20) reached — server stopped
+SERVE_DONE

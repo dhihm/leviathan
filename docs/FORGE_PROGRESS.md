@@ -418,3 +418,138 @@ Suite: 408 passed / 0 failed. Still below the Ollama server-reported
 ~71 eval tok/s; remaining measured targets: launch-count fusion
 (1799 kernels/token remain), explicit bounded SSD expert cache, and
 artifact-driven local serving.
+
+## Pass 4: explicit bounded SSD expert cache + free-slot prefetch (2026-10-02 UTC)
+
+The prior execution path kept the whole 14.44 GB file mapped into the
+GPU address space with no explicit weight-residency policy of its own;
+OS paging of that mapping is not an explicit SSD engine. This pass adds
+an explicit bounded alternative, selected at construction:
+
+- **Construction** (`Gemma4Runner.init(fileAt:expertCacheBudgetBytes:)`)
+  never creates the whole-file GPU mapping (note: a CPU whole-file
+  GGUF mapping is still created and retained for parsing/metadata and
+  the small F32 parameter reads; the byte budget covers the expert
+  slot-pool LENGTHS only — it is not a process-RSS bound):
+  every non-expert tensor is compacted
+  straight from the GGUF into a dedicated 1,577,172,088 B GPU buffer
+  (checked chunked preads), and the two expert tensor families
+  (~12.8 GB) stream through two bounded LRU slot pools sized by
+  `ExpertCacheGeometry` from the byte budget (checked arithmetic; the
+  CLI preflights malformed budgets against the validated tensor
+  directory BEFORE any runner/KV allocation). A post-hoc
+  `enableExpertCache` on a resident runner also exists (transient
+  overlap documented, rollback-tested); the bounded-startup
+  constructor is the preferred path. The switch is fail-closed:
+  nothing mutates until every step succeeded.
+- **Pinning protocol**: the slice in use is ACTIVE for one expert
+  iteration; with a segment open it moves to IN-FLIGHT until a segment
+  flush; victims are never chosen from active/in-flight slots; when
+  every slot is pinned the runner's segment is flushed first
+  (flush-before-reuse, counted); a DISCARDED (never-submitted) segment
+  releases pins wholesale. Pool allocation is the budget — pinned
+  bytes are inside it by construction and reported separately.
+- **Transactional loads**: the victim's mapping is dropped BEFORE the
+  pread overwrites its bytes; the new key is installed ONLY after a
+  full read (EINTR retried; short/EOF aborts) — no partial slice is
+  ever addressable. Component tests drive real loads against a
+  truncated synthetic file: the failed key is NOT cached and a retry
+  reads exact bytes.
+- **Prefetch**: SYNCHRONOUS free-slots-only initial read-ahead of each
+  layer's routed experts between iterations (blocking preads — no
+  async I/O or GPU overlap is claimed or implemented; it never evicts,
+  so it cannot change any result). Attribution is per-family,
+  per-slot, first-consumption-only. ON vs OFF total bytes read are
+  IDENTICAL (6,556,999,680 B in the A/B) — prefetch reclassifies which
+  loads are served from installed slots; it is not an I/O reduction or
+  speed improvement. The mode is part of the engine identity
+  (`expertPrefetch=free-only`) and the plan records the cache budget
+  (`expertCacheBudgetBytes`).
+
+Real-model verification (`gemma-expert-cache-verify`,
+docs/evidence/gemma-expert-cache-verify2.log; a first capture's byte
+counters were printed through a 32-bit `%d` format and are INVALID —
+that log is retained renamed
+`gemma-expert-cache-verify1-INVALID-FORMATTING.log`; the corrected run
+uses 64-bit-safe interpolation plus a Codable JSON stats line):
+
+- Phase 1 (resident snapshot, then RELEASED): failed budget-1 enable
+  rejected; resident forward intact.
+- Phase 2a (8 MB budget, per-kernel): exact greedy tokens, full
+  262,144-logit worst rel **0.0** (same kernels, same bytes — only the
+  weight binding differs), 2,880 misses / 2,875 evictions / 0 hits.
+- Phase 2b (same budget, batching): identical logits, **540
+  flushes-before-reuse observed** — the in-flight pinning path is
+  actually exercised — peak pinned 6,690,816 B within the 7,805,952 B
+  pools.
+- Phase 3 (1 GB budget, 2 replays): prefetch ON 42.3% hits (598
+  prefetch-served) vs OFF 31.9%, evictions identical (3,322), logits
+  and tokens bit-identical both ways, total bytes read identical.
+- Resource ledger: pools 999,161,856 B at a 1 GB budget, non-expert
+  compact 1,577,172,088 B, peak pinned ≤ pools. device
+  .currentAllocatedSize SAMPLES (4.42 GB at end of construction in the
+  1 GB run) cover the driver's view of everything this process had
+  allocated at that point — slot pools, the compact buffer, KV caches,
+  activations, and allocator overhead — for the REQUESTED sizes; they
+  are not a physical-RSS cap or a startup-peak claim. Reads
+  are preads that may hit the OS page cache — no cold-SSD latency
+  claim anywhere.
+
+Cache-mode FORGE (docs/evidence/gemma-forge-cache-run1.log): plan
+identity carries the budget; all seven candidates gated (logits rel ≤
+2.5e-05, exact greedy " upon-the-sands-of"); selected
+batching+tiledQ4+rmsTiled at 382,115 µs wall in that run. The FINAL
+1 GB serving artifact (gemma-forge-serve-artifact.log, plan digest
+5ae137ee…) selected the same candidate at 334,232 µs/token wall
+(102,395 µs GPU); its ungated served decode median was 325,149 µs
+over 7 decode intervals. The resident-mode 122,565 µs selection was
+measured in a SEPARATE earlier run — cross-run observations only, no
+matched-memory causal comparison.
+
+Suite contributions this pass: 53 cache/prefetch component checks plus
+18 plan-identity mutation checks (479 passed / 0 failed total; the
+pre-pass suite was 408).
+
+## Pass 5: bounded localhost serving from the persisted artifact (2026-10-02 UTC)
+
+`gemma-serve` (docs/evidence/gemma-serve-run1.log, serve-*.txt,
+serve-probes2.txt): loads the 1 GB cache-mode
+plan artifact (5ae137ee…), validates its identity — graph/GGUF
+content/engine/hardware/toolchain/schedule/planDigest — via
+`validatePlanIdentity`, i.e. everything EXCEPT the workload binding:
+the selected candidate was measured on the plan's profiling workload
+(recorded and disclosed at startup; no fastest-on-all-prompts claim).
+Runtime executes the STORED typed SSA schedule and selected flags
+only — no model.py, no agents, no Python at runtime. One POST
+/generate at a time (serial GPU) plus GET /health; request count,
+prompt length, output tokens, header/body sizes, and one absolute
+15 s per-request read deadline (socket timeouts shrink to the
+remaining budget; {0,0} timeval rounding fixed; EAGAIN classified as
+timeout) are all bounded; duplicate Content-Length, Transfer-Encoding,
+malformed header lines, oversized headers, wrong media type,
+fractional/boolean max_tokens, and numeric chat all fail closed.
+
+Measured/evidence: the first request ran with --gate-first-request —
+gated step-by-step against the runner forward path (a SEPARATE
+execution path sharing the same validated kernel primitives, NOT a
+mathematically independent implementation) — exact tokens, full-logit
+rel < 1e-4, both-arrays finiteness, final exact sequence equality:
+ids 3324 236772 1437 236772 236751 2964 236772 1340 (" upon-the-sands-
+of"), identical to the forge run. The ungated repeat returned the
+exact same 8 IDs; max_tokens=1 returned [3324]; EN chat ("I am Gemma
+4, a large") and KO chat ("안녕하세요! 저는 실시간 기상 정보 시스템에")
+served 200; the EN chat IDs are EXACTLY reproduced by the resident
+`gemma-generate` CLI reference (a separate execution path sharing the
+same validated kernel primitives) on the same input
+(gemma-generate-serve-en-parity.log). Negative HTTP evidence: 20
+cases total — 13 body/route probes (serve-negatives.txt) + 6 raw
+header/protocol probes + 1 idle-connection read timeout (408 after
+15.0 s) — all asserted, with /health verified recovered after each
+full probe batch. Route note (documented as-is, not changed):
+GET /generate and POST /health currently return 404 (path-first
+routing), not 405. The 20-request bound ended the first server
+cleanly (SERVE_DONE); only task-owned PIDs were started/stopped.
+Remaining known limits: ~330 ms (325,149 µs) per served decode token
+in 1 GB cache mode vs the Ollama server-reported ~71 tok/s (external
+baseline, text+count agreement only — no global quality or
+competitiveness claim), single-model serial GPU, greedy subset only.

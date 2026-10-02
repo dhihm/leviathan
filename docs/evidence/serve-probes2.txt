@@ -1,0 +1,8 @@
+PASS -- duplicate content-length: expected 400, got 400 | HTTP/1.1 400 Bad Request | body b'{"error":"duplicate content-length"}'
+PASS -- transfer-encoding chunked: expected 400, got 400 | HTTP/1.1 400 Bad Request | body b'{"error":"transfer-encoding is not supported"}'
+PASS -- missing content-length: expected 411, got 411 | HTTP/1.1 411 Length Required | body b'{"error":"content-length required"}'
+PASS -- bad protocol HTTP/2: expected 400, got 400 | HTTP/1.1 400 Bad Request | body b'{"error":"malformed request line or protocol (need HTTP\\/1.0 or HTTP\\/1.1)"}'
+PASS -- oversized headers: expected 431, got 431 | HTTP/1.1 431 Request Header Fields Too Large | body b'{"error":"headers exceed 8192 bytes or missing terminator"}'
+PASS -- malformed header line: expected 400, got 400 | HTTP/1.1 400 Bad Request | body b'{"error":"malformed header line"}'
+PASS -- idle read timeout: expected 408 in 13...22s, got 408 after 15.0s | HTTP/1.1 408 Request Timeout
+PASS -- health recovery after probes: {"plan_digest":"5ae137ee20aa3c7218dadca3a7a5496558b7f57dcbab47df93f47a7426cb84d9","status":"ok"}

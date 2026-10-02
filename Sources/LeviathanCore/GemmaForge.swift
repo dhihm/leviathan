@@ -77,7 +77,7 @@ public struct GemmaForgeCandidateResult: Codable, Equatable, Sendable {
     public let buffersPerToken: Double?
     public let note: String
 
-    init(candidate: GemmaForgeCandidate, correct: Bool,
+    public init(candidate: GemmaForgeCandidate, correct: Bool,
          medianWallMicrosPerToken: Double? = nil,
          medianGpuMicrosPerToken: Double?,
          kernelsPerToken: Double? = nil,
@@ -108,6 +108,10 @@ public struct GemmaForgePlan: Codable, Equatable, Sendable {
     public let selected: GemmaForgeCandidate
     public let selectedMedianWallMicrosPerToken: Double
     public let selectedMedianGpuMicrosPerToken: Double
+    /// Non-nil when the plan was forged in SSD/streaming expert mode:
+    /// the byte budget of the bounded expert cache (an engine identity
+    /// input — a different budget re-forges). nil = resident weights.
+    public let expertCacheBudgetBytes: Int?
     public let results: [GemmaForgeCandidateResult]
     /// The FULL lowered executable schedule (typed SSA instructions with
     /// operands and buffer-binding value names) saved with the plan —
@@ -127,6 +131,29 @@ public struct GemmaForgePlan: Codable, Equatable, Sendable {
          selectedMedianGpuMicrosPerToken: Double,
          results: [GemmaForgeCandidateResult], schedule: GemmaSSAIR?,
          scheduleDigest: String, planDigest: String) {
+        self.init(schemaVersion: schemaVersion, graphDigest: graphDigest,
+                  ggufDigest: ggufDigest, engineDigest: engineDigest,
+                  hardware: hardware, toolchain: toolchain,
+                  workloadDigest: workloadDigest,
+                  promptTokenCount: promptTokenCount, decodeTokens: decodeTokens,
+                  selected: selected,
+                  selectedMedianWallMicrosPerToken: selectedMedianWallMicrosPerToken,
+                  selectedMedianGpuMicrosPerToken: selectedMedianGpuMicrosPerToken,
+                  expertCacheBudgetBytes: nil, results: results,
+                  schedule: schedule, scheduleDigest: scheduleDigest,
+                  planDigest: planDigest)
+    }
+
+    init(schemaVersion: Int, graphDigest: String, ggufDigest: String,
+         engineDigest: String, hardware: ForgeHardwareProfile,
+         toolchain: String, workloadDigest: String,
+         promptTokenCount: Int, decodeTokens: Int,
+         selected: GemmaForgeCandidate,
+         selectedMedianWallMicrosPerToken: Double,
+         selectedMedianGpuMicrosPerToken: Double,
+         expertCacheBudgetBytes: Int?,
+         results: [GemmaForgeCandidateResult], schedule: GemmaSSAIR?,
+         scheduleDigest: String, planDigest: String) {
         self.schemaVersion = schemaVersion
         self.graphDigest = graphDigest
         self.ggufDigest = ggufDigest
@@ -139,6 +166,7 @@ public struct GemmaForgePlan: Codable, Equatable, Sendable {
         self.selected = selected
         self.selectedMedianWallMicrosPerToken = selectedMedianWallMicrosPerToken
         self.selectedMedianGpuMicrosPerToken = selectedMedianGpuMicrosPerToken
+        self.expertCacheBudgetBytes = expertCacheBudgetBytes
         self.results = results
         self.schedule = schedule
         self.scheduleDigest = scheduleDigest
@@ -515,6 +543,9 @@ public enum GemmaForge {
                 let guStride = gateUp.outDim * (gateUp.inDim / 32) * 18
                 let dnStride = down.outDim * (down.inDim / 32) * 18
                 try runner.flushOpenSegment()
+                // Synchronous free-slots-only read-ahead (cache mode;
+                // never evicts, no async overlap).
+                try runner.prefetchExperts(layer: layer, topIdx: topIdx)
                 let outBuf = try vb(inst.output)
                 let n = byID[inst.output]!.length
                 memset(outBuf.contents(), 0, n * 4)
@@ -524,19 +555,38 @@ public enum GemmaForge {
                 let inBuf = try vb(inst.inputs[0])
                 let inLen = byID[inst.inputs[0]]!.length
                 for (slot, expert) in topIdx.enumerated() {
-                    try runner.matvec(tensor: inst.tensors[0],
-                                      extraOffset: expert * guStride,
-                                      x: inBuf, xCount: inLen,
-                                      y: runner.bufExpertGU,
-                                      yCapacity: 2 * config.sharedIntermediate)
-                    try runner.geluUp(gu: runner.bufExpertGU, y: runner.bufExpertAct,
-                                      n: e)
-                    try runner.matvec(tensor: inst.tensors[1],
-                                      extraOffset: expert * dnStride,
-                                      x: runner.bufExpertAct, xCount: e,
-                                      y: runner.bufExpertAcc, yCapacity: n)
+                    if runner.expertCache != nil {
+                        // SSD/streaming mode: slices stream through the
+                        // bounded LRU cache (same kernels, slot-pool
+                        // bindings) instead of the resident mapping.
+                        try runner.expertMatvec(tensor: inst.tensors[0],
+                                                layer: layer, expert: expert,
+                                                x: inBuf, xCount: inLen,
+                                                y: runner.bufExpertGU,
+                                                yCapacity: 2 * config.sharedIntermediate)
+                        try runner.geluUp(gu: runner.bufExpertGU, y: runner.bufExpertAct,
+                                          n: e)
+                        try runner.expertMatvec(tensor: inst.tensors[1],
+                                                layer: layer, expert: expert,
+                                                x: runner.bufExpertAct, xCount: e,
+                                                y: runner.bufExpertAcc, yCapacity: n)
+                    } else {
+                        try runner.matvec(tensor: inst.tensors[0],
+                                          extraOffset: expert * guStride,
+                                          x: inBuf, xCount: inLen,
+                                          y: runner.bufExpertGU,
+                                          yCapacity: 2 * config.sharedIntermediate)
+                        try runner.geluUp(gu: runner.bufExpertGU, y: runner.bufExpertAct,
+                                          n: e)
+                        try runner.matvec(tensor: inst.tensors[1],
+                                          extraOffset: expert * dnStride,
+                                          x: runner.bufExpertAct, xCount: e,
+                                          y: runner.bufExpertAcc, yCapacity: n)
+                    }
                     try runner.axpy(x: runner.bufExpertAcc, y: outBuf,
                                     c: weights[slot], n: n)
+                    runner.expertCache?.endExpertIteration(
+                        segmentPending: runner.openEnc != nil)
                 }
             case "softcap":
                 var cap = Float(a(inst, "cap"))
@@ -811,7 +861,8 @@ public enum GemmaForge {
                                 selected: selected.candidate,
                                 medianWall: selectedResult.medianWallMicrosPerToken!,
                                 medianGpu: selectedResult.medianGpuMicrosPerToken!,
-                                results: results)
+                                results: results,
+                                expertCacheBudgetBytes: runner.expertCache?.budgetBytes)
         return (plan, results, selected.candidate)
     }
 
@@ -842,7 +893,8 @@ public enum GemmaForge {
                                 prompt: [Int], decodeTokens: Int,
                                 selected: GemmaForgeCandidate,
                                 medianWall: Double, medianGpu: Double,
-                                results: [GemmaForgeCandidateResult]) throws
+                                results: [GemmaForgeCandidateResult],
+                                expertCacheBudgetBytes: Int? = nil) throws
             -> GemmaForgePlan {
         guard isLowercaseHex64(graphDigest), isLowercaseHex64(ggufDigest),
               isLowercaseHex64(engineDigest) else {
@@ -885,6 +937,7 @@ public enum GemmaForge {
             selected: selected,
             selectedMedianWallMicrosPerToken: medianWall,
             selectedMedianGpuMicrosPerToken: medianGpu,
+            expertCacheBudgetBytes: expertCacheBudgetBytes,
             results: results, schedule: lowered,
             scheduleDigest: scheduleDigest, planDigest: "")
         let digest = SHA256.hex(SHA256.hash(Array(try encoder.encode(body))))
@@ -900,6 +953,7 @@ public enum GemmaForge {
                               selected: body.selected,
                               selectedMedianWallMicrosPerToken: medianWall,
                               selectedMedianGpuMicrosPerToken: medianGpu,
+                              expertCacheBudgetBytes: expertCacheBudgetBytes,
                               results: body.results, schedule: lowered,
                               scheduleDigest: scheduleDigest, planDigest: digest)
     }
@@ -945,7 +999,33 @@ public enum GemmaForge {
     public static func validatePlan(_ plan: GemmaForgePlan, graph: GemmaGraphIR,
                                     ggufDigest: String, engineDigest: String,
                                     hardware: ForgeHardwareProfile,
-                                    prompt: [Int], decodeTokens: Int) throws {
+                                    prompt: [Int], decodeTokens: Int,
+                                    expertCacheBudget: Int? = nil) throws {
+        try validatePlanIdentity(plan, graph: graph, ggufDigest: ggufDigest,
+                                 engineDigest: engineDigest, hardware: hardware,
+                                 expertCacheBudget: expertCacheBudget)
+        // ---- workload binding (the profiling workload the plan's
+        // medians were measured on) ----
+        guard plan.workloadDigest == workloadDigest(prompt),
+              plan.promptTokenCount == prompt.count,
+              plan.decodeTokens == decodeTokens else {
+            throw GemmaForgeError.invalidPlan("workload mismatch")
+        }
+    }
+
+    /// Identity + structural validation WITHOUT the workload binding —
+    /// for serving VARYING prompts from a persisted artifact. Checks
+    /// everything `validatePlan` checks except the prompt/decode/workload
+    /// fields. The caller MUST disclose that the selected candidate was
+    /// measured on the plan's own profiling workload (recorded in
+    /// `plan.workloadDigest`/`promptTokenCount`/`decodeTokens`), not on
+    /// the served prompt — no fastest-on-all-prompts claim is implied.
+    public static func validatePlanIdentity(_ plan: GemmaForgePlan,
+                                            graph: GemmaGraphIR,
+                                            ggufDigest: String,
+                                            engineDigest: String,
+                                            hardware: ForgeHardwareProfile,
+                                            expertCacheBudget: Int? = nil) throws {
         guard plan.schemaVersion == schemaVersion else {
             throw GemmaForgeError.invalidPlan("schema \(plan.schemaVersion) != \(schemaVersion)")
         }
@@ -963,6 +1043,18 @@ public enum GemmaForge {
               plan.selectedMedianGpuMicrosPerToken.isFinite,
               plan.selectedMedianGpuMicrosPerToken > 0 else {
             throw GemmaForgeError.invalidPlan("plan medians not finite/positive")
+        }
+        // Recorded PROFILING metadata is validated structurally here
+        // (hex syntax, positive counts, checked context bounds) even
+        // though the workload BINDING itself is the caller's policy.
+        guard isLowercaseHex64(plan.workloadDigest),
+              isLowercaseHex64(plan.scheduleDigest) else {
+            throw GemmaForgeError.invalidPlan("recorded workload/schedule digests malformed")
+        }
+        guard plan.promptTokenCount > 0, plan.decodeTokens > 0,
+              plan.promptTokenCount <= Int.max - plan.decodeTokens,
+              plan.promptTokenCount + plan.decodeTokens <= Self.maxBoundedContext else {
+            throw GemmaForgeError.invalidPlan("recorded workload counts invalid")
         }
         let legalSet = Set(candidates())
         guard plan.results.count == legalSet.count,
@@ -987,10 +1079,12 @@ public enum GemmaForge {
         guard plan.toolchain == Forge.toolchainIdentifier else {
             throw GemmaForgeError.invalidPlan("toolchain mismatch")
         }
-        guard plan.workloadDigest == workloadDigest(prompt),
-              plan.promptTokenCount == prompt.count,
-              plan.decodeTokens == decodeTokens else {
-            throw GemmaForgeError.invalidPlan("workload mismatch")
+        // The plan's expert-cache budget is an engine identity input
+        // (reflected in engineDigest): a plan forged resident must not
+        // execute in streaming mode and vice versa.
+        guard plan.expertCacheBudgetBytes == expertCacheBudget else {
+            throw GemmaForgeError.invalidPlan(
+                "expert cache budget mismatch: plan \(plan.expertCacheBudgetBytes.map(String.init) ?? "resident") vs current \(expertCacheBudget.map(String.init) ?? "resident")")
         }
         guard candidates().contains(plan.selected) else {
             throw GemmaForgeError.invalidPlan("selected candidate not legal")
@@ -1026,6 +1120,7 @@ public enum GemmaForge {
             selected: plan.selected,
             selectedMedianWallMicrosPerToken: plan.selectedMedianWallMicrosPerToken,
             selectedMedianGpuMicrosPerToken: plan.selectedMedianGpuMicrosPerToken,
+            expertCacheBudgetBytes: plan.expertCacheBudgetBytes,
             results: plan.results, schedule: plan.schedule,
             scheduleDigest: plan.scheduleDigest, planDigest: "")
         let encoder = JSONEncoder()
@@ -1034,6 +1129,35 @@ public enum GemmaForge {
         guard plan.planDigest == digest else {
             throw GemmaForgeError.invalidPlan("planDigest tampered")
         }
+    }
+
+    /// The bounded first-milestone context every Gemma plan is forged
+    /// under (mirrors Gemma4Config.maxContext's 4096 cap).
+    public static let maxBoundedContext = 4096
+
+    /// Recomputes the planDigest over the plan's CURRENT fields (all
+    /// fields except planDigest itself). Test tooling uses this to
+    /// isolate structural gates from planDigest staleness after a
+    /// mutation; it is integrity bookkeeping, not authentication.
+    public static func resignPlan(_ plan: GemmaForgePlan) throws -> GemmaForgePlan {
+        func rebuilt(digest: String) -> GemmaForgePlan {
+            GemmaForgePlan(
+                schemaVersion: plan.schemaVersion, graphDigest: plan.graphDigest,
+                ggufDigest: plan.ggufDigest, engineDigest: plan.engineDigest,
+                hardware: plan.hardware, toolchain: plan.toolchain,
+                workloadDigest: plan.workloadDigest,
+                promptTokenCount: plan.promptTokenCount,
+                decodeTokens: plan.decodeTokens, selected: plan.selected,
+                selectedMedianWallMicrosPerToken: plan.selectedMedianWallMicrosPerToken,
+                selectedMedianGpuMicrosPerToken: plan.selectedMedianGpuMicrosPerToken,
+                expertCacheBudgetBytes: plan.expertCacheBudgetBytes,
+                results: plan.results, schedule: plan.schedule,
+                scheduleDigest: plan.scheduleDigest, planDigest: digest)
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let digest = SHA256.hex(SHA256.hash(Array(try encoder.encode(rebuilt(digest: "")))))
+        return rebuilt(digest: digest)
     }
 
     public static func workloadDigest(_ tokens: [Int]) -> String {

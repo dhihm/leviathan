@@ -397,7 +397,20 @@ public final class Gemma4Runner {
     /// to localize divergence during bring-up.
     public var traceLayers = false
 
-    public init(fileAt url: URL) throws {
+    /// Resident-mode runner (whole-file GPU mapping). For the bounded
+    /// SSD expert mode prefer `init(fileAt:expertCacheBudgetBytes:)` —
+    /// it never creates the whole-file mapping, so startup memory is
+    /// the compact buffer + KV + activations + slot pools only.
+    public convenience init(fileAt url: URL) throws {
+        try self.init(fileAt: url, expertCacheBudgetBytes: nil)
+    }
+
+    /// Cache-mode runner: with a non-nil budget, the 14.44 GB whole-
+    /// file GPU mapping is NEVER created — non-expert weights are
+    /// compacted directly from the file into a dedicated GPU buffer
+    /// (~1.6 GB) and expert slices stream through the bounded cache.
+    /// A nil budget is exactly the resident init.
+    public init(fileAt url: URL, expertCacheBudgetBytes budget: Int?) throws {
         let gguf = try GGUFReader.read(url)
         self.config = try Gemma4Config(file: gguf)
         self.ggufFile = gguf
@@ -473,43 +486,48 @@ public final class Gemma4Runner {
         self.device = device
         self.queue = queue
 
-        // ---- mmap the whole file read-only for the zero-copy weight buffer.
-        let fd = open(url.path, O_RDONLY)
-        guard fd >= 0 else { throw Gemma4Error.mmapFailed(errno: errno) }
-        defer { close(fd) }
-        var st = stat()
-        guard fstat(fd, &st) == 0, st.st_size > 0,
-              st.st_size <= Int(48 << 30) else {
-            throw Gemma4Error.mmapFailed(errno: errno)
-        }
-        let pageSize = GemmaRunner.pageSize
-        let (mapLenRaw, of) = Int(st.st_size).addingReportingOverflow(pageSize - 1)
-        guard !of else { throw Gemma4Error.mmapFailed(errno: 0) }
-        let mapLen = mapLenRaw / pageSize * pageSize
-        guard let raw = mmap(nil, mapLen, PROT_READ, MAP_SHARED, fd, 0), raw != MAP_FAILED else {
-            throw Gemma4Error.mmapFailed(errno: errno)
-        }
-        self.mapLength = mapLen
-        self.mapEnd = mapLen
+        // ---- weight storage. Resident mode: mmap the whole file read-
+        // only for the zero-copy weight buffer. Cache mode: SKIP the
+        // whole-file mapping entirely (bounded startup) — the switch
+        // below compacts non-expert weights straight from the file.
+        if budget == nil {
+            let fd = open(url.path, O_RDONLY)
+            guard fd >= 0 else { throw Gemma4Error.mmapFailed(errno: errno) }
+            defer { close(fd) }
+            var st = stat()
+            guard fstat(fd, &st) == 0, st.st_size > 0,
+                  st.st_size <= Int(48 << 30) else {
+                throw Gemma4Error.mmapFailed(errno: errno)
+            }
+            let pageSize = GemmaRunner.pageSize
+            let (mapLenRaw, of) = Int(st.st_size).addingReportingOverflow(pageSize - 1)
+            guard !of else { throw Gemma4Error.mmapFailed(errno: 0) }
+            let mapLen = mapLenRaw / pageSize * pageSize
+            guard let raw = mmap(nil, mapLen, PROT_READ, MAP_SHARED, fd, 0), raw != MAP_FAILED else {
+                throw Gemma4Error.mmapFailed(errno: errno)
+            }
+            self.mapLength = mapLen
+            self.mapEnd = mapLen
 
-        // Preflight: the mapped region must fit within device buffer limits.
-        guard mapLen <= device.maxBufferLength else {
-            _ = munmap(raw, mapLen)
-            throw Gemma4Error.exceedsMaxBufferLength(needed: mapLen, max: device.maxBufferLength)
+            // Preflight: the mapped region must fit within device limits.
+            guard mapLen <= device.maxBufferLength else {
+                _ = munmap(raw, mapLen)
+                throw Gemma4Error.exceedsMaxBufferLength(needed: mapLen, max: device.maxBufferLength)
+            }
+            // Ownership handoff: the MTLBuffer's deallocator owns the munmap
+            // from here on. Before this point failures munmap above; after it,
+            // any init failure releases the buffer (and thus the mapping)
+            // exactly once — no manual unmap remains.
+            guard let wb = device.makeBuffer(bytesNoCopy: raw, length: mapLen,
+                                             options: .storageModeShared,
+                                             deallocator: { ptr, len in
+                                                 _ = munmap(ptr, len)
+                                             }) else {
+                _ = munmap(raw, mapLen)
+                throw Gemma4Error.metalUnavailable
+            }
+            self.weightsBuffer = wb
         }
-        // Ownership handoff: the MTLBuffer's deallocator owns the munmap
-        // from here on. Before this point failures munmap above; after it,
-        // any init failure releases the buffer (and thus the mapping)
-        // exactly once — no manual unmap remains.
-        guard let wb = device.makeBuffer(bytesNoCopy: raw, length: mapLen,
-                                         options: .storageModeShared,
-                                         deallocator: { ptr, len in
-                                             _ = munmap(ptr, len)
-                                         }) else {
-            _ = munmap(raw, mapLen)
-            throw Gemma4Error.metalUnavailable
-        }
-        self.weightsBuffer = wb
 
         // ---- shaders + pipelines (compiled once).
         do { library = try device.makeLibrary(source: Self.shaderSource, options: nil) }
@@ -587,6 +605,12 @@ public final class Gemma4Runner {
             vCaches.append(try alloc(maxContext * width))
         }
         peakFootprint = Gemma4Runner.physFootprint()
+        // Cache-mode construction: switch AFTER all standard setup, with
+        // no whole-file mapping ever created (bounded startup peak).
+        if let budget {
+            try switchToExpertCache(budgetBytes: budget)
+            expertCache?.noteInitAllocated()
+        }
     }
 
     fileprivate enum GemmaRunner {
@@ -657,6 +681,7 @@ public final class Gemma4Runner {
                 "deferred segment: status \(cmd.status.rawValue), \(String(describing: cmd.error))")
         }
         gpuMicrosTotal += (cmd.gpuEndTime - cmd.gpuStartTime) * 1e6
+        expertCache?.noteSegmentFlushed()
     }
 
     /// Error cleanup: ends (without committing) any open deferred encoder,
@@ -669,6 +694,9 @@ public final class Gemma4Runner {
         openEnc = nil
         openCmd = nil
         autoSegment = false
+        // The discarded segment never executes — its expert-slice pins
+        // cannot be waiting on GPU reads and are released wholesale.
+        expertCache?.discardAllPins()
     }
 
     /// Opens a deferred segment: subsequent dispatches encode into one
@@ -796,6 +824,16 @@ public final class Gemma4Runner {
                         rows: Int? = nil,
                         yByteOffset: Int = 0) throws {
         guard let r = ref[tensor] else { throw Gemma4Error.badTensorGeometry("missing \(tensor)") }
+        // In cache mode, expert weights stream exclusively through
+        // expertMatvec — an explicit name rejection here (the file-
+        // coordinate mapEnd bound alone could numerically overlap the
+        // compact length for early-layer experts and read wrong bytes).
+        if expertCache != nil,
+           tensor.hasSuffix(".ffn_gate_up_exps.weight")
+                || tensor.hasSuffix(".ffn_down_exps.weight") {
+            throw Gemma4Error.badTensorGeometry(
+                "\(tensor) must route through expertMatvec in cache mode")
+        }
         let outRows = rows ?? r.outDim
         guard outRows > 0, r.inDim > 0, yByteOffset >= 0,
               r.inDim % r.type.elementsPerBlock == 0 else {
@@ -826,29 +864,42 @@ public final class Gemma4Runner {
                 "\(tensor)+\(extraOffset): weight bytes [\(wStart), \(wEnd)) beyond tensor extent")
         }
         guard let wb = weightsBuffer else { throw Gemma4Error.metalUnavailable }
+        try matvecDispatch(tensor: tensor, type: r.type, wbase: wb, wStart: wStart,
+                           inDim: r.inDim, outRows: outRows,
+                           x: x, y: y, yByteOffset: yByteOffset)
+    }
+
+    /// Kernel selection + dispatch shared by the resident matvec and the
+    /// expert-cache slice matvec. `wbase` + `wStart` address the weight
+    /// bytes (the mapped file / compacted buffer, or an expert slot
+    /// pool); extent checks are the CALLER's job.
+    internal func matvecDispatch(tensor: String, type: GGMLTensorType,
+                                 wbase: MTLBuffer, wStart: Int, inDim: Int,
+                                 outRows: Int, x: MTLBuffer, y: MTLBuffer,
+                                 yByteOffset: Int) throws {
         let kernel: String
-        switch r.type {
+        switch type {
         case .q4_0: kernel = "g4_q4_matvec"
         case .q6_K: kernel = "g4_q6_matvec"
         case .float32: kernel = "g4_f32_matvec"
         case .float16: throw Gemma4Error.badTensorGeometry("F16 unsupported for \(tensor)")
         }
-        var p = SIMD2<UInt32>(UInt32(r.inDim), UInt32(outRows))
+        var p = SIMD2<UInt32>(UInt32(inDim), UInt32(outRows))
         var off = UInt64(wStart)
         let gpuBefore = gpuMicrosTotal
         func bind(_ enc: MTLComputeCommandEncoder) {
             enc.setBytes(&p, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
             enc.setBytes(&off, length: MemoryLayout<UInt64>.stride, index: 1)
-            enc.setBuffer(wb, offset: 0, index: 2)
+            enc.setBuffer(wbase, offset: 0, index: 2)
             enc.setBuffer(x, offset: 0, index: 3)
             enc.setBuffer(y, offset: yByteOffset, index: 4)
         }
-        if r.type == .q4_0 && q4TiledKernel {
+        if type == .q4_0 && q4TiledKernel {
             // Tiled cooperative dispatch: one threadgroup per row with an
             // explicit hardware-derived width.
             try dispatchExplicit("g4_q4_matvec_tiled", groups: outRows,
                                  threads: q4TileWidth, bind)
-        } else if r.type == .q6_K && q6TiledKernel {
+        } else if type == .q6_K && q6TiledKernel {
             try dispatchExplicit("g4_q6_matvec_tiled", groups: outRows,
                                  threads: q6TileWidth, bind)
         } else {
@@ -859,6 +910,255 @@ public final class Gemma4Runner {
         // tensor that triggered the flush — documented limitation).
         matvecGpuMicrosByTensor[tensor, default: 0] += gpuMicrosTotal - gpuBefore
         matvecCallsByTensor[tensor, default: 0] += 1
+    }
+
+    // MARK: - bounded expert cache (SSD/streaming mode)
+
+    /// Bounded LRU cache of expert weight slices. Non-nil after
+    /// `enableExpertCache`: the whole-file mapping is dropped, non-
+    /// expert weights live in a compacted GPU buffer, and expert
+    /// slices stream through the cache with a byte budget.
+    internal var expertCache: Gemma4ExpertCache?
+    /// Synchronous free-slots-only read-ahead of the current layer's
+    /// routed expert slices (cache mode; never evicts). Disable for A/B
+    /// measurement.
+    public var expertPrefetch = true
+
+    /// Read-ahead for the current layer's routed experts into FREE
+    /// cache slots only (synchronous blocking preads between expert
+    /// iterations — no async I/O/GPU overlap is claimed; never evicts,
+    /// so it cannot change any computation). No-op in resident mode or
+    /// when disabled.
+    internal func prefetchExperts(layer: Int, topIdx: [Int]) throws {
+        guard let cache = expertCache, expertPrefetch else { return }
+        guard layer >= 0, layer < config.layerCount,
+              let gu = ref["blk.\(layer).ffn_gate_up_exps.weight"],
+              let dn = ref["blk.\(layer).ffn_down_exps.weight"] else {
+            throw Gemma4Error.badTensorGeometry("prefetch refs missing layer \(layer)")
+        }
+        for e in topIdx {
+            guard e >= 0, e < config.expertCount else {
+                throw Gemma4Error.badTensorGeometry("prefetch expert \(e) out of bounds")
+            }
+            // Checked extents within each tensor's FILE range.
+            guard let guMul = Checked.mul(e, cache.guStrideBytes),
+                  let guStart = Checked.add(gu.offset, guMul),
+                  let guEnd = Checked.add(guStart, cache.guStrideBytes),
+                  guEnd <= gu.end,
+                  let dnMul = Checked.mul(e, cache.dnStrideBytes),
+                  let dnStart = Checked.add(dn.offset, dnMul),
+                  let dnEnd = Checked.add(dnStart, cache.dnStrideBytes),
+                  dnEnd <= dn.end else {
+                throw Gemma4Error.badTensorGeometry("prefetch extent layer \(layer)")
+            }
+            _ = try cache.prefetch(key: layer * config.expertCount + e,
+                                   family: .gateUp, fileOffset: guStart)
+            _ = try cache.prefetch(key: layer * config.expertCount + e,
+                                   family: .down, fileOffset: dnStart)
+        }
+    }
+
+    /// Expert-slice matvec through the bounded cache: resolves the
+    /// (layer, expert) slice — hit, or a checked pread miss that may
+    /// evict the family's LRU unpinned slot — then dispatches the SAME
+    /// quantized kernels against the slot pool bytes.
+    internal func expertMatvec(tensor: String, layer: Int, expert: Int,
+                               x: MTLBuffer, xCount: Int,
+                               y: MTLBuffer, yCapacity: Int) throws {
+        guard let cache = expertCache else {
+            throw Gemma4Error.badTensorGeometry("expert cache not enabled for \(tensor)")
+        }
+        // Exact name contract: only the two expert families, addressed
+        // by their own layer prefix (the tensor name IS the key's layer
+        // coordinate — a mismatched layer argument is rejected).
+        let family: Gemma4ExpertCache.Family
+        if tensor == "blk.\(layer).ffn_gate_up_exps.weight" {
+            family = .gateUp
+        } else if tensor == "blk.\(layer).ffn_down_exps.weight" {
+            family = .down
+        } else {
+            throw Gemma4Error.badTensorGeometry(
+                "expertMatvec requires blk.<layer>.ffn_{gate_up,down}_exps.weight, got \(tensor)")
+        }
+        guard let r = ref[tensor], r.type == .q4_0 else {
+            throw Gemma4Error.badTensorGeometry("missing/mistyped expert tensor \(tensor)")
+        }
+        guard expert >= 0, expert < r.experts, layer >= 0,
+              layer < config.layerCount else {
+            throw Gemma4Error.badTensorGeometry(
+                "\(tensor): expert \(expert) layer \(layer) out of bounds")
+        }
+        let blocksPerRow = r.inDim / r.type.elementsPerBlock
+        let (bytesPerRow, of1) = blocksPerRow.multipliedReportingOverflow(by: r.type.bytesPerBlock)
+        let (stride, of2) = of1 ? (0, true) : r.outDim.multipliedReportingOverflow(by: bytesPerRow)
+        guard !of1, !of2, stride > 0,
+              stride == (family == .gateUp ? cache.guStrideBytes
+                                           : cache.dnStrideBytes),
+              xCount == r.inDim, x.length >= r.inDim * 4,
+              y.length >= r.outDim * 4, yCapacity >= r.outDim else {
+            throw Gemma4Error.badTensorGeometry(
+                "\(tensor) expert \(expert): slice/buffer geometry mismatch")
+        }
+        let (prod, ofMul) = expert.multipliedReportingOverflow(by: stride)
+        let (wStart, of3) = ofMul ? (0, true) : r.offset.addingReportingOverflow(prod)
+        let (wEnd, of4) = of3 ? (0, true) : wStart.addingReportingOverflow(stride)
+        guard !ofMul, !of3, !of4, wStart >= r.offset, wEnd <= r.end else {
+            throw Gemma4Error.badTensorGeometry(
+                "\(tensor) expert \(expert): slice [\(wStart), \(wEnd)) beyond tensor extent")
+        }
+        let slice = try cache.slice(key: layer * r.experts + expert,
+                                    family: family, fileOffset: wStart) { [self] in
+            try flushOpenSegment()
+        }
+        try matvecDispatch(tensor: tensor, type: r.type, wbase: slice.buffer,
+                           wStart: slice.offset, inDim: r.inDim, outRows: r.outDim,
+                           x: x, y: y, yByteOffset: 0)
+    }
+
+    /// Post-construction switch to SSD/streaming expert mode. NOTE: on
+    /// a RESIDENT runner this transiently holds the whole-file mapping
+    /// AND the compact buffer until the atomic switch below; for a
+    /// bounded startup peak use `init(fileAt:expertCacheBudgetBytes:)`
+    /// which never creates the whole-file mapping.
+    public func enableExpertCache(budgetBytes: Int) throws {
+        guard expertCache == nil else {
+            throw Gemma4Error.badMetadata("expert cache already enabled")
+        }
+        try switchToExpertCache(budgetBytes: budgetBytes)
+    }
+
+    /// Shared switch used by the bounded-startup init and the post-hoc
+    /// `enableExpertCache`:
+    /// 1. every NON-expert tensor is compacted into a dedicated GPU
+    ///    buffer with checked chunked preads;
+    /// 2. the two expert tensor families stream through the bounded
+    ///    LRU cache within `budgetBytes` (pool allocation is the
+    ///    budget; pinned/in-flight slots are inside those pools).
+    /// Fail-closed throughout: nothing observable is mutated until
+    /// every step succeeded; a resident runner keeps its whole-file
+    /// mapping intact on error.
+    private func switchToExpertCache(budgetBytes: Int) throws {
+        guard expertCache == nil else {
+            throw Gemma4Error.badMetadata("expert cache already enabled")
+        }
+        guard let url = ggufFile.sourceURL else {
+            throw Gemma4Error.badMetadata("GGUF source URL unknown — cannot stream expert slices")
+        }
+        guard budgetBytes > 0 else {
+            throw Gemma4Error.badTensorGeometry("expert cache budget must be positive")
+        }
+        let fd = open(url.path, O_RDONLY)
+        guard fd >= 0 else { throw Gemma4Error.mmapFailed(errno: errno) }
+        defer { close(fd) }
+        var st = stat()
+        guard fstat(fd, &st) == 0, st.st_size > 0 else {
+            throw Gemma4Error.mmapFailed(errno: errno)
+        }
+        let fileSize = Int(st.st_size)
+        // Uniform per-layer expert slice strides (single slot pool pair).
+        func q4Stride(_ r: G4TensorRef) -> Int? {
+            guard r.type == .q4_0, r.inDim % 32 == 0 else { return nil }
+            let (bytesPerRow, o1) = (r.inDim / 32).multipliedReportingOverflow(by: 18)
+            guard !o1 else { return nil }
+            let (s, o2) = r.outDim.multipliedReportingOverflow(by: bytesPerRow)
+            return o2 ? nil : s
+        }
+        guard let gu0 = ref["blk.0.ffn_gate_up_exps.weight"],
+              let dn0 = ref["blk.0.ffn_down_exps.weight"],
+              let guStride = q4Stride(gu0), guStride > 0,
+              let dnStride = q4Stride(dn0), dnStride > 0,
+              gu0.experts == config.expertCount,
+              dn0.experts == config.expertCount else {
+            throw Gemma4Error.badTensorGeometry("expert tensor geometry invalid")
+        }
+        for layer in 0..<config.layerCount {
+            guard let g = ref["blk.\(layer).ffn_gate_up_exps.weight"],
+                  let d = ref["blk.\(layer).ffn_down_exps.weight"],
+                  q4Stride(g) == guStride, q4Stride(d) == dnStride else {
+                throw Gemma4Error.badTensorGeometry("expert strides differ across layers")
+            }
+        }
+        // ---- budget/device preflight BEFORE any large allocation.
+        guard ExpertCacheGeometry.slotCounts(budgetBytes: budgetBytes,
+                                             guStrideBytes: guStride,
+                                             dnStrideBytes: dnStride) != nil,
+              guStride <= device.maxBufferLength, dnStride <= device.maxBufferLength,
+              budgetBytes <= device.maxBufferLength else {
+            throw Gemma4Error.exceedsMaxBufferLength(
+                needed: max(budgetBytes, max(guStride, dnStride)),
+                max: device.maxBufferLength)
+        }
+        // ---- compact every non-expert tensor into one GPU buffer.
+        func isExpertWeight(_ name: String) -> Bool {
+            name.hasSuffix(".ffn_gate_up_exps.weight")
+                || name.hasSuffix(".ffn_down_exps.weight")
+        }
+        var ranges: [(name: String, start: Int, end: Int)] = []
+        var total = 0
+        for info in ggufFile.tensors where !isExpertWeight(info.name) {
+            let range = try ggufFile.tensorRange(info)
+            let (t, of) = total.addingReportingOverflow(range.upperBound - range.lowerBound)
+            guard !of else { throw Gemma4Error.badTensorGeometry("compaction overflow") }
+            ranges.append((info.name, range.lowerBound, range.upperBound))
+            total = t
+        }
+        guard total <= device.maxBufferLength else {
+            throw Gemma4Error.exceedsMaxBufferLength(needed: total, max: device.maxBufferLength)
+        }
+        guard let compact = device.makeBuffer(length: total, options: .storageModeShared) else {
+            throw Gemma4Error.metalUnavailable
+        }
+        var base = 0
+        let chunk = 1 << 24
+        for r in ranges {
+            let len = r.end - r.start
+            var done = 0
+            while done < len {
+                let want = min(chunk, len - done)
+                let got = pread(fd, compact.contents() + base + done, want,
+                                off_t(r.start + done))
+                guard got > 0 else { throw Gemma4Error.mmapFailed(errno: errno) }
+                done += got
+            }
+            base += len
+        }
+        // Remap non-expert refs into a LOCAL table first — nothing is
+        // mutated until every step succeeded (fail-closed: an error
+        // above leaves the whole-file resident mode fully intact).
+        // Expert refs KEEP their file coordinates (the cache preads
+        // from them) and are rejected by name in `matvec`.
+        var newRef = ref
+        var cumulative = 0
+        for r in ranges {
+            let len = r.end - r.start
+            let old = newRef[r.name]!
+            newRef[r.name] = G4TensorRef(offset: cumulative, end: cumulative + len,
+                                         inDim: old.inDim, outDim: old.outDim,
+                                         experts: old.experts, type: old.type)
+            cumulative += len
+        }
+        let cache = try Gemma4ExpertCache(device: device, fileURL: url,
+                                          ggufSize: fileSize,
+                                          guStrideBytes: guStride,
+                                          dnStrideBytes: dnStride,
+                                          budgetBytes: budgetBytes)
+        cache.nonExpertResidentBytes = total
+        // Complete any pending encoded GPU work against the OLD weight
+        // mapping before it is dropped.
+        try flushOpenSegment()
+        // ---- atomic switch (no throw past this point).
+        ref = newRef
+        expertCache = cache
+        // The whole-file mapping is released by the MTLBuffer
+        // deallocator — expert weights leave the GPU address space.
+        weightsBuffer = compact
+        mapLength = total
+        mapEnd = total
+    }
+
+    /// Snapshot of the expert-cache counters (nil in resident mode).
+    public func expertCacheStats() -> Gemma4ExpertCacheStats? {
+        expertCache?.stats()
     }
 
     /// Per-vector RMSNorm over `vectors` contiguous vectors of length `n`
@@ -1067,6 +1367,8 @@ public final class Gemma4Runner {
             + "|q6TileWidth=\(q6TileWidth)"
             + "|rmsTileWidth=\(rmsTileWidth)"
             + "|mslOptions=default"
+            + "|expertCacheBudget=\(expertCache?.budgetBytes ?? 0)"
+            + "|expertPrefetch=\(expertCache != nil && expertPrefetch ? "free-only" : "none")"
     }
 
     /// Measured hardware profile of the device this runner holds.
@@ -1361,18 +1663,34 @@ public final class Gemma4Runner {
         let guStride = gateUp.outDim * guBlocksPerRow * 18
         let dnBlocksPerRow = down.inDim / 32
         let dnStride = down.outDim * dnBlocksPerRow * 18
+        // Synchronous free-slots-only read-ahead of this layer's routed
+        // experts (cache mode only; never evicts, no async overlap).
+        try prefetchExperts(layer: layer, topIdx: topIdx)
         memset(bufT3.contents(), 0, hidden * 4)   // MoE accumulator
         for (slot, expert) in topIdx.enumerated() {
-            try matvec(tensor: prefix + "ffn_gate_up_exps.weight",
-                       extraOffset: expert * guStride,
-                       x: bufH, xCount: hidden,
-                       y: bufGU, yCapacity: 2 * config.sharedIntermediate)
-            try geluUp(gu: bufGU, y: bufAct, n: e)
-            try matvec(tensor: prefix + "ffn_down_exps.weight",
-                       extraOffset: expert * dnStride,
-                       x: bufAct, xCount: e,
-                       y: bufT2, yCapacity: max(hidden, 2048))
+            if expertCache != nil {
+                try expertMatvec(tensor: prefix + "ffn_gate_up_exps.weight",
+                                 layer: layer, expert: expert,
+                                 x: bufH, xCount: hidden,
+                                 y: bufGU, yCapacity: 2 * config.sharedIntermediate)
+                try geluUp(gu: bufGU, y: bufAct, n: e)
+                try expertMatvec(tensor: prefix + "ffn_down_exps.weight",
+                                 layer: layer, expert: expert,
+                                 x: bufAct, xCount: e,
+                                 y: bufT2, yCapacity: max(hidden, 2048))
+            } else {
+                try matvec(tensor: prefix + "ffn_gate_up_exps.weight",
+                           extraOffset: expert * guStride,
+                           x: bufH, xCount: hidden,
+                           y: bufGU, yCapacity: 2 * config.sharedIntermediate)
+                try geluUp(gu: bufGU, y: bufAct, n: e)
+                try matvec(tensor: prefix + "ffn_down_exps.weight",
+                           extraOffset: expert * dnStride,
+                           x: bufAct, xCount: e,
+                           y: bufT2, yCapacity: max(hidden, 2048))
+            }
             try axpy(x: bufT2, y: bufT3, c: weights[slot], n: hidden)
+            expertCache?.endExpertIteration(segmentPending: openEnc != nil)
         }
         try rmsnorm(x: bufT3, y: bufT3, n: hidden, vectors: 1,
                     weightTensor: prefix + "post_ffw_norm_2.weight")

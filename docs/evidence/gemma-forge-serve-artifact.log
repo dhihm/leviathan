@@ -1,0 +1,29 @@
+expert cache mode: budget 1000000000 bytes (bounded startup, no whole-file mapping)
+graph validated: 934 ops, model gemma4-26b-a4b
+hardware: Apple M1 Max, max threads/threadgroup 1024, exec width 32, working set 26800603136 bytes
+engine digest: 2e6d5c77ec2b3c57624fe47f8c914e4a60fcdf0236d61e35058edca58c89922e
+  candidate batching=0 tiledQ4=0 tiledQ6=0 rmsTiled=0: correct 1, wall 1023245 us/token, gpu 556693 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 1023245 us, gpu 556693 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0: correct 1, wall 652927 us/token, gpu 401659 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 652927 us, gpu 401659 us, 1799 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=1 tiledQ6=0 rmsTiled=0: correct 1, wall 772468 us/token, gpu 266644 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 772468 us, gpu 266644 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=0: correct 1, wall 511449 us/token, gpu 268786 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 511449 us, gpu 268786 us, 1799 kernels, 127 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=1 rmsTiled=0: correct 1, wall 519935 us/token, gpu 273989 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 519935 us, gpu 273989 us, 1799 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=1 tiledQ6=1 rmsTiled=0: correct 1, wall 754264 us/token, gpu 267637 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 754264 us, gpu 267637 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=1: correct 1, wall 334232 us/token, gpu 102395 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 2.5e-05; 3 timed tokens; wall 334232 us, gpu 102395 us, 1799 kernels, 127 buffers/token
+selected: batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=1 (tile widths q4=64 q6=64 rms=64), wall 334232 us/token, gpu 102395 us/token
+plan saved: /tmp/leviathan-forge2-tooling/gemma-plan-serve.json, digest 5ae137ee20aa3c7218dadca3a7a5496558b7f57dcbab47df93f47a7426cb84d9
+  step 1: token 236772, wall 409786 us, gpu 118579 us, 1799 kernels, 127 buffers
+  step 2: token 1437, wall 311604 us, gpu 109959 us, 1799 kernels, 127 buffers
+  step 3: token 236772, wall 356416 us, gpu 150241 us, 1799 kernels, 127 buffers
+  step 4: token 236751, wall 444027 us, gpu 169243 us, 1799 kernels, 127 buffers
+  step 5: token 2964, wall 375613 us, gpu 132849 us, 1799 kernels, 127 buffers
+  step 6: token 236772, wall 328363 us, gpu 109685 us, 1799 kernels, 127 buffers
+  step 7: token 1340, wall 302307 us, gpu 109487 us, 1799 kernels, 127 buffers
+prompt ids: 2 9259
+greedy ids (reference == graph): 3324 236772 1437 236772 236751 2964 236772 1340
+text:  upon-the-sands-of
+verified generation: 7 steps, median wall 356416 us/token, gpu total 1152.0 ms
+expert cache stats: budget 1000000000 B, slot pools 999161856 B (gu 298 x 2230272 + dn 300 x 1115136), non-expert compact buffer 1577172088 B
+  misses 27074, hits 13246 (prefetch-served 598, prefetch installed 598 slices / 999161856 B), evictions 27074, bytes read 46287065088 (pread may hit OS page cache — no cold-SSD claim), flushes-before-reuse 0
+  peak pinned 26763264 B, device allocated sampled at end of construction 4423417856 B (sample, not a guaranteed startup peak), peak sampled 4423417856 B
+EXPERT_CACHE_STATS_JSON {"budgetBytes":1000000000,"dnSlots":300,"dnStrideBytes":1115136,"evictions":27074,"flushesBeforeReuse":0,"guSlots":298,"guStrideBytes":2230272,"hits":13246,"initDeviceAllocatedBytes":4423417856,"misses":27074,"nonExpertResidentBytes":1577172088,"peakDeviceAllocatedBytes":4423417856,"peakPinnedBytes":26763264,"prefetchBytes":999161856,"prefetchHits":598,"prefetchSlices":598,"residentBytes":999161856,"sliceBytesRead":46287065088}
+FORGE_PASS

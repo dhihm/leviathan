@@ -1785,6 +1785,161 @@ do {
     failed += 1; print("FAIL: graph mutation test — threw \(error)")
 }
 
+// MARK: - Plan artifact identity validation (validatePlanIdentity)
+do {
+    var b = GGUFTestBuilder()
+    b.appendGemma4Metadata()
+    let file = try GGUFReader.parse(b.finish())
+    let cfg = try Gemma4Config(file: file)
+    let gc = GemmaGraphIR.GraphConfig(
+        layerCount: cfg.layerCount, hidden: cfg.hiddenSize, qHeads: cfg.qHeads,
+        localKVHeads: cfg.localKVHeads, globalKVHeads: cfg.globalKVHeads,
+        localHeadDim: cfg.localHeadDim, globalHeadDim: cfg.globalHeadDim,
+        slidingWindow: cfg.slidingWindow, vocabSize: cfg.vocabSize,
+        expertCount: cfg.expertCount, expertUsedCount: cfg.topKExperts,
+        expertIntermediate: cfg.expertIntermediate,
+        sharedIntermediate: cfg.sharedIntermediate,
+        finalSoftcap: cfg.finalSoftcap, globalLayers: cfg.globalLayers)
+    let graph = GemmaGraphIR(schema: 1, model: "gemma4-26b-a4b", config: gc,
+                             ops: GemmaGraph.expectedSequence(gc))
+    let graphDigest = try GemmaGraph.digest(graph)
+    let gguf = String(repeating: "ab", count: 32)   // valid 64-hex
+    let engine = String(repeating: "cd", count: 32)
+    let hw = ForgeHardwareProfile(deviceName: "t",
+                                  maxTotalThreadsPerThreadgroup: 1024,
+                                  threadExecutionWidth: 32,
+                                  recommendedMaxWorkingSetSize: 1 << 20)
+    let results = GemmaForge.candidates().map {
+        GemmaForgeCandidateResult(candidate: $0, correct: true,
+                                  medianWallMicrosPerToken: 1,
+                                  medianGpuMicrosPerToken: 1, note: "test")
+    }
+    let selected = results[0].candidate
+    let plan = try GemmaForge.makePlan(
+        graph: graph, graphDigest: graphDigest, ggufDigest: gguf,
+        engineDigest: engine, hardware: hw, prompt: [2, 9259],
+        decodeTokens: 4, selected: selected, medianWall: 1, medianGpu: 1,
+        results: results)
+    // A mutation helper that FAILS the test when the JSON round-trip or
+    // the requested edit itself breaks (a failed decode must never be
+    // mistaken for a validator rejection).
+    func expectMutated(_ name: String,
+                       _ body: (inout [String: Any]) -> Void) -> GemmaForgePlan? {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        guard let data = try? enc.encode(plan),
+              var obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else {
+            failed += 1; print("FAIL: \(name) — plan re-encode failed")
+            return nil
+        }
+        body(&obj)
+        guard JSONSerialization.isValidJSONObject(obj),
+              let d2 = try? JSONSerialization.data(withJSONObject: obj),
+              let decoded = try? JSONDecoder().decode(GemmaForgePlan.self, from: d2)
+        else {
+            failed += 1; print("FAIL: \(name) — mutated plan did not decode")
+            return nil
+        }
+        guard decoded != plan else {
+            failed += 1; print("FAIL: \(name) — mutation did not change the plan")
+            return nil
+        }
+        // A planDigest-only mutation must keep its STALE digest — that
+        // is the property under test; re-signing would restore validity.
+        if name == "planDigest" { return decoded }
+        // Re-sign everything else so planDigest staleness cannot mask
+        // the structural gate under test.
+        guard let resigned = try? GemmaForge.resignPlan(decoded) else {
+            failed += 1; print("FAIL: \(name) — resign failed")
+            return nil
+        }
+        return resigned
+    }
+    func rejected(_ name: String, _ p: GemmaForgePlan?) {
+        guard let p else { return }   // already failed inside expectMutated
+        if (try? GemmaForge.validatePlanIdentity(
+                p, graph: graph, ggufDigest: gguf, engineDigest: engine,
+                hardware: hw)) != nil {
+            failed += 1; print("FAIL: \(name) — mutated plan accepted")
+        } else {
+            passed += 1
+        }
+    }
+    check("plan identity validates", (try? GemmaForge.validatePlanIdentity(
+        plan, graph: graph, ggufDigest: gguf, engineDigest: engine,
+        hardware: hw)) != nil)
+    let otherHex = String(repeating: "ff", count: 32)
+    rejected("tampered gguf digest rejected",
+             expectMutated("gguf") { $0["ggufDigest"] = otherHex })
+    rejected("tampered engine digest rejected",
+             expectMutated("engine") { $0["engineDigest"] = otherHex })
+    rejected("tampered planDigest rejected",
+             expectMutated("planDigest") { $0["planDigest"] = otherHex })
+    rejected("non-hex workload digest rejected",
+             expectMutated("workload") { $0["workloadDigest"] = "zz" })
+    rejected("zero promptTokenCount rejected",
+             expectMutated("promptCount") { $0["promptTokenCount"] = 0 })
+    rejected("negative decodeTokens rejected",
+             expectMutated("decodeTokens") { $0["decodeTokens"] = -1 })
+    rejected("overflowing workload counts rejected",
+             expectMutated("overflow") { $0["promptTokenCount"] = Int.max })
+    rejected("workload counts beyond bounded context rejected",
+             expectMutated("ctxbound") { $0["promptTokenCount"] = 4093 })
+    rejected("non-positive selected median rejected",
+             expectMutated("median") { $0["selectedMedianWallMicrosPerToken"] = -1.0 })
+    rejected("tampered schedule rejected", expectMutated("schedule") { obj in
+        guard var sch = obj["schedule"] as? [String: Any],
+              var insts = sch["instructions"] as? [[String: Any]],
+              !insts.isEmpty
+        else {
+            failed += 1; print("FAIL: schedule mutation — fields missing")
+            return
+        }
+        insts.removeLast()
+        sch["instructions"] = insts
+        obj["schedule"] = sch
+    })
+    rejected("illegal selected candidate rejected",
+             expectMutated("selected") {
+                 $0["selected"] = ["segmentBatching": true, "top5Diagnostic": false,
+                                   "matvecTiledQ4": true, "matvecTiledQ6": true,
+                                   "rmsnormTiled": true]
+             })
+    // Wrong CURRENT inputs (not plan mutations) are rejected too.
+    check("foreign current gguf digest rejected", (try? GemmaForge.validatePlanIdentity(
+        plan, graph: graph, ggufDigest: otherHex, engineDigest: engine,
+        hardware: hw)) == nil)
+    check("foreign current engine digest rejected", (try? GemmaForge.validatePlanIdentity(
+        plan, graph: graph, ggufDigest: gguf, engineDigest: otherHex,
+        hardware: hw)) == nil)
+    let otherHw = ForgeHardwareProfile(
+        deviceName: "t", maxTotalThreadsPerThreadgroup: 512,
+        threadExecutionWidth: 32, recommendedMaxWorkingSetSize: 1 << 20)
+    check("foreign hardware rejected", (try? GemmaForge.validatePlanIdentity(
+        plan, graph: graph, ggufDigest: gguf, engineDigest: engine,
+        hardware: otherHw)) == nil)
+    check("budget mismatch rejected", (try? GemmaForge.validatePlanIdentity(
+        plan, graph: graph, ggufDigest: gguf, engineDigest: engine,
+        hardware: hw, expertCacheBudget: 123)) == nil)
+    // Budget-bound plan round-trips with its budget.
+    let planB = try GemmaForge.makePlan(
+        graph: graph, graphDigest: graphDigest, ggufDigest: gguf,
+        engineDigest: engine, hardware: hw, prompt: [2, 9259],
+        decodeTokens: 4, selected: selected, medianWall: 1, medianGpu: 1,
+        results: results, expertCacheBudgetBytes: 123)
+    check("budget plan validates with matching budget",
+          (try? GemmaForge.validatePlanIdentity(
+              planB, graph: graph, ggufDigest: gguf, engineDigest: engine,
+              hardware: hw, expertCacheBudget: 123)) != nil)
+    check("budget plan rejected in resident mode",
+          (try? GemmaForge.validatePlanIdentity(
+              planB, graph: graph, ggufDigest: gguf, engineDigest: engine,
+              hardware: hw)) == nil)
+} catch {
+    failed += 1; print("FAIL: plan identity gates — \(error)")
+}
+
 // MARK: - Tiled cooperative Q4_0 matvec vs FP64 oracle (ACTUAL runtime shader)
 
 struct Q4TiledTestError: Error, CustomStringConvertible {
@@ -2213,6 +2368,246 @@ do {
     print("rms tiled numerical gates completed")
 } catch {
     failed += 1; print("FAIL: rms tiled gate — threw \(error)")
+}
+
+// MARK: - Bounded expert cache components (synthetic file + Metal)
+do {
+    // Slot table: free-first fill, LRU eviction order, MRU touch on
+    // hit, pinned-victim exclusion, pre-IO evict / post-IO install
+    // ordering (a slot evicted for a failed IO stays FREE).
+    var t = ExpertSlotTable(slotCount: 2)
+    checkEqual("slot table starts empty", t.residentKeys, 0)
+    checkEqual("free slot found first", t.freeSlot(), 0)
+    check("victim nil while unoccupied", t.victim(pinned: []) == nil)
+    t.install(key: 100, slot: 0)
+    t.install(key: 200, slot: 1)
+    checkEqual("table full after two installs", t.residentKeys, 2)
+    check("free slot nil when full", t.freeSlot() == nil)
+    checkEqual("hit returns slot", t.lookup(100), 0)
+    checkEqual("miss returns nil", t.lookup(300) ?? -1, -1)
+    // 100 was just touched -> 200 is the LRU victim.
+    checkEqual("lru victim is the stale slot", t.victim(pinned: []) ?? -1, 1)
+    checkEqual("pinned victim excluded", t.victim(pinned: [1]) ?? -1, 0)
+    check("all pinned -> no victim", t.victim(pinned: [0, 1]) == nil)
+    t.evict(slot: 1)
+    check("evicted slot not occupied", !t.isOccupied(1))
+    checkEqual("evicted key missing", t.lookup(200) ?? -1, -1)
+    t.install(key: 300, slot: 1)
+    checkEqual("retry install works", t.lookup(300), 1)
+    checkEqual("other key untouched", t.lookup(100), 0)
+
+    // Geometry: budget/stride arithmetic incl. extreme values rejected
+    // cleanly (nil), never trapped.
+    check("geometry rejects too-small budget",
+          ExpertCacheGeometry.slotCounts(budgetBytes: 10, guStrideBytes: 8,
+                                         dnStrideBytes: 8) == nil)
+    if let g = ExpertCacheGeometry.slotCounts(budgetBytes: 16, guStrideBytes: 8,
+                                              dnStrideBytes: 8) {
+        checkEqual("geometry exact pair fits gu", g.gu, 1)
+        checkEqual("geometry exact pair fits dn", g.dn, 1)
+    } else {
+        failed += 1; print("FAIL: geometry exact pair fits")
+    }
+    check("geometry rejects sub-pair real-stride budget",
+          ExpertCacheGeometry.slotCounts(budgetBytes: 1 << 20, guStrideBytes: 2_230_272,
+                                         dnStrideBytes: 1_115_136) == nil)
+    if let g = ExpertCacheGeometry.slotCounts(budgetBytes: 8_000_000, guStrideBytes: 2_230_272,
+                                              dnStrideBytes: 1_115_136) {
+        checkEqual("geometry 8 MiB gu slots", g.gu, 2)
+        checkEqual("geometry 8 MiB dn slots", g.dn, 3)
+    } else {
+        failed += 1; print("FAIL: geometry 8 MiB split")
+    }
+    check("geometry rejects Int.max budget",
+          ExpertCacheGeometry.slotCounts(budgetBytes: Int.max, guStrideBytes: 8,
+                                         dnStrideBytes: 8) == nil)
+    check("geometry rejects Int.max stride",
+          ExpertCacheGeometry.slotCounts(budgetBytes: 1 << 20, guStrideBytes: Int.max,
+                                         dnStrideBytes: 8) == nil)
+    check("geometry rejects negative budget",
+          ExpertCacheGeometry.slotCounts(budgetBytes: -5, guStrideBytes: 8,
+                                         dnStrideBytes: 8) == nil)
+    check("geometry rejects zero stride",
+          ExpertCacheGeometry.slotCounts(budgetBytes: 1 << 20, guStrideBytes: 0,
+                                         dnStrideBytes: 8) == nil)
+
+    // Raw preadExact: full read returns the exact bytes; beyond-EOF
+    // reads abort. (The raw pread may deliver PARTIAL bytes into the
+    // destination before aborting — only the CACHE's key visibility is
+    // transactional; that is the loader test below.)
+    let tmp = FileManager.default.temporaryDirectory
+        .appendingPathComponent("leviathan-pread-\(UUID().uuidString).bin")
+    let payload = Array(0..<100).map { UInt8($0 & 0xff) }
+    try Data(payload).write(to: tmp)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+    let fd = open(tmp.path, O_RDONLY)
+    check("pread test file opened", fd >= 0)
+    if fd >= 0 {
+        defer { close(fd) }
+        var buf = [UInt8](repeating: 0, count: 101)
+        var threw = false
+        do {
+            try buf.withUnsafeMutableBytes { raw in
+                try Gemma4ExpertCache.preadExact(fd: fd, into: raw.baseAddress!,
+                                                 count: 100, from: 0)
+            }
+        } catch { threw = true }
+        check("full pread succeeds", !threw)
+        checkEqual("pread bytes match", Array(buf[0..<100]), payload)
+        var threwShort = false
+        do {
+            try buf.withUnsafeMutableBytes { raw in
+                try Gemma4ExpertCache.preadExact(fd: fd, into: raw.baseAddress!,
+                                                 count: 101, from: 0)
+            }
+        } catch { threwShort = true }
+        check("read beyond EOF aborts", threwShort)
+        var threwLate = false
+        do {
+            try buf.withUnsafeMutableBytes { raw in
+                try Gemma4ExpertCache.preadExact(fd: fd, into: raw.baseAddress!,
+                                                 count: 10, from: 95)
+            }
+        } catch { threwLate = true }
+        check("read crossing EOF aborts", threwLate)
+    }
+
+    // Transactional loader on a REAL cache (tiny synthetic file + Metal
+    // device, no GGUF): fill both gate-up slots with valid loads
+    // (releasing active pins between loads via the iteration API), then
+    // truncate the file so a forced victim reload at a DECLARED-valid
+    // offset partial-reads (8 bytes delivered, then EOF). The failed
+    // key must NOT become resident (retry after restoring the file
+    // MISSES again, not hits) and the retried slice must match the
+    // file bytes exactly.
+    if let device = MTLCreateSystemDefaultDevice() {
+        let f2 = FileManager.default.temporaryDirectory
+            .appendingPathComponent("leviathan-cache-\(UUID().uuidString).bin")
+        let fileBytes = Array(0..<128).map { UInt8($0 & 0xff) }
+        try Data(fileBytes).write(to: f2)
+        defer { try? FileManager.default.removeItem(at: f2) }
+        // 2 gate-up slots (32 B) + 2 down slots (16 B).
+        let cache = try Gemma4ExpertCache(device: device, fileURL: f2,
+                                          ggufSize: 128, guStrideBytes: 32,
+                                          dnStrideBytes: 16, budgetBytes: 96)
+        _ = try cache.slice(key: 7, family: .gateUp, fileOffset: 0, flush: {})
+        cache.endExpertIteration(segmentPending: false)
+        _ = try cache.slice(key: 8, family: .gateUp, fileOffset: 32, flush: {})
+        cache.endExpertIteration(segmentPending: false)
+        checkEqual("both gu slots occupied after two loads",
+                   cache.stats().residentBytes, 96)
+        // Truncate to 40: offset 32 stays within the DECLARED ggufSize
+        // (32 + 32 = 64 <= 128) but the physical read delivers only the
+        // 8 bytes [32, 40) before EOF.
+        let trunc = try FileHandle(forWritingTo: f2)
+        try trunc.truncate(atOffset: 40)
+        try trunc.close()
+        var threwLoad = false
+        do {
+            _ = try cache.slice(key: 9, family: .gateUp, fileOffset: 32, flush: {})
+        } catch { threwLoad = true }
+        check("forced partial victim read aborts", threwLoad)
+        let stFail = cache.stats()
+        checkEqual("failed load read no full slices", stFail.sliceBytesRead, 64)
+        checkEqual("failed load counted one miss", stFail.misses, 3)
+        // Restore the file; the SAME key must MISS again (it was never
+        // cached) and read the exact bytes.
+        try Data(fileBytes).write(to: f2)
+        let s9 = try cache.slice(key: 9, family: .gateUp, fileOffset: 32, flush: {})
+        cache.endExpertIteration(segmentPending: false)
+        let stRetry = cache.stats()
+        checkEqual("retry after failed load is a miss, not a hit", stRetry.misses, 4)
+        checkEqual("failed key was not cached (no bogus hit)", stRetry.hits, 0)
+        checkEqual("retry read accounted", stRetry.sliceBytesRead, 96)
+        let got = Array(UnsafeBufferPointer(start: s9.buffer.contents()
+                .assumingMemoryBound(to: UInt8.self).advanced(by: s9.offset),
+                count: 32))
+        checkEqual("retried slice bytes match file", got, Array(fileBytes[32..<64]))
+
+        // Prefetch attribution (fresh cache, same tiny file): free-slot
+        // read-ahead serves the first hit; per-family slot markers never
+        // cross GU/DN; no-free-slot prefetch declines without evicting;
+        // a partial-read prefetch failure installs nothing.
+        let cache2 = try Gemma4ExpertCache(device: device, fileURL: f2,
+                                           ggufSize: 128, guStrideBytes: 32,
+                                           dnStrideBytes: 16, budgetBytes: 96)
+        _ = try cache2.slice(key: 1, family: .gateUp, fileOffset: 0, flush: {})
+        cache2.endExpertIteration(segmentPending: false)
+        let pfInstalled = try cache2.prefetch(key: 2, family: .gateUp,
+                                              fileOffset: 32)
+        check("prefetch installs into free slot", pfInstalled)
+        let pfResident = try cache2.prefetch(key: 1, family: .gateUp,
+                                             fileOffset: 0)
+        check("prefetch of resident key is a no-op", !pfResident)
+        // GU pool is full (2/2): key 3 must decline, NOT evict.
+        let pfDeclined = try cache2.prefetch(key: 3, family: .gateUp,
+                                             fileOffset: 0)
+        check("prefetch without free slot declines", !pfDeclined)
+        var threwPF = false
+        do {
+            _ = try cache2.prefetch(key: 4, family: .gateUp, fileOffset: 97)
+        } catch { threwPF = true }
+        check("prefetch beyond declared size aborts", threwPF)
+        // Consume the prefetched slice: a HIT attributed to prefetch
+        // exactly once.
+        _ = try cache2.slice(key: 2, family: .gateUp, fileOffset: 32, flush: {})
+        cache2.endExpertIteration(segmentPending: false)
+        var st2 = cache2.stats()
+        checkEqual("prefetched key hits", st2.hits, 1)
+        checkEqual("prefetch hit attributed once", st2.prefetchHits, 1)
+        checkEqual("prefetch slices counted", st2.prefetchSlices, 1)
+        // DN family: a demand MISS then HIT must not be prefetch-
+        // attributed (the GU-only prefetch marker stays in GU).
+        _ = try cache2.slice(key: 2, family: .down, fileOffset: 16, flush: {})
+        cache2.endExpertIteration(segmentPending: false)
+        _ = try cache2.slice(key: 2, family: .down, fileOffset: 16, flush: {})
+        cache2.endExpertIteration(segmentPending: false)
+        st2 = cache2.stats()
+        checkEqual("dn demand miss counted", st2.misses, 2)
+        checkEqual("dn hit counted", st2.hits, 2)
+        checkEqual("gu-only prefetch marker not attributed to dn",
+                   st2.prefetchHits, 1)
+        // A second hit of the consumed GU key is not re-attributed.
+        _ = try cache2.slice(key: 2, family: .gateUp, fileOffset: 32, flush: {})
+        cache2.endExpertIteration(segmentPending: false)
+        st2 = cache2.stats()
+        checkEqual("prefetch attribution is first-consumption only",
+                   st2.prefetchHits, 1)
+        // Failed prefetch via PARTIAL read: DN still has free slots;
+        // offset 16 is within the declared ggufSize (16 + 16 = 32 <=
+        // 128) but the truncated file delivers 4 bytes then EOF. The
+        // failed prefetch must install nothing (byte counters
+        // unchanged), and after restoring the file a retry succeeds and
+        // serves a prefetch-attributed hit.
+        let bytesBeforeFailedPF = st2.sliceBytesRead
+        let trunc2 = try FileHandle(forWritingTo: f2)
+        try trunc2.truncate(atOffset: 20)
+        try trunc2.close()
+        var threwPF2 = false
+        do {
+            _ = try cache2.prefetch(key: 5, family: .down, fileOffset: 16)
+        } catch { threwPF2 = true }
+        check("partial-read prefetch aborts", threwPF2)
+        st2 = cache2.stats()
+        checkEqual("failed prefetch read no bytes",
+                   st2.sliceBytesRead, bytesBeforeFailedPF)
+        try Data(fileBytes).write(to: f2)
+        let pf5 = try cache2.prefetch(key: 5, family: .down, fileOffset: 16)
+        check("prefetch retry after restore installs", pf5)
+        let s5 = try cache2.slice(key: 5, family: .down, fileOffset: 16, flush: {})
+        cache2.endExpertIteration(segmentPending: false)
+        st2 = cache2.stats()
+        checkEqual("retried prefetch hit attributed", st2.prefetchHits, 2)
+        let dn5 = Array(UnsafeBufferPointer(start: s5.buffer.contents()
+                .assumingMemoryBound(to: UInt8.self).advanced(by: s5.offset),
+                count: 16))
+        checkEqual("prefetched dn bytes match file", dn5,
+                   Array(fileBytes[16..<32]))
+    } else {
+        print("SKIP: cache loader gates (no Metal device)")
+    }
+} catch {
+    failed += 1; print("FAIL: expert cache component gates — \(error)")
 }
 
 // MARK: - Gemma 4 real-model gates (opt-in via LEVIATHAN_GEMMA_GGUF)

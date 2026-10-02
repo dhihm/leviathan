@@ -8,7 +8,9 @@ bounded set of legal optimization candidates, checks each one for numerical
 agreement with an independent reference within a tolerance, measures real
 device time, selects the best valid plan, and reuses compiled artifacts
 keyed by model, hardware, and toolchain — with execution on the Metal GPU.
-Serving itself is not implemented yet; it is planned as localhost-only.
+Serving is implemented for the real-model Gemma path as a bounded
+localhost-only API driven by the validated plan artifact (see
+`gemma-serve` below); the dense/ReLU engine has no serving API.
 
 ![Leviathan hero illustration: an original drawing of a giant whale devouring a kraken, symbolizing the Leviathan engine swallowing workloads](docs/assets/leviathan-hero.png)
 
@@ -30,6 +32,9 @@ bounded greedy generation, and the model.py capture path (a bounded,
 trusted stage-list DSL — honestly NOT arbitrary Python/torch tracing):
 
 ```bash
+# 0. Build (release):
+swift build -c release
+
 # 1. Capture: user's trusted restricted model.py DSL -> graph JSON
 .build/release/leviathan-cli gemma-config-export --file <gguf> --out /tmp/cfg.json
 python3 tools/forge_gemma/export_gemma_graph.py examples/gemma_model.py /tmp/cfg.json /tmp/graph.json
@@ -45,6 +50,24 @@ python3 tools/forge_gemma/export_gemma_graph.py examples/gemma_model.py /tmp/cfg
 # 3. Generation + GPU-time profile:
 .build/release/leviathan-cli gemma-generate --file <gguf> --text "Hello" --chat --max-tokens 8
 .build/release/leviathan-cli gemma-profile --file <gguf>
+
+# 4. Optional bounded SSD expert mode: non-expert weights compacted to
+#    a ~1.58 GB GPU buffer, expert slices streamed through an LRU slot
+#    cache within the byte budget (same gated candidates; identity and
+#    plan record the budget):
+.build/release/leviathan-cli gemma-forge --file <gguf> --graph /tmp/graph.json \
+    --plan /tmp/cache-plan.json --text "Hello" --gen-tokens 8 \
+    --expert-cache-budget 1000000000
+.build/release/leviathan-cli gemma-expert-cache-verify --file <gguf> \
+    --graph /tmp/graph.json   # forced eviction/miss/hit/in-flight gates
+
+# 5. Bounded localhost serving of the validated plan artifact (no
+#    runtime agents/Python; one POST /generate at a time + GET /health):
+.build/release/leviathan-cli gemma-serve --file <gguf> --graph /tmp/graph.json \
+    --plan /tmp/cache-plan.json --port 8377 --expert-cache-budget 1000000000 \
+    --gate-first-request
+curl -s http://127.0.0.1:8377/generate -H 'Content-Type: application/json' \
+     -d '{"text":"Hello","max_tokens":8}'
 ```
 
 Resources and architecture-diagram sections below describe the
@@ -70,9 +93,31 @@ The gap to the same-GGUF Ollama baseline (server-reported ~71 eval
 tokens/s, cold load 7.5 s, prefill 163 ms; the API's streamed chunks
 arrive coalesced client-side, so no per-token interval is claimed)
 remains large; optimization continues one measured, gated pass at a
-time. Limits: the captured DSL is a bounded Gemma-specific subset;
-serving, SSD expert streaming, and prefill batching are not
-implemented. See [docs/GEMMA_PROGRESS.md](docs/GEMMA_PROGRESS.md) and
+time. Two later passes are now implemented and measured:
+an EXPLICIT bounded SSD expert mode (`--expert-cache-budget`; whole
+expert families no longer GPU-resident — non-expert weights compact to
+a 1,577,172,088 B buffer and expert slices stream through LRU slot
+pools with checked transactional preads, active/in-flight pinning with
+flush-before-reuse, and synchronous free-slots-only prefetch; the
+per-kernel cache path in the dedicated verify run reproduced all
+262,144 logits bit-exactly (worst rel 0.0) vs the resident snapshot,
+while the 1 GB-artifact FORGE run's selected tiled/batched candidate
+is gated within tolerance (rel ≤ 2.5e-05, exact greedy IDs) and
+measured 334,232 µs wall / 102,395 µs GPU per token — a cross-run
+contrast with the earlier 122,565 µs resident selection, not a
+matched-memory comparison) and BOUNDED LOCALHOST SERVING from the
+persisted plan artifact (`gemma-serve`: identity validation without
+the workload binding — the candidate's medians were measured on the
+plan's own profiling workload, disclosed at startup — serial greedy
+generation executing the stored SSA schedule, strict HTTP bounds with
+a 15 s absolute read deadline; 20 asserted negative probes incl. a
+408 idle timeout, a gated first request, and exact-ID parity with the
+resident CLI reference on the same input; ~330 ms per served decode
+token in 1 GB cache mode). Remaining limits: the captured DSL is a
+bounded Gemma-specific subset; prefill batching and kernel-count
+reduction (1799 kernels/token) are not implemented; cache reads may
+hit the OS page cache (no cold-SSD claim). See
+[docs/GEMMA_PROGRESS.md](docs/GEMMA_PROGRESS.md) and
 [docs/FORGE_PROGRESS.md](docs/FORGE_PROGRESS.md).
 
 ## Features
@@ -149,29 +194,23 @@ Example graph JSON (`dense` takes an output dimension; `relu` is a string):
 
 ## Architecture
 
-```
-model import / graph JSON        [model import: planned; graph JSON: runs]
-        │
-        ▼
- validate ── lower (seeded, deterministic) ── LoweredProgram      [runs]
-        │                                          │
-        │                    compile: canonical bytes + SHA-256 ──▶ .lvi artifact
-        │                                          │            [runs]
-        │                    load: digest + semantic plan validation
-        ▼                                          ▼
- hardware & workload profiling ──▶ bounded legal candidates ──▶ correctness gate
-                          [planned]                              [runs]
-                                                                       │
-        reused model/hardware/toolchain-keyed artifact ◀── measured selection
-                    [artifact reuse: runs for graphs; keyed reuse: planned]   [planned]
-                                                                       │
-                                              Metal GPU runtime ──▶ loopback serving
-                                                    [runs]           [planned]
-```
+Two engine paths share the validated-IR + measured-plan core:
 
-Today, the solid path is graph JSON → validation → lowering → artifact →
-Metal dispatch → CPU-oracle comparison. See
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detail and
+- **Dense/ReLU engine (runs)** — restricted PyTorch capture
+  (`nn.Sequential` of `nn.Linear`/`nn.ReLU`, real weights, GPU-vs-
+  PyTorch parity 2.2e-08) or graph JSON → validation → deterministic
+  lowering → `.lvi` artifact (canonical bytes + SHA-256, semantic
+  re-validation on load) → hardware/workload profiling → bounded
+  legal candidates → correctness gate → measured selection → Metal
+  GPU runtime → CPU-oracle comparison.
+- **Real-model Gemma 4 path (runs, scoped)** — model.py capture DSL →
+  graph JSON → validation against the actual GGUF → typed SSA
+  schedule → gated, measured candidate selection → plan artifact
+  (digests + embedded executable schedule) → Metal GPU runtime with
+  optional bounded SSD expert cache → bounded localhost serving
+  (`gemma-serve`).
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detail and
 [docs/VALIDATION.md](docs/VALIDATION.md) for measured hardware evidence.
 
 ## Resource limits
@@ -203,7 +242,8 @@ scoped limits and evidence docs):
 - The artifact digest provides integrity, not authentication or signing.
 - Float32 only; backend comparisons use a 1e-4 absolute tolerance.
 - No benchmark suite; timings printed by `check` are indicative only.
-- No CI, no local serving API yet (planned, localhost-only).
+- No CI; the dense/ReLU engine has no serving API (the Gemma path's
+  bounded localhost server is implemented — `gemma-serve`).
 
 Gemma Forge path (measured, gated, still bounded):
 

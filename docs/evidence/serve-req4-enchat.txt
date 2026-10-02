@@ -1,0 +1,1 @@
+{"text":"I am Gemma 4, a large","token_ids":[236777,1006,147224,236743,236812,236764,496,2455],"generation_wall_us":7902949.2910000002,"handler_wall_us":7902972.25,"plan_digest":"5ae137ee20aa3c7218dadca3a7a5496558b7f57dcbab47df93f47a7426cb84d9","median_wall_us_per_token":342351.54200000002,"prefill_wall_us":5446475.375,"steps":7,"gated":false,"output_tokens":8} [200]

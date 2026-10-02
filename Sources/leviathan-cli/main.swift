@@ -1,4 +1,5 @@
 import Foundation
+import Metal
 import LeviathanCore
 
 let programName = "leviathan"
@@ -22,6 +23,30 @@ func usage() -> Never {
           the selected primary backend (default: metal) against the
           independent CPU references (Accelerate and scalar) across
           several batch sizes.
+      gemma-forge --file <model.gguf> --graph <g.json> --plan <p.json>
+                  [--prompt-ids 2,9259 | --text T [--chat]] [--gen-tokens 8]
+                  [--expert-cache-budget BYTES]
+          Validate the captured Gemma graph against the real GGUF, gate
+          and measure all legal engine candidates, select by per-token
+          wall median, save a reusable plan artifact (typed SSA schedule
+          + identity digests), and run a verified gated generation.
+          --expert-cache-budget switches to the bounded SSD expert mode
+          (non-expert weights compacted to a GPU buffer; expert slices
+          stream through an LRU slot cache within the byte budget).
+      gemma-expert-cache-verify --file <model.gguf> --graph <g.json>
+                  [--prompt-ids 2,9259] [--steps 4]
+                  [--small-budget 8000000] [--large-budget 1000000000]
+          Forced eviction/miss/hit/in-flight verification of the expert
+          cache through the actual SSA path vs a resident snapshot.
+      gemma-serve --file <model.gguf> --graph <g.json> --plan <p.json>
+                  [--port 8377] [--max-tokens 16] [--max-prompt-chars 512]
+                  [--max-requests 64] [--expert-cache-budget BYTES]
+                  [--gate-first-request]
+          Bounded localhost (127.0.0.1) serving of the validated plan
+          artifact: one POST /generate at a time plus GET /health, no
+          runtime agents; strict bounds and fail-closed HTTP parsing.
+      gemma-profile --file <model.gguf> --prompt-ids 2,9259
+          Per-tensor and per-kernel GPU-time attribution.
     """)
     exit(64)
 }
@@ -802,7 +827,40 @@ case "forge":
             }
             try GemmaGraph.validate(graph, config: preConfig, file: preFile)
 
-            let runner = try Gemma4Runner(fileAt: fileURL)
+            // Optional SSD/streaming expert mode: non-expert weights are
+            // compacted to a dedicated GPU buffer and expert slices
+            // stream through a bounded LRU cache within this budget.
+            // The budget/geometry is preflighted from the ALREADY
+            // validated tensor directory BEFORE any runner allocation —
+            // a malformed budget fails before the large KV caches are
+            // built — and the runner uses the bounded-startup cache
+            // constructor (no whole-file GPU mapping is ever created).
+            var expertBudget: Int? = nil
+            if args.contains("--expert-cache-budget") {
+                guard let b = Int(requireValue("--expert-cache-budget", args)), b > 0 else {
+                    fail("--expert-cache-budget must be a positive integer (bytes)")
+                }
+                func strideOf(_ name: String) -> Int? {
+                    guard let info = try? preFile.tensor(name),
+                          info.ggmlType == GGMLTensorType.q4_0.rawValue,
+                          info.dims.count == 3, info.dims[0] % 32 == 0 else { return nil }
+                    return info.dims[0] / 32 * 18 * info.dims[1]
+                }
+                guard let gu = strideOf("blk.0.ffn_gate_up_exps.weight"),
+                      let dn = strideOf("blk.0.ffn_down_exps.weight"),
+                      gu > 0, dn > 0,
+                      ExpertCacheGeometry.slotCounts(budgetBytes: b,
+                                                     guStrideBytes: gu,
+                                                     dnStrideBytes: dn) != nil else {
+                    fail("--expert-cache-budget \(b) cannot hold one gate-up + one down expert slice")
+                }
+                expertBudget = b
+            }
+            let runner = try Gemma4Runner(fileAt: fileURL,
+                                          expertCacheBudgetBytes: expertBudget)
+            if let b = expertBudget {
+                print("expert cache mode: budget \(b) bytes (bounded startup, no whole-file mapping)")
+            }
             let hardware = runner.hardwareProfile()
             let engine = GemmaForge.engineDigest(try runner.engineIdentity())
             print("graph validated: \(graph.ops.count) ops, model \(graph.model)")
@@ -821,7 +879,8 @@ case "forge":
                                                  engineDigest: engine,
                                                  hardware: hardware,
                                                  prompt: prompt,
-                                                 decodeTokens: decodeTokens)) != nil {
+                                                 decodeTokens: decodeTokens,
+                                                 expertCacheBudget: expertBudget)) != nil {
                     // Cache reuse still passes the correctness gate before
                     // any output is trusted.
                     runner.reset()
@@ -959,9 +1018,826 @@ case "forge":
             print("text: \(try tokenizer.decode(refSeq))")
             print(String(format: "verified generation: %d steps, median wall %.0f us/token, gpu total %.1f ms",
                          wallSamples.count, medianWall, gpuSum / 1000))
+            if let st = runner.expertCacheStats() {
+                print("expert cache stats: budget \(st.budgetBytes) B, slot pools \(st.residentBytes) B (gu \(st.guSlots) x \(st.guStrideBytes) + dn \(st.dnSlots) x \(st.dnStrideBytes)), non-expert compact buffer \(st.nonExpertResidentBytes) B")
+                print("  misses \(st.misses), hits \(st.hits) (prefetch-served \(st.prefetchHits), prefetch installed \(st.prefetchSlices) slices / \(st.prefetchBytes) B), evictions \(st.evictions), bytes read \(st.sliceBytesRead) (pread may hit OS page cache — no cold-SSD claim), flushes-before-reuse \(st.flushesBeforeReuse)")
+                print("  peak pinned \(st.peakPinnedBytes) B, device allocated sampled at end of construction \(st.initDeviceAllocatedBytes) B (sample, not a guaranteed startup peak), peak sampled \(st.peakDeviceAllocatedBytes) B")
+                let enc = JSONEncoder()
+                enc.outputFormatting = [.sortedKeys]
+                if let js = try? enc.encode(st),
+                   let line = String(data: js, encoding: .utf8) {
+                    print("EXPERT_CACHE_STATS_JSON \(line)")
+                }
+            }
             print("FORGE_PASS")
         } catch {
             fail("gemma-forge failed: \(error)")
+        }
+
+    case "gemma-expert-cache-verify":
+        // Forced eviction / miss / hit / in-flight verification of the
+        // bounded SSD expert cache THROUGH THE ACTUAL SSA EXECUTION
+        // PATH, against a resident-weights reference snapshot:
+        //   Phase 1: resident runner — a FAILED enable attempt (budget
+        //   too small) must throw and leave resident mode intact; then
+        //   full-logit snapshot of prefill + decode steps; the runner
+        //   is RELEASED before any cache runner is built.
+        //   Phase 2: cache runner with a tiny budget (forced thrash),
+        //   in BOTH per-kernel and segment-batching modes — the
+        //   batching pass exercises in-flight pinning and must show
+        //   flushes-before-reuse > 0; exact greedy tokens + full-logit
+        //   parity gate every pass before anything is trusted.
+        //   Phase 3: fresh cache runner with a larger budget — the
+        //   same prefill replayed twice; the observed hit count is
+        //   reported (whatever it is — prompt and decode working sets
+        //   differ, so no full-replay-hit assumption is made), gated
+        //   only on hits > 0 with identical logits.
+        // Reads are preads that may hit the OS page cache — no
+        // cold-SSD latency claim is made or measured here.
+        let path = requireValue("--file", args)
+        let graphPath = requireValue("--graph", args)
+        let promptArg = args.firstIndex(of: "--prompt-ids").map { _ in
+            requireValue("--prompt-ids", args) } ?? "2,9259"
+        func intArg(_ name: String, _ def: Int) -> Int {
+            guard let i = args.firstIndex(of: name) else { return def }
+            guard let v = Int(requireValue(name, args)) else {
+                fail("\(name) must be an integer"); return def }
+            return v
+        }
+        let stepsArg = intArg("--steps", 4)
+        let smallBudget = intArg("--small-budget", 8_000_000)
+        let largeBudget = intArg("--large-budget", 1_000_000_000)
+        guard stepsArg >= 1, stepsArg <= 16,
+              smallBudget > 0, largeBudget > smallBudget else {
+            fail("bad --steps/--small-budget/--large-budget")
+        }
+        do {
+            let fileURL = URL(fileURLWithPath: path)
+            // Bounded graph read (same policy as gemma-forge).
+            let graphHandle = try FileHandle(forReadingFrom: URL(fileURLWithPath: graphPath))
+            var graphData = Data()
+            while graphData.count <= 8 << 20 {
+                let chunk = try graphHandle.read(upToCount: 1 << 16) ?? Data()
+                if chunk.isEmpty { break }
+                graphData.append(chunk)
+            }
+            try? graphHandle.close()
+            guard graphData.count <= 8 << 20 else { fail("graph file > 8 MiB") }
+            let graph = try GemmaGraph.parse(graphData)
+            let preFile = try GGUFReader.read(fileURL)
+            let preConfig = try Gemma4Config(file: preFile)
+            let prompt = promptArg.split(separator: ",").map {
+                guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+                      id >= 0, id < preConfig.vocabSize else {
+                    fail("invalid prompt id '\($0)')"); return 0 }
+                return id
+            }
+            guard !prompt.isEmpty, prompt.count + stepsArg <= 4096 else {
+                fail("bad prompt workload")
+            }
+            try GemmaGraph.validate(graph, config: preConfig, file: preFile)
+            let reference = GemmaForgeCandidate(segmentBatching: false,
+                                                top5Diagnostic: false)
+            let batching = GemmaForgeCandidate(segmentBatching: true,
+                                               top5Diagnostic: false)
+
+            // Strict logit comparison: empty/count-mismatch/non-finite
+            // on EITHER side is a hard failure before any max-error
+            // (Swift's max can hide NaN).
+            func worstRel(_ a: [Float], _ b: [Float]) throws -> Double {
+                guard !a.isEmpty, a.count == b.count,
+                      a.allSatisfy({ $0.isFinite }),
+                      b.allSatisfy({ $0.isFinite }) else {
+                    throw GemmaForgeError.executionFailed(
+                        "logit vectors empty/count-mismatch/non-finite")
+                }
+                var worst = 0.0
+                for i in 0..<a.count {
+                    let d = abs(Double(a[i] - b[i])) / max(1.0, abs(Double(b[i])))
+                    if d.isNaN { throw GemmaForgeError.executionFailed("NaN rel error") }
+                    worst = max(worst, d)
+                }
+                return worst
+            }
+
+            // ---- Phase 1: failed-enable rollback + resident snapshot.
+            func residentReference() throws
+                    -> (promptLogits: [Float], tokens: [Int],
+                        stepLogits: [[Float]]) {
+                let runner = try Gemma4Runner(fileAt: fileURL)
+                // Rollback regression: an impossible budget must throw
+                // and leave the resident whole-file mode fully intact.
+                guard (try? runner.enableExpertCache(budgetBytes: 1)) == nil else {
+                    throw GemmaForgeError.executionFailed(
+                        "budget-1 enable unexpectedly succeeded")
+                }
+                runner.reset()
+                let prefill = try runner.forward(tokenIds: prompt)
+                let promptLogits = try runner.currentLogits()
+                var tokens = [prefill.argmaxToken]
+                var stepLogits = [[Float]]()
+                var prev = prefill.argmaxToken
+                while tokens.count <= stepsArg {
+                    let ev = try runner.forward(tokenIds: [prev])
+                    stepLogits.append(try runner.currentLogits())
+                    tokens.append(ev.argmaxToken)
+                    prev = ev.argmaxToken
+                }
+                return (promptLogits, tokens, stepLogits)
+            }
+            let snapshot = try autoreleasepool { try residentReference() }
+            if let dev = MTLCreateSystemDefaultDevice() {
+                print("device allocated after resident release, before cache init (sample): \(dev.currentAllocatedSize) B")
+            }
+            print("phase 1: failed-enable rejected; resident reference \(prompt.count) prompt tokens + \(stepsArg) steps captured; runner released")
+
+            // ---- Phase 2: tiny-budget cache runner (forced eviction),
+            // per-kernel AND segment-batching (in-flight pinning) modes.
+            func cachePass(budget: Int, candidate: GemmaForgeCandidate,
+                           replays: Int, prefetch: Bool = true) throws
+                    -> (worstRel: Double, tokensMatch: Bool,
+                        stats: Gemma4ExpertCacheStats) {
+                let runner = try Gemma4Runner(fileAt: fileURL,
+                                              expertCacheBudgetBytes: budget)
+                runner.expertPrefetch = prefetch
+                guard let st0 = runner.expertCacheStats() else {
+                    throw GemmaForgeError.executionFailed("cache stats missing")
+                }
+                var stepWorst = 0.0
+                var tokensMatch = true
+                for _ in 0..<replays {
+                    runner.reset()
+                    let (am, lg, _, _, _) = try GemmaForge.executeGraph(
+                        graph, runner: runner, tokenIds: prompt,
+                        candidate: candidate)
+                    tokensMatch = tokensMatch && am == snapshot.tokens[0]
+                    stepWorst = max(stepWorst, try worstRel(lg, snapshot.promptLogits))
+                    var prev = am
+                    for s in 0..<stepsArg {
+                        let (next, sl, _, _, _) = try GemmaForge.executeGraphContinue(
+                            graph, runner: runner, token: prev, candidate: candidate)
+                        tokensMatch = tokensMatch && next == snapshot.tokens[s + 1]
+                        stepWorst = max(stepWorst, try worstRel(sl, snapshot.stepLogits[s]))
+                        prev = next
+                    }
+                }
+                guard let st = runner.expertCacheStats() else {
+                    throw GemmaForgeError.executionFailed("cache stats missing")
+                }
+                _ = st0
+                return (stepWorst, tokensMatch, st)
+            }
+            func reportStats(_ tag: String, budget: Int, _ st: Gemma4ExpertCacheStats) {
+                print("\(tag)buffer-length ledger (budget \(budget) B): slot pools \(st.residentBytes) B (gu \(st.guSlots) x \(st.guStrideBytes) + dn \(st.dnSlots) x \(st.dnStrideBytes)), non-expert compact buffer \(st.nonExpertResidentBytes) B")
+                print("\(tag)measured samples: device allocated sampled at end of construction \(st.initDeviceAllocatedBytes) B (a SAMPLE — not a guaranteed startup peak), peak sampled \(st.peakDeviceAllocatedBytes) B, peak pinned \(st.peakPinnedBytes) B")
+                print("\(tag)io counters: misses \(st.misses), hits \(st.hits) (of which prefetch-served \(st.prefetchHits); prefetch installed \(st.prefetchSlices) slices / \(st.prefetchBytes) B), evictions \(st.evictions), bytes read \(st.sliceBytesRead) (pread may hit OS page cache — no cold-SSD claim), flushes-before-reuse \(st.flushesBeforeReuse)")
+                let enc = JSONEncoder()
+                enc.outputFormatting = [.sortedKeys]
+                if let js = try? enc.encode(st),
+                   let line = String(data: js, encoding: .utf8) {
+                    print("\(tag)EXPERT_CACHE_STATS_JSON \(line)")
+                }
+            }
+
+            let smallPerKernel = try autoreleasepool {
+                try cachePass(budget: smallBudget, candidate: reference,
+                              replays: 1, prefetch: false)
+            }
+            guard smallPerKernel.tokensMatch, smallPerKernel.worstRel < 1e-4,
+                  smallPerKernel.stats.misses > 0,
+                  smallPerKernel.stats.evictions > 0,
+                  smallPerKernel.stats.hits == 0 else {
+                fail(String(format: "small-budget per-kernel pass failed: tokensMatch %@, worstRel %.3e, misses %d, evictions %d, hits %d",
+                            smallPerKernel.tokensMatch ? "yes" : "NO",
+                            smallPerKernel.worstRel,
+                            smallPerKernel.stats.misses,
+                            smallPerKernel.stats.evictions,
+                            smallPerKernel.stats.hits))
+            }
+            print(String(format: "phase 2a per-kernel (budget %d B): exact tokens, worst rel %.3e",
+                         smallBudget, smallPerKernel.worstRel))
+            reportStats("  ", budget: smallBudget, smallPerKernel.stats)
+
+            // Segment batching with an insufficient slot count is what
+            // actually exercises in-flight pins: encoded expert matvecs
+            // hold slots in flight until a flush-before-reuse.
+            let smallBatched = try autoreleasepool {
+                try cachePass(budget: smallBudget, candidate: batching,
+                              replays: 1, prefetch: false)
+            }
+            guard smallBatched.tokensMatch, smallBatched.worstRel < 1e-4,
+                  smallBatched.stats.misses > 0,
+                  smallBatched.stats.evictions > 0,
+                  smallBatched.stats.flushesBeforeReuse > 0,
+                  smallBatched.stats.peakPinnedBytes <= smallBatched.stats.residentBytes,
+                  smallBatched.stats.peakPinnedBytes <= smallBudget else {
+                fail(String(format: "small-budget batching pass failed: tokensMatch %@, worstRel %.3e, flushesBeforeReuse %d, peakPinned %d (resident %d, budget %d)",
+                            smallBatched.tokensMatch ? "yes" : "NO",
+                            smallBatched.worstRel,
+                            smallBatched.stats.flushesBeforeReuse,
+                            smallBatched.stats.peakPinnedBytes,
+                            smallBatched.stats.residentBytes, smallBudget))
+            }
+            print(String(format: "phase 2b batching (budget %d B): exact tokens, worst rel %.3e, in-flight flushes-before-reuse %d observed",
+                         smallBudget, smallBatched.worstRel,
+                         smallBatched.stats.flushesBeforeReuse))
+            reportStats("  ", budget: smallBudget, smallBatched.stats)
+
+            // ---- Phase 3: larger-budget cache runner, replayed twice —
+            // reported hits are the OBSERVED count (prompt and decode
+            // working sets differ; no full-replay-hit assumption).
+            let large = try autoreleasepool {
+                try cachePass(budget: largeBudget, candidate: reference, replays: 2)
+            }
+            guard large.tokensMatch, large.worstRel < 1e-4,
+                  large.stats.hits > 0 else {
+                fail(String(format: "large-budget pass failed: tokensMatch %@, worstRel %.3e, hits %d",
+                            large.tokensMatch ? "yes" : "NO",
+                            large.worstRel, large.stats.hits))
+            }
+            let totalLoads = large.stats.hits + large.stats.misses
+            print(String(format: "phase 3 (budget %d B, 2 replays, prefetch on): exact tokens, worst rel %.3e; observed hits %d of %d loads (%.1f%%, prefetch-served %d)",
+                         largeBudget, large.worstRel, large.stats.hits,
+                         totalLoads,
+                         100.0 * Double(large.stats.hits) / Double(totalLoads),
+                         large.stats.prefetchHits))
+            reportStats("  ", budget: largeBudget, large.stats)
+            // Prefetch A/B: identical workload with prefetch disabled —
+            // logits and greedy tokens must be unchanged (prefetch never
+            // evicts and loads byte-identical slices); hit/eviction
+            // counters are reported, whatever they are.
+            let noPf = try autoreleasepool {
+                try cachePass(budget: largeBudget, candidate: reference,
+                              replays: 2, prefetch: false)
+            }
+            guard noPf.tokensMatch, noPf.worstRel < 1e-4 else {
+                fail(String(format: "prefetch-off pass failed: tokensMatch %@, worstRel %.3e",
+                            noPf.tokensMatch ? "yes" : "NO", noPf.worstRel))
+            }
+            let pfLoads = noPf.stats.hits + noPf.stats.misses
+            print(String(format: "phase 3b (same workload, prefetch OFF): exact tokens, worst rel %.3e; hits %d of %d loads (%.1f%%), evictions %d vs %d with prefetch",
+                         noPf.worstRel, noPf.stats.hits, pfLoads,
+                         100.0 * Double(noPf.stats.hits) / Double(pfLoads),
+                         noPf.stats.evictions, large.stats.evictions))
+            reportStats("  ", budget: largeBudget, noPf.stats)
+            print("EXPERT_CACHE_PASS")
+        } catch {
+            fail("gemma-expert-cache-verify failed: \(error)")
+        }
+
+    case "gemma-serve":
+        // Bounded LOCALHOST serving from a validated persisted SSA plan
+        // artifact. No model.py, no agents, no Python at runtime — the
+        // server loads the plan (typed SSA schedule + selected
+        // candidate), checks its identity (graph/GGUF content/engine/
+        // hardware/toolchain/schedule/planDigest WITHOUT the workload
+        // binding — the selected candidate was measured on the plan's
+        // own profiling workload, disclosed at startup; no
+        // fastest-on-all-prompts claim), and serves a bounded greedy
+        // subset: one POST /generate at a time (serial GPU), plus GET
+        // /health (no body). Runtime executes the STORED schedule and
+        // selected flags only; by default no per-request reference
+        // replay (correctness gates ran at forge time) —
+        // --gate-first-request additionally gates the first served
+        // generation against the runner forward path (a SEPARATE
+        // execution path sharing the same validated kernel primitives,
+        // NOT a mathematically independent implementation): exact greedy
+        // tokens and full-logit rel < 1e-4 at every step, finiteness on
+        // both arrays, and final exact sequence equality. Bounded
+        // everywhere: request count, prompt length, output tokens,
+        // header/body sizes, one absolute per-request read deadline
+        // enforced on EVERY recv (socket timeouts shrink to the
+        // remaining budget); duplicate Content-Length, Transfer-Encoding,
+        // malformed header lines, fractional/boolean-typed max_tokens and
+        // non-boolean chat are rejected; Content-Type base media type
+        // must be exactly application/json (parameters allowed).
+        signal(SIGPIPE, SIG_IGN)
+        let path = requireValue("--file", args)
+        let graphPath = requireValue("--graph", args)
+        let planPath = requireValue("--plan", args)
+        func intArgServe(_ name: String, _ def: Int) -> Int {
+            guard let i = args.firstIndex(of: name) else { return def }
+            guard let v = Int(requireValue(name, args)) else {
+                fail("\(name) must be an integer"); return def }
+            return v
+        }
+        let port = intArgServe("--port", 8377)
+        let maxTokens = intArgServe("--max-tokens", 16)
+        let maxPromptChars = intArgServe("--max-prompt-chars", 512)
+        let maxRequests = intArgServe("--max-requests", 64)
+        let gateFirstRequest = args.contains("--gate-first-request")
+        guard port >= 1024, port <= 65535,
+              maxTokens >= 1, maxTokens <= 64,
+              maxPromptChars >= 1, maxPromptChars <= 2048,
+              maxRequests >= 1, maxRequests <= 1024 else {
+            fail("--port must be 1024...65535; --max-tokens 1...64; --max-prompt-chars 1...2048; --max-requests 1...1024")
+        }
+        do {
+            let fileURL = URL(fileURLWithPath: path)
+            let graphHandle = try FileHandle(forReadingFrom: URL(fileURLWithPath: graphPath))
+            var graphData = Data()
+            while graphData.count <= 8 << 20 {
+                let chunk = try graphHandle.read(upToCount: 1 << 16) ?? Data()
+                if chunk.isEmpty { break }
+                graphData.append(chunk)
+            }
+            try? graphHandle.close()
+            guard graphData.count <= 8 << 20 else { fail("graph file > 8 MiB") }
+            let graph = try GemmaGraph.parse(graphData)
+            let preFile = try GGUFReader.read(fileURL)
+            let preConfig = try Gemma4Config(file: preFile)
+            try GemmaGraph.validate(graph, config: preConfig, file: preFile)
+            var expertBudget: Int? = nil
+            if args.contains("--expert-cache-budget") {
+                guard let b = Int(requireValue("--expert-cache-budget", args)), b > 0 else {
+                    fail("--expert-cache-budget must be a positive integer (bytes)")
+                }
+                func strideOf(_ name: String) -> Int? {
+                    guard let info = try? preFile.tensor(name),
+                          info.ggmlType == GGMLTensorType.q4_0.rawValue,
+                          info.dims.count == 3, info.dims[0] % 32 == 0 else { return nil }
+                    return info.dims[0] / 32 * 18 * info.dims[1]
+                }
+                guard let gu = strideOf("blk.0.ffn_gate_up_exps.weight"),
+                      let dn = strideOf("blk.0.ffn_down_exps.weight"),
+                      gu > 0, dn > 0,
+                      ExpertCacheGeometry.slotCounts(budgetBytes: b,
+                                                     guStrideBytes: gu,
+                                                     dnStrideBytes: dn) != nil else {
+                    fail("--expert-cache-budget \(b) cannot hold one gate-up + one down expert slice")
+                }
+                expertBudget = b
+            }
+            let runner = try Gemma4Runner(fileAt: fileURL,
+                                          expertCacheBudgetBytes: expertBudget)
+            let hardware = runner.hardwareProfile()
+            let engine = GemmaForge.engineDigest(try runner.engineIdentity())
+            print("hashing GGUF for plan identity (streaming, one pass)…")
+            let ggufDigest = try GemmaForge.fileDigest(fileURL)
+            let plan = try GemmaForge.loadPlan(from: URL(fileURLWithPath: planPath))
+            try GemmaForge.validatePlanIdentity(plan, graph: graph,
+                                                ggufDigest: ggufDigest,
+                                                engineDigest: engine,
+                                                hardware: hardware,
+                                                expertCacheBudget: expertBudget)
+            print("plan identity validated: \(plan.planDigest)")
+            print("disclosure: selected candidate \(plan.selected) was measured on the plan's profiling workload (\(plan.promptTokenCount) prompt tokens, \(plan.decodeTokens) decode tokens, workload digest \(plan.workloadDigest)); serving uses it as the engine configuration for a bounded greedy subset — no fastest-on-all-prompts claim")
+            let tokenizer = try GemmaTokenizer(gguf: GGUFReader.read(fileURL))
+
+            // Gate-mode reference (runner forward path — shares the
+            // validated kernel primitives, not independent math).
+            func referenceGeneration(promptIDs: [Int], tokens: Int) throws
+                    -> (ids: [Int], stepLogits: [[Float]], prefillLogits: [Float]) {
+                runner.reset()
+                let prefill = try runner.forward(tokenIds: promptIDs)
+                let prefillLogits = try runner.currentLogits()
+                var ids = [prefill.argmaxToken]
+                var stepLogits = [[Float]]()
+                var prev = prefill.argmaxToken
+                while ids.count < tokens {
+                    if tokenizer.isEndOfGeneration(prev) { break }
+                    let ev = try runner.forward(tokenIds: [prev])
+                    stepLogits.append(try runner.currentLogits())
+                    ids.append(ev.argmaxToken)
+                    prev = ev.argmaxToken
+                }
+                return (ids, stepLogits, prefillLogits)
+            }
+
+            // Production path: execute the STORED schedule + selected
+            // flags only. Exactly `tokens` output tokens (EOS stops
+            // early); wall times measured for the whole request, the
+            // prefill, and each decode step.
+            func generate(promptText: String, chat: Bool, tokens: Int,
+                          reference: (ids: [Int], stepLogits: [[Float]],
+                                      prefillLogits: [Float])? = nil) throws
+                    -> (ids: [Int], text: String, medianWall: Double,
+                        requestWall: Double, prefillWall: Double) {
+                let requestStart = DispatchTime.now()
+                let input = chat
+                    ? "<|turn>user\n" + promptText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+                    : promptText
+                let promptIDs = try tokenizer.encode(input)
+                guard promptIDs.count + tokens <= 4096 else {
+                    throw GemmaForgeError.executionFailed("prompt+output exceeds context")
+                }
+                runner.reset()
+                let p0 = DispatchTime.now()
+                let (am, lg, _, _, _) = try GemmaForge.executeGraph(
+                    graph, runner: runner, tokenIds: promptIDs,
+                    candidate: plan.selected, schedule: plan.schedule)
+                let prefillWall = Double(DispatchTime.now().uptimeNanoseconds
+                                         - p0.uptimeNanoseconds) / 1000
+                if let ref = reference {
+                    guard am == ref.ids[0],
+                          lg.count == ref.prefillLogits.count,
+                          lg.allSatisfy({ $0.isFinite }),
+                          ref.prefillLogits.allSatisfy({ $0.isFinite }),
+                          zip(lg, ref.prefillLogits).allSatisfy({
+                              abs(Double($0.0 - $0.1)) / max(1.0, abs(Double($0.1))) < 1e-4
+                          }) else {
+                        throw GemmaForgeError.executionFailed(
+                            "gated prefill diverged from reference")
+                    }
+                }
+                var gen = [am]
+                var wallSamples: [Double] = []
+                for step in 1..<tokens {
+                    if tokenizer.isEndOfGeneration(gen.last!) { break }
+                    let t0 = DispatchTime.now()
+                    let (next, sl, _, _, _) = try GemmaForge.executeGraphContinue(
+                        graph, runner: runner, token: gen.last!,
+                        candidate: plan.selected, schedule: plan.schedule)
+                    let wall = Double(DispatchTime.now().uptimeNanoseconds
+                                      - t0.uptimeNanoseconds) / 1000
+                    if let ref = reference, step - 1 < ref.stepLogits.count {
+                        let want = ref.stepLogits[step - 1]
+                        // Both arrays finiteness-checked explicitly
+                        // before any comparison (max can hide NaN).
+                        guard next == ref.ids[step],
+                              sl.count == want.count,
+                              sl.allSatisfy({ $0.isFinite }),
+                              want.allSatisfy({ $0.isFinite }),
+                              zip(sl, want).allSatisfy({
+                                  abs(Double($0.0 - $0.1)) / max(1.0, abs(Double($0.1))) < 1e-4
+                              }) else {
+                            throw GemmaForgeError.executionFailed(
+                                "gated step \(step) diverged from reference")
+                        }
+                    }
+                    gen.append(next)
+                    wallSamples.append(wall)
+                }
+                // No skipped comparisons: the ENTIRE gated sequence
+                // must equal the reference sequence exactly.
+                if let ref = reference {
+                    guard gen == ref.ids else {
+                        throw GemmaForgeError.executionFailed(
+                            "gated sequence differs from reference")
+                    }
+                }
+                let sorted = wallSamples.sorted()
+                let mid = sorted.count / 2
+                let median = sorted.isEmpty ? 0
+                    : (sorted.count % 2 == 1 ? sorted[mid]
+                                             : (sorted[mid - 1] + sorted[mid]) / 2)
+                let requestWall = Double(DispatchTime.now().uptimeNanoseconds
+                                         - requestStart.uptimeNanoseconds) / 1000
+                return (gen, try tokenizer.decode(gen), median, requestWall,
+                        prefillWall)
+            }
+
+            // ---- minimal bounded HTTP server on 127.0.0.1 ----
+            let maxHeaderBytes = 8192
+            let maxBodyBytes = 4096
+            let absoluteDeadlineNs: UInt64 = 15_000_000_000   // 15 s per request
+            let serverFD = socket(AF_INET, Int32(SOCK_STREAM), 0)
+            guard serverFD >= 0 else { fail("socket() failed: errno \(errno)") }
+            var one: Int32 = 1
+            setsockopt(serverFD, SOL_SOCKET, SO_REUSEADDR, &one,
+                       socklen_t(MemoryLayout<Int32>.size))
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = UInt16(port).bigEndian
+            addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+            let bindRC = withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(serverFD, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            guard bindRC == 0 else { fail("bind(127.0.0.1:\(port)) failed: errno \(errno)") }
+            guard listen(serverFD, 1) == 0 else { fail("listen() failed: errno \(errno)") }
+            print("serving http://127.0.0.1:\(port)/generate (serial, \(maxRequests)-request bound, prompt ≤ \(maxPromptChars) chars, ≤ \(maxTokens) tokens, body ≤ \(maxBodyBytes) B, 15 s absolute read deadline)")
+            print("SERVE_READY")
+
+            func sendHTTP(_ fd: Int32, _ status: String, _ body: Data) {
+                let head = "HTTP/1.1 \(status)\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+                let payload = head.data(using: .utf8)! + body
+                payload.withUnsafeBytes { raw in
+                    var sent = 0
+                    while sent < raw.count {
+                        let n = Darwin.send(fd, raw.baseAddress!.advanced(by: sent),
+                                            raw.count - sent, 0)
+                        if n <= 0 { break }
+                        sent += n
+                    }
+                }
+            }
+            func jsonError(_ message: String) -> Data {
+                (try? JSONSerialization.data(withJSONObject: ["error": message])) ?? Data()
+            }
+            // Strict JSON type helpers: a JSON true/false is a
+            // CFBoolean; a JSON number is not.
+            func isJSONBoolean(_ v: Any) -> Bool {
+                guard let n = v as? NSNumber else { return false }
+                return CFGetTypeID(n) == CFBooleanGetTypeID()
+            }
+            func isJSONInteger(_ v: Any) -> Bool {
+                guard let n = v as? NSNumber else { return false }
+                if CFGetTypeID(n) == CFBooleanGetTypeID() { return false }
+                return n.doubleValue.isFinite
+                    && n.doubleValue >= 1
+                    && n.doubleValue <= Double(maxTokens)
+                    && (n.doubleValue.truncatingRemainder(dividingBy: 1)) == 0
+            }
+            // Set SO_RCVTIMEO/SO_SNDTIMEO; false on failure (the
+            // connection is closed — bounded behavior).
+            func setSocketTimeouts(_ fd: Int32, seconds: Double) -> Bool {
+                guard seconds > 0 else { return false }
+                var tv = timeval(tv_sec: time_t(seconds),
+                                 tv_usec: suseconds_t((seconds.truncatingRemainder(dividingBy: 1)) * 1_000_000))
+                // {0,0} would DISABLE the socket timeout — round up to
+                // a nonzero 1 us so a near-deadline read cannot block.
+                if tv.tv_sec == 0 && tv.tv_usec == 0 { tv.tv_usec = 1 }
+                let rc1 = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv,
+                                     socklen_t(MemoryLayout<timeval>.size))
+                let rc2 = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv,
+                                     socklen_t(MemoryLayout<timeval>.size))
+                return rc1 == 0 && rc2 == 0
+            }
+            // One bounded recv with the socket timeout shrunk to the
+            // REMAINING absolute deadline (a single read can never
+            // overshoot it by a full timeout). -2 = timeout.
+            func boundedRecv(_ fd: Int32, deadline: UInt64,
+                             into buf: UnsafeMutablePointer<UInt8>, count: Int) -> Int {
+                let now = DispatchTime.now().uptimeNanoseconds
+                guard now < deadline else { return -2 }
+                let remainingNs = deadline - now
+                guard setSocketTimeouts(fd, seconds: Double(remainingNs) / 1e9)
+                else { return -2 }
+                let n = recv(fd, buf, count, 0)
+                // The read itself must also finish inside the deadline;
+                // a socket-level EAGAIN/EWOULDBLOCK is a timeout too.
+                guard DispatchTime.now().uptimeNanoseconds <= deadline else { return -2 }
+                if n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) { return -2 }
+                return n
+            }
+            // Strict header parse. The recv may deliver header AND body
+            // in one packet, so the body PREFIX read past the header
+            // terminator is returned (never discarded). Returns nil
+            // after an error response.
+            func readHeaders(_ fd: Int32, deadline: UInt64)
+                    -> (method: String, target: String, contentLength: Int?,
+                        contentType: String?, bodyPrefix: Data)? {
+                let cap = maxHeaderBytes + maxBodyBytes
+                var raw = Data()
+                var headerEnd = -1
+                while raw.count < cap {
+                    var chunk = [UInt8](repeating: 0, count: min(4096, cap - raw.count))
+                    let n = boundedRecv(fd, deadline: deadline, into: &chunk,
+                                        count: chunk.count)
+                    if n == -2 {
+                        sendHTTP(fd, "408 Request Timeout",
+                             jsonError("absolute read deadline exceeded"))
+                        return nil
+                    }
+                    guard n > 0 else { break }
+                    raw.append(contentsOf: chunk[0..<n])
+                    if let r = raw.range(of: Data("\r\n\r\n".utf8)) {
+                        headerEnd = r.lowerBound
+                        break
+                    }
+                }
+                if headerEnd < 0 || headerEnd + 4 > maxHeaderBytes {
+                    let status = headerEnd + 4 > maxHeaderBytes || raw.count >= cap
+                        ? "431 Request Header Fields Too Large"
+                        : "400 Bad Request"
+                    sendHTTP(fd, status,
+                             jsonError("headers exceed \(maxHeaderBytes) bytes or missing terminator"))
+                    return nil
+                }
+                // Body prefix: bytes already read past the terminator
+                // (curl commonly sends headers+body in one segment).
+                let prefix = raw.count > headerEnd + 4
+                    ? raw.subdata(in: (headerEnd + 4)..<raw.count) : Data()
+                guard prefix.count <= maxBodyBytes else {
+                    sendHTTP(fd, "413 Payload Too Large",
+                         jsonError("body exceeds \(maxBodyBytes) bytes"))
+                    return nil
+                }
+                // Header text EXCLUDES the empty terminator lines: the
+                // split below sees only real header lines (no arbitrary
+                // interior empty lines).
+                guard let headerText = String(data: raw.subdata(in: 0..<headerEnd),
+                                              encoding: .utf8) else {
+                    sendHTTP(fd, "400 Bad Request", jsonError("headers not UTF-8"))
+                    return nil
+                }
+                let lines = headerText.components(separatedBy: "\r\n")
+                let requestLine = lines.first?.components(separatedBy: " ") ?? []
+                guard requestLine.count == 3,
+                      requestLine[2] == "HTTP/1.0" || requestLine[2] == "HTTP/1.1" else {
+                    sendHTTP(fd, "400 Bad Request",
+                         jsonError("malformed request line or protocol (need HTTP/1.0 or HTTP/1.1)"))
+                    return nil
+                }
+                var contentLength: Int? = nil
+                var sawContentLength = false
+                var contentType: String? = nil
+                for line in lines.dropFirst() {
+                    let parts = line.split(separator: ":", maxSplits: 1)
+                    guard parts.count == 2, !parts[0].isEmpty else {
+                        sendHTTP(fd, "400 Bad Request", jsonError("malformed header line"))
+                        return nil
+                    }
+                    let name = parts[0].trimmingCharacters(in: .whitespaces).lowercased()
+                    let value = parts[1].trimmingCharacters(in: .whitespaces)
+                    if name == "transfer-encoding" {
+                        sendHTTP(fd, "400 Bad Request",
+                             jsonError("transfer-encoding is not supported"))
+                        return nil
+                    }
+                    if name == "content-length" {
+                        if sawContentLength {
+                            sendHTTP(fd, "400 Bad Request",
+                                 jsonError("duplicate content-length"))
+                            return nil
+                        }
+                        sawContentLength = true
+                        guard let v = Int(value), v >= 0, v <= maxBodyBytes else {
+                            sendHTTP(fd, "413 Payload Too Large",
+                                 jsonError("content-length exceeds \(maxBodyBytes) bytes"))
+                            return nil
+                        }
+                        contentLength = v
+                    }
+                    if name == "content-type" { contentType = value }
+                }
+                return (requestLine[0], requestLine[1], contentLength, contentType,
+                        prefix)
+            }
+            func readBody(_ fd: Int32, deadline: UInt64, bodyLength: Int,
+                          prefix: Data) -> Data? {
+                var body = prefix
+                if body.count > bodyLength {
+                    sendHTTP(fd, "413 Payload Too Large",
+                         jsonError("body exceeds content-length bound"))
+                    return nil
+                }
+                var chunk = [UInt8](repeating: 0, count: min(4096, max(1, bodyLength)))
+                while body.count < bodyLength {
+                    let n = boundedRecv(fd, deadline: deadline, into: &chunk,
+                                        count: min(chunk.count, bodyLength - body.count))
+                    if n <= 0 {
+                        sendHTTP(fd, "408 Request Timeout",
+                             jsonError("body read timeout/truncation"))
+                        return nil
+                    }
+                    body.append(contentsOf: chunk[0..<n])
+                }
+                return body
+            }
+
+            var handled = 0
+            var firstRequest = true
+            while handled < maxRequests {
+                let clientFD = accept(serverFD, nil, nil)
+                guard clientFD >= 0 else {
+                    print("accept failed (errno \(errno)) — stopping")
+                    break
+                }
+                defer { close(clientFD) }
+                handled += 1
+                // Initial generous timeouts (bounded by the absolute
+                // deadline in every read anyway).
+                guard setSocketTimeouts(clientFD, seconds: 10) else {
+                    sendHTTP(clientFD, "500 Internal Server Error",
+                         jsonError("socket timeout configuration failed"))
+                    continue
+                }
+                let deadline = DispatchTime.now().uptimeNanoseconds &+ absoluteDeadlineNs
+                guard let headers = readHeaders(clientFD, deadline: deadline) else { continue }
+                // GET /health: no body required or allowed.
+                if headers.method == "GET" {
+                    guard headers.target == "/health" else {
+                        sendHTTP(clientFD, "404 Not Found",
+                             jsonError("unknown path \(headers.target)"))
+                        continue
+                    }
+                    guard (headers.contentLength ?? 0) == 0,
+                          headers.bodyPrefix.isEmpty else {
+                        sendHTTP(clientFD, "400 Bad Request",
+                             jsonError("/health takes no body"))
+                        continue
+                    }
+                    sendHTTP(clientFD, "200 OK",
+                         (try? JSONSerialization.data(withJSONObject: [
+                             "status": "ok", "plan_digest": plan.planDigest
+                         ])) ?? Data())
+                    continue
+                }
+                guard headers.method == "POST" else {
+                    sendHTTP(clientFD, "405 Method Not Allowed",
+                         jsonError("only POST /generate and GET /health are supported"))
+                    continue
+                }
+                guard headers.target == "/generate" else {
+                    sendHTTP(clientFD, "404 Not Found",
+                         jsonError("unknown path \(headers.target)"))
+                    continue
+                }
+                // Strict base media type equality (parameters allowed).
+                let mediaType = (headers.contentType ?? "")
+                    .split(separator: ";").first?
+                    .trimmingCharacters(in: .whitespaces).lowercased() ?? ""
+                guard mediaType == "application/json" else {
+                    sendHTTP(clientFD, "415 Unsupported Media Type",
+                         jsonError("content-type must be application/json"))
+                    continue
+                }
+                guard let bodyLength = headers.contentLength else {
+                    sendHTTP(clientFD, "411 Length Required",
+                         jsonError("content-length required"))
+                    continue
+                }
+                guard let body = readBody(clientFD, deadline: deadline,
+                                          bodyLength: bodyLength,
+                                          prefix: headers.bodyPrefix) else { continue }
+                guard let obj = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+                else {
+                    sendHTTP(clientFD, "400 Bad Request",
+                         jsonError("body is not a JSON object"))
+                    continue
+                }
+                let allowed: Set<String> = ["text", "chat", "max_tokens"]
+                guard Set(obj.keys).isSubset(of: allowed) else {
+                    sendHTTP(clientFD, "400 Bad Request",
+                         jsonError("unsupported body keys"))
+                    continue
+                }
+                if let chat = obj["chat"], !isJSONBoolean(chat) {
+                    sendHTTP(clientFD, "400 Bad Request",
+                         jsonError("chat must be a JSON boolean"))
+                    continue
+                }
+                var tokens = maxTokens
+                if let tAny = obj["max_tokens"] {
+                    guard isJSONInteger(tAny), let n = tAny as? NSNumber else {
+                        sendHTTP(clientFD, "400 Bad Request",
+                             jsonError("max_tokens must be a JSON integer 1...\(maxTokens)"))
+                        continue
+                    }
+                    tokens = Int(n.int64Value)
+                }
+                guard let text = obj["text"] as? String,
+                      !text.isEmpty, text.count <= maxPromptChars else {
+                    sendHTTP(clientFD, "400 Bad Request",
+                         jsonError("text must be a non-empty string of at most \(maxPromptChars) chars"))
+                    continue
+                }
+                let chat = (obj["chat"] as? NSNumber)?.boolValue ?? false
+                let handlerStart = DispatchTime.now()
+                var gated = false
+                do {
+                    var reference: (ids: [Int], stepLogits: [[Float]],
+                                    prefillLogits: [Float])? = nil
+                    if gateFirstRequest, firstRequest {
+                        let input = chat
+                            ? "<|turn>user\n" + text.trimmingCharacters(in: .whitespacesAndNewlines)
+                                + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+                            : text
+                        let promptIDs = try tokenizer.encode(input)
+                        guard promptIDs.count + tokens <= 4096 else {
+                            throw GemmaForgeError.executionFailed(
+                                "prompt+output exceeds context")
+                        }
+                        reference = try referenceGeneration(promptIDs: promptIDs,
+                                                            tokens: tokens)
+                        gated = true
+                    }
+                    let result = try generate(promptText: text, chat: chat,
+                                              tokens: tokens, reference: reference)
+                    firstRequest = false
+                    let handlerWall = Double(DispatchTime.now().uptimeNanoseconds
+                                             - handlerStart.uptimeNanoseconds) / 1000
+                    let resp = try JSONSerialization.data(withJSONObject: [
+                        "text": result.text,
+                        "token_ids": result.ids,
+                        "output_tokens": result.ids.count,
+                        "steps": result.ids.count - 1,
+                        "plan_digest": plan.planDigest,
+                        "gated": gated,
+                        "median_wall_us_per_token": result.medianWall,
+                        "prefill_wall_us": result.prefillWall,
+                        "generation_wall_us": result.requestWall,
+                        "handler_wall_us": handlerWall
+                    ])
+                    sendHTTP(clientFD, "200 OK", resp)
+                    print("served request \(handled)/\(maxRequests): \(result.ids.count - 1) steps, ids \(result.ids)")
+                } catch {
+                    let handlerWall = Double(DispatchTime.now().uptimeNanoseconds
+                                             - handlerStart.uptimeNanoseconds) / 1000
+                    sendHTTP(clientFD, "500 Internal Server Error",
+                         jsonError("generation failed or diverged (handler \(Int(handlerWall)) us): \(error)"))
+                }
+            }
+            close(serverFD)
+            print("request bound (\(maxRequests)) reached — server stopped")
+            print("SERVE_DONE")
+        } catch {
+            fail("gemma-serve failed: \(error)")
         }
 
     case "gemma-profile":

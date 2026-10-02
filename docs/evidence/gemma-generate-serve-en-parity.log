@@ -1,0 +1,5 @@
+prompt ids: 2 105 2364 107 9259 236764 1015 659 611 236881 106 107 105 4368 107 100 45518 107 101
+generated ids: 236777 1006 147224 236743 236812 236764 496 2455
+generated text: I am Gemma 4, a large
+load: 176.7 ms | prefill/TTFT: 22853.8 ms (19 prompt tokens) | decode: 6242.2 ms total (7 steps), median ms/token 877.00 | gpu total: 13084.8 ms
+GENERATION_COMPLETED
