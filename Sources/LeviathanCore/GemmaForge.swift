@@ -43,13 +43,19 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
     /// Tiled cooperative Q6_K matvec (tied embedding / LM head). Same
     /// non-bit-identical caveat and gates as matvecTiledQ4.
     public let matvecTiledQ6: Bool
+    /// Tiled cooperative RMSNorm (measured 44% GPU-time hotspot in the
+    /// per-kernel profile). NOT bit-identical (reassociated sum-of-
+    /// squares); gated against a Double oracle + full Forge gates.
+    public let rmsnormTiled: Bool
 
     public init(segmentBatching: Bool, top5Diagnostic: Bool,
-                matvecTiledQ4: Bool = false, matvecTiledQ6: Bool = false) {
+                matvecTiledQ4: Bool = false, matvecTiledQ6: Bool = false,
+                rmsnormTiled: Bool = false) {
         self.segmentBatching = segmentBatching
         self.top5Diagnostic = top5Diagnostic
         self.matvecTiledQ4 = matvecTiledQ4
         self.matvecTiledQ6 = matvecTiledQ6
+        self.rmsnormTiled = rmsnormTiled
     }
 }
 
@@ -167,6 +173,9 @@ public enum GemmaForge {
                                 matvecTiledQ4: true, matvecTiledQ6: true),
             GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false,
                                 matvecTiledQ4: true, matvecTiledQ6: true),
+            // Tiled cooperative RMSNorm stacked on the current winner.
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                matvecTiledQ4: true, rmsnormTiled: true),
         ]
     }
 
@@ -339,10 +348,12 @@ public enum GemmaForge {
         runner.autoSegment = candidate.segmentBatching
         runner.q4TiledKernel = candidate.matvecTiledQ4
         runner.q6TiledKernel = candidate.matvecTiledQ6
+        runner.rmsTiledKernel = candidate.rmsnormTiled
         defer {
             runner.autoSegment = false
             runner.q4TiledKernel = false
             runner.q6TiledKernel = false
+            runner.rmsTiledKernel = false
         }
         var routerState = [Int: (topIdx: [Int], weights: [Float])]()
 

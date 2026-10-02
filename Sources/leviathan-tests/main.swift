@@ -1736,6 +1736,26 @@ do {
             return i
         }
     }
+    expectSSAReject("ssa Int.max rmsnorm vectors attr rejected",
+                   "vectors/width") { obj in
+        obj["instructions"] = (obj["instructions"] as! [[String: Any]]).map { inst in
+            var i = inst
+            if i["op"] as? String == "rmsnorm", var a = i["attrs"] as? [String: Int],
+               a["vectors"] != nil {
+                a["vectors"] = Int.max; i["attrs"] = a
+            }
+            return i
+        }
+    }
+    expectSSAReject("ssa Int.max rope heads attr rejected", "rope") { obj in
+        obj["instructions"] = (obj["instructions"] as! [[String: Any]]).map { inst in
+            var i = inst
+            if i["op"] as? String == "rope", var a = i["attrs"] as? [String: Int] {
+                a["heads"] = Int.max; i["attrs"] = a
+            }
+            return i
+        }
+    }
     expectSSAReject("ssa gate/up slice interference rejected", "gelu_up") { obj in
         obj["values"] = (obj["values"] as! [[String: Any]]).map { v in
             var w = v
@@ -2014,6 +2034,185 @@ do {
     print("q6 tiled numerical gates completed")
 } catch {
     failed += 1; print("FAIL: q6 tiled gate — threw \(error)")
+}
+
+// MARK: - Tiled cooperative RMSNorm vs Double oracle (ACTUAL runtime shader)
+
+do {
+    // Compiles Gemma4Runner.shaderSource and dispatches g4_rmsnorm_tiled
+    // vs a Double CPU oracle: weighted and scale-free, heads 1/2/8/16,
+    // n 256/512/2816, in-place and out-of-place; deterministic corners
+    // (all-zero, eps-dominated tiny values with an ABSOLUTE tolerance —
+    // a /max(1,|ref|) denominator would be vacuous there — and a large
+    // finite 193400-magnitude input). All GPU outputs and Double
+    // references are checked finite BEFORE error accumulation (a NaN
+    // could otherwise hide in max()). Dynamic-range sweep spans ~1e-5..
+    // 1e3 (nextUniform() is [-1,1), exponent from [-5,3)).
+    guard let device = MTLCreateSystemDefaultDevice(),
+          let queue = device.makeCommandQueue() else {
+        throw Q4TiledTestError("Metal unavailable")
+    }
+    let library = try device.makeLibrary(source: Gemma4Runner.shaderSource, options: nil)
+    guard let fn = library.makeFunction(name: "g4_rmsnorm_tiled"),
+          let p = try? device.makeComputePipelineState(function: fn) else {
+        throw Q4TiledTestError("g4_rmsnorm_tiled pipeline missing")
+    }
+    func rmsOracle(x: [Float], w: [Float]?, eps: Float) -> [Double] {
+        let n = x.count
+        let wd = w.map { $0.map(Double.init) }
+        var ms = 0.0
+        for v in x { ms += Double(v) * Double(v) }
+        let inv = 1.0 / (ms / Double(n) + Double(eps)).squareRoot()
+        return (0..<n).map { Double(x[$0]) * inv * (wd?[$0] ?? 1.0) }
+    }
+    func runRmsTiled(x: [Float], w: [Float]?, vectors: Int, width: Int,
+                     inPlace: Bool) throws -> [[Float]] {
+        let n = x.count / vectors
+        let xb = device.makeBuffer(bytes: x, length: x.count * 4,
+                                   options: .storageModeShared)!
+        let yb = inPlace ? xb : device.makeBuffer(length: x.count * 4,
+                                                  options: .storageModeShared)!
+        let wb = w.map { device.makeBuffer(bytes: $0, length: $0.count * 4,
+                                           options: .storageModeShared)! }
+            ?? device.makeBuffer(length: 16, options: .storageModeShared)!
+        var dims = SIMD2<UInt32>(UInt32(n), UInt32(vectors))
+        var eps: Float = 1e-6
+        var withScale: Int32 = w == nil ? 0 : 1
+        var wOff = UInt64(0)
+        let cmd = queue.makeCommandBuffer()!
+        let enc = cmd.makeComputeCommandEncoder()!
+        enc.setComputePipelineState(p)
+        enc.setBytes(&dims, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
+        enc.setBytes(&eps, length: MemoryLayout<Float>.stride, index: 1)
+        enc.setBytes(&withScale, length: MemoryLayout<Int32>.stride, index: 2)
+        enc.setBytes(&wOff, length: MemoryLayout<UInt64>.stride, index: 3)
+        enc.setBuffer(wb, offset: 0, index: 4)
+        enc.setBuffer(xb, offset: 0, index: 5)
+        enc.setBuffer(yb, offset: 0, index: 6)
+        guard Gemma4Runner.legalCooperativeWidth(
+            width, pipelineMax: p.maxTotalThreadsPerThreadgroup) else {
+            throw Q4TiledTestError("illegal tile width \(width)")
+        }
+        enc.dispatchThreadgroups(MTLSize(width: vectors, height: 1, depth: 1),
+                                 threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+        enc.endEncoding()
+        cmd.commit()
+        cmd.waitUntilCompleted()
+        guard cmd.status == .completed, cmd.error == nil else {
+            throw Q4TiledTestError("kernel failed: \(String(describing: cmd.error))")
+        }
+        let ptr = yb.contents().assumingMemoryBound(to: Float.self)
+        return (0..<vectors).map { v in
+            [Float](UnsafeBufferPointer(start: ptr + v * n, count: n))
+        }
+    }
+    // Deterministic corners, weighted, both in-place and out-of-place.
+    do {
+        let n = 256
+        let corners: [(String, [Float])] = [
+            ("all-zero", [Float](repeating: 0, count: n)),
+            ("eps-dominated", (0..<n).map { Float($0 % 2 == 0 ? 1e-8 : -1e-8) }),
+            ("large-193400", (0..<n).map { ($0 % 2 == 0 ? 1.0 : -1.0) * 193400 }),
+        ]
+        for (label, x0) in corners {
+            var w = [Float](repeating: 1, count: n)
+            for i in 0..<n { w[i] = i % 2 == 0 ? 0.5 : -0.5 }
+            for inPlace in [false, true] {
+                let got = try runRmsTiled(x: x0, w: w, vectors: 1, width: 64,
+                                          inPlace: inPlace)[0]
+                let ref = rmsOracle(x: x0, w: w, eps: 1e-6)
+                check("rms tiled corner \(label) outputs finite (inPlace=\(inPlace))",
+                      got.allSatisfy(\.isFinite) && ref.allSatisfy(\.isFinite))
+                if label == "all-zero" {
+                    check("rms tiled corner all-zero is exact zero (inPlace=\(inPlace))",
+                          got.allSatisfy { $0 == 0 })
+                    continue
+                }
+                if label == "eps-dominated" {
+                    var worstAbs = 0.0
+                    var nonzero = false
+                    for i in 0..<n {
+                        worstAbs = max(worstAbs, abs(Double(got[i]) - ref[i]))
+                        nonzero = nonzero || abs(ref[i]) > 0
+                    }
+                    check(String(format: "rms tiled corner eps-dominated abs err %.2e, nonzero expected (inPlace=%d)",
+                                 worstAbs, inPlace ? 1 : 0),
+                          worstAbs < 1e-7 && nonzero)
+                    continue
+                }
+                var worst = 0.0
+                for i in 0..<n {
+                    worst = max(worst, abs(Double(got[i]) - ref[i]) / max(1.0, abs(ref[i])))
+                }
+                check(String(format: "rms tiled corner %@ vs Double oracle (worst %.2e, inPlace=%d)",
+                             label, worst, inPlace ? 1 : 0), worst < 1e-5)
+            }
+        }
+    }
+    var rng = SplitMix64(seed: 31337)
+    for n in [256, 512, 2816] {
+        for vectors in [1, 2, 8, 16] {
+            var w = [Float](repeating: 0, count: n)
+            for i in 0..<n { w[i] = Float(rng.nextUniform() * 4 - 2) }
+            var x = [Float](repeating: 0, count: n * vectors)
+            for i in 0..<x.count {
+                x[i] = (i % 2 == 0 ? 1 : -1)
+                    * Float(pow(10.0, rng.nextUniform() * 4 - 1))
+            }
+            for (width, inPlace) in [(32, false), (64, true), (128, false)] {
+                let got = try runRmsTiled(x: x, w: w, vectors: vectors,
+                                          width: width, inPlace: inPlace)
+                check("rms tiled outputs finite (n=\(n) vec=\(vectors) w=\(width))",
+                      got.allSatisfy { row in row.allSatisfy(\.isFinite) })
+                var worst = 0.0
+                var allFinite = true
+                for v in 0..<vectors {
+                    let ref = rmsOracle(x: Array(x[(v * n)..<((v + 1) * n)]), w: w, eps: 1e-6)
+                    allFinite = allFinite && ref.allSatisfy(\.isFinite)
+                }
+                check("rms tiled Double reference finite (n=\(n) vec=\(vectors) w=\(width))",
+                      allFinite)
+                if allFinite {
+                    for v in 0..<vectors {
+                        let ref = rmsOracle(x: Array(x[(v * n)..<((v + 1) * n)]), w: w, eps: 1e-6)
+                        for i in 0..<n {
+                            worst = max(worst, abs(Double(got[v][i]) - ref[i])
+                                        / max(1.0, abs(ref[i])))
+                        }
+                    }
+                }
+                check(String(format: "rms tiled n=%d vec=%d w=%d inplace=%d vs Double oracle (worst %.2e)",
+                             n, vectors, width, inPlace ? 1 : 0, worst), worst < 1e-5)
+            }
+            let got = try runRmsTiled(x: x, w: nil, vectors: vectors, width: 64,
+                                      inPlace: false)
+            check("rms tiled scale-free outputs finite (n=\(n) vec=\(vectors))",
+                  got.allSatisfy { row in row.allSatisfy(\.isFinite) })
+            var worstFree = 0.0
+            var refsFinite = true
+            for v in 0..<vectors {
+                refsFinite = refsFinite && rmsOracle(
+                    x: Array(x[(v * n)..<((v + 1) * n)]), w: nil, eps: 1e-6
+                ).allSatisfy(\.isFinite)
+            }
+            check("rms tiled scale-free Double references finite (n=\(n) vec=\(vectors))",
+                  refsFinite)
+            if refsFinite {
+                for v in 0..<vectors {
+                    let ref = rmsOracle(x: Array(x[(v * n)..<((v + 1) * n)]), w: nil, eps: 1e-6)
+                    for i in 0..<n {
+                        worstFree = max(worstFree, abs(Double(got[v][i]) - ref[i])
+                                        / max(1.0, abs(ref[i])))
+                    }
+                }
+            }
+            check(String(format: "rms tiled scale-free n=%d vec=%d (worst %.2e)",
+                         n, vectors, worstFree), worstFree < 1e-5)
+        }
+    }
+    print("rms tiled numerical gates completed")
+} catch {
+    failed += 1; print("FAIL: rms tiled gate — threw \(error)")
 }
 
 // MARK: - Gemma 4 real-model gates (opt-in via LEVIATHAN_GEMMA_GGUF)

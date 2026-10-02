@@ -515,7 +515,7 @@ public final class Gemma4Runner {
         do { library = try device.makeLibrary(source: Self.shaderSource, options: nil) }
         catch { throw Gemma4Error.shaderCompileFailed("\(error)") }
         for name in ["g4_q4_matvec", "g4_q4_matvec_tiled", "g4_q6_matvec", "g4_q6_matvec_tiled", "g4_f32_matvec", "g4_q6_embed_row",
-                     "g4_rmsnorm", "g4_gelu_up", "g4_rope", "g4_attn",
+                     "g4_rmsnorm", "g4_rmsnorm_tiled", "g4_gelu_up", "g4_rope", "g4_attn",
                      "g4_axpy", "g4_add", "g4_scale", "g4_softcap"] {
             guard let fn = library.makeFunction(name: name),
                   let p = try? device.makeComputePipelineState(function: fn) else {
@@ -541,6 +541,7 @@ public final class Gemma4Runner {
         }
         q4TileWidth = try derivedTileWidth("g4_q4_matvec_tiled")
         q6TileWidth = try derivedTileWidth("g4_q6_matvec_tiled")
+        rmsTileWidth = try derivedTileWidth("g4_rmsnorm_tiled")
 
         // ---- activation buffers. Widths are preflighted for every use:
         // bufT1/bufT3 hold qHeads*globalHeadDim (8192); bufT2 must hold
@@ -623,6 +624,7 @@ public final class Gemma4Runner {
     /// microseconds per weight-tensor name across matvec calls.
     internal var matvecGpuMicrosByTensor: [String: Double] = [:]
     internal var matvecCallsByTensor: [String: Int] = [:]
+    internal var kernelGpuMicrosByName: [String: (Double, Int)] = [:]
 
     /// When true, Q4_0 matvecs dispatch the tiled cooperative kernel
     /// (a Forge candidate — gated against the FP64 oracle and measured
@@ -632,6 +634,10 @@ public final class Gemma4Runner {
     internal var q6TiledKernel = false
     /// Q6_K tiled width, derived from the Q6 pipeline's OWN limits.
     internal var q6TileWidth = 64
+    /// Tiled cooperative RMSNorm (a Forge candidate; the per-vector
+    /// single-thread reduce is the measured 44% GPU-time hotspot).
+    internal var rmsTiledKernel = false
+    internal var rmsTileWidth = 64
     /// Hardware-derived tile width (set at init from the compiled
     /// pipeline): 2× execution width, clamped to the device maximum and
     /// the kernel's 128-slot partials array.
@@ -715,7 +721,10 @@ public final class Gemma4Runner {
             throw Gemma4Error.commandBufferFailed(
                 "kernel \(name): status \(cmd.status.rawValue), \(String(describing: cmd.error))")
         }
-        gpuMicrosTotal += (cmd.gpuEndTime - cmd.gpuStartTime) * 1e6
+        let delta = (cmd.gpuEndTime - cmd.gpuStartTime) * 1e6
+        gpuMicrosTotal += delta
+        kernelGpuMicrosByName[name, default: (0, 0)].0 += delta
+        kernelGpuMicrosByName[name]!.1 += 1
         dispatchCountTotal += 1
     }
 
@@ -768,7 +777,10 @@ public final class Gemma4Runner {
             throw Gemma4Error.commandBufferFailed(
                 "kernel \(name): status \(cmd.status.rawValue), \(String(describing: cmd.error))")
         }
-        gpuMicrosTotal += (cmd.gpuEndTime - cmd.gpuStartTime) * 1e6
+        let delta = (cmd.gpuEndTime - cmd.gpuStartTime) * 1e6
+        gpuMicrosTotal += delta
+        kernelGpuMicrosByName[name, default: (0, 0)].0 += delta
+        kernelGpuMicrosByName[name]!.1 += 1
         dispatchCountTotal += 1
     }
 
@@ -872,7 +884,7 @@ public final class Gemma4Runner {
             throw Gemma4Error.badTensorGeometry(
                 "rmsnorm extents: \(vectors)x\(n) floats need \(span) bytes (x \(x.length), y \(y.length))")
         }
-        try dispatch("g4_rmsnorm", grid: vectors) { enc in
+        let bindNorm: (MTLComputeCommandEncoder) -> Void = { enc in
             enc.setBytes(&dims, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
             enc.setBytes(&eps, length: MemoryLayout<Float>.stride, index: 1)
             enc.setBytes(&withScale, length: MemoryLayout<Int32>.stride, index: 2)
@@ -880,6 +892,14 @@ public final class Gemma4Runner {
             enc.setBuffer(wb, offset: 0, index: 4)
             enc.setBuffer(x, offset: 0, index: 5)
             enc.setBuffer(y, offset: 0, index: 6)
+        }
+        if rmsTiledKernel {
+            // Tiled cooperative variant (Forge candidate; the single-
+            // thread-per-vector reduce is the measured 44% GPU hotspot).
+            try dispatchExplicit("g4_rmsnorm_tiled", groups: vectors,
+                                 threads: rmsTileWidth, bindNorm)
+        } else {
+            try dispatch("g4_rmsnorm", grid: vectors, bindNorm)
         }
     }
 
@@ -981,12 +1001,21 @@ public final class Gemma4Runner {
     /// Read-only tile-width metadata for reporting/identity (the
     /// mutable internal flags stay internal — candidates set them only
     /// through the gated executor).
-    public var tileWidths: (q4: Int, q6: Int) { (q4TileWidth, q6TileWidth) }
+    public var tileWidths: (q4: Int, q6: Int, rms: Int) {
+        (q4TileWidth, q6TileWidth, rmsTileWidth)
+    }
 
     /// Public bounded accessor for the final logits vector (flushes any
     /// open deferred segment first).
     public func currentLogits() throws -> [Float] {
         try read(bufLogits, config.vocabSize)
+    }
+
+    /// Snapshot of the per-KERNEL GPU-time attribution (per-kernel mode).
+    public func kernelGpuProfile() -> [(kernel: String, gpuMicros: Double, calls: Int)] {
+        kernelGpuMicrosByName
+            .map { (kernel: $0.key, gpuMicros: $0.value.0, calls: $0.value.1) }
+            .sorted { $0.gpuMicros > $1.gpuMicros }
     }
 
     /// Snapshot of the matvec GPU-time attribution (per-kernel mode),
@@ -1027,7 +1056,7 @@ public final class Gemma4Runner {
     public func engineIdentity() throws -> String {
         let msl = SHA256.hex(SHA256.hash(Array(Self.shaderSource.utf8)))
         let candidates = GemmaForge.candidates()
-            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)" }
+            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)" }
             .sorted().joined(separator: ",")
         return "gemma-graph-executor-v1|exe=" + (try Self.executableDigest())
             + "|msl=" + msl
@@ -1036,6 +1065,7 @@ public final class Gemma4Runner {
             + "|candidates=" + candidates
             + "|q4TileWidth=\(q4TileWidth)"
             + "|q6TileWidth=\(q6TileWidth)"
+            + "|rmsTileWidth=\(rmsTileWidth)"
             + "|mslOptions=default"
     }
 
@@ -1619,6 +1649,45 @@ public final class Gemma4Runner {
         device const float* w = (device const float*)(wbase + wOff);
         device float* yv = y + (ulong)vec * n;
         for (uint i = 0; i < n; i++) {
+            yv[i] = xv[i] * inv * (withScale != 0 ? w[i] : 1.0f);
+        }
+    }
+
+    // Tiled cooperative RMSNorm: one threadgroup per vector; strided
+    // sum-of-squares partials + tree reduction, then strided apply. The
+    // reduction reassociates the addition order — NOT bit-identical to
+    // the single-thread kernel; gated against a Double oracle and by the
+    // full-logit/greedy Forge gates. All threads read the vector fully
+    // (phase 1) before any in-place write (phase 2): the barrier between
+    // phases makes in-place x == y safe; distinct vectors are disjoint.
+    kernel void g4_rmsnorm_tiled(constant const uint2& p [[buffer(0)]],
+                                 constant const float& eps [[buffer(1)]],
+                                 constant const int& withScale [[buffer(2)]],
+                                 constant const ulong& wOff [[buffer(3)]],
+                                 device const uchar* wbase [[buffer(4)]],
+                                 device const float* x [[buffer(5)]],
+                                 device float* y [[buffer(6)]],
+                                 uint lid [[thread_position_in_threadgroup]],
+                                 uint lsizeUInt [[threads_per_threadgroup]],
+                                 uint wid [[threadgroup_position_in_grid]]) {
+        uint vec = wid;
+        uint lsize = lsizeUInt;
+        if (vec >= p.y) { return; }
+        uint n = p.x;
+        device const float* xv = x + (ulong)vec * n;
+        threadgroup float partials[128];
+        float ms = 0.0f;
+        for (uint i = lid; i < n; i += lsize) { float v = xv[i]; ms += v * v; }
+        partials[lid] = ms;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint s = lsize / 2u; s > 0u; s >>= 1u) {
+            if (lid < s) { partials[lid] += partials[lid + s]; }
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }
+        float inv = 1.0f / sqrt(partials[0] / float(n) + eps);
+        device const float* w = (device const float*)(wbase + wOff);
+        device float* yv = y + (ulong)vec * n;
+        for (uint i = lid; i < n; i += lsize) {
             yv[i] = xv[i] * inv * (withScale != 0 ? w[i] : 1.0f);
         }
     }

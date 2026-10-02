@@ -358,7 +358,9 @@ public enum GemmaSSA {
                         "\(inst.op) operand/length mismatch at \(i)")
                 }
                 if let vectors = inst.attrs["vectors"], let width = inst.attrs["width"] {
-                    guard vectors > 0, width > 0, vectors * width == out.length else {
+                    guard vectors > 0, width > 0,
+                          let product = checkedMul(vectors, width),
+                          product == out.length else {
                         throw GemmaSSAError.badDataflow(
                             "rmsnorm vectors/width geometry invalid at \(i)")
                     }
@@ -367,7 +369,9 @@ public enum GemmaSSA {
                 guard inputs.count == 1, inst.tensors.isEmpty,
                       let heads = inst.attrs["heads"], let half = inst.attrs["half"],
                       heads > 0, half > 0, inputs[0].length == out.length,
-                      out.length == heads * 2 * half,
+                      let doubled = checkedMul(heads, 2),
+                      let ropeLen = checkedMul(doubled, half),
+                      out.length == ropeLen,
                       inst.attrs["global"] != nil,
                       out.name == inputs[0].name else {
                     throw GemmaSSAError.badDataflow("rope operands invalid at \(i)")

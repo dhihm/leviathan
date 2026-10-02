@@ -379,3 +379,42 @@ predates a diagnostic-hardening patch, run content identical):
   peak-allocated reported separately; no cold-SSD speed claim without
   measurement; no sudo/purge); then a bounded localhost server driving
   the compiled artifact.
+
+## Measured optimization pass 3: tiled cooperative RMSNorm (same date, 6.2x cumulative)
+
+Per-kernel profile (docs/evidence/gemma-profile-run3.log; per-kernel
+submission mode can distort attribution — ranking only): g4_rmsnorm
+382.1 ms = 44.6% of GPU over 662 calls (~577 µs/call). Root cause: the
+original kernel dispatched ONE THREAD PER VECTOR — plain norms reduced
+2816 floats serially on a single thread. New `g4_rmsnorm_tiled` (one
+threadgroup per vector, strided sum-of-squares partials + tree
+reduction, barrier between the read phase and the in-place write phase;
+own pipeline-derived tile width; the shared production width validator
+rejects illegal widths before dispatch).
+
+Independence: Double-oracle gates on the ACTUAL runtime MSL (weighted
+and scale-free, vectors 1/2/8/16, n 256/512/2816, widths 32/64/128,
+in-place and out-of-place; deterministic corners: all-zero (exact-zero
+output), eps-dominated tiny values gated with an ABSOLUTE 1e-7
+tolerance and a nonzero requirement — a /max(1,|ref|) denominator
+would be vacuous there — and a 193400-magnitude finite input; all GPU
+outputs and Double references have separate explicit finiteness checks
+(any non-finite check fails the suite); thresholds 1e-5). The reduction
+reassociates the sum order — NOT bit-identical by design.
+
+Full-model measured selection (same run, real GGUF, seven candidates,
+wall-median objective): per-kernel baseline 754,092 µs/token; batching
+450,094; batching+tiledQ4 280,866; **batching+tiledQ4+rmsTiled
+122,565 µs wall, 89,016 µs GPU** — selected (2.29× over the previous
+winner, 6.2× vs the per-kernel baseline in the same run; logits rel
+2.5e-05 < 1e-4, exact greedy equality). Verified generation median
+124,893 µs/token (~8.0 decode tokens/s wall). EN chat (14 IDs, 8
+tokens → "Hello! How can I help you today", median wall 172,463
+µs/token) and KO chat (23 IDs, 10 tokens → "안녕하세요! 저는 실시간 기상
+정보 시스템에", median 203,548 µs/token) both FORGE_PASS exit 0 with
+identical greedy sequences through the same artifact path
+(docs/evidence/gemma-forge-{rms-run1,enchat-run2,kochat-run2}.log).
+Suite: 408 passed / 0 failed. Still below the Ollama server-reported
+~71 eval tok/s; remaining measured targets: launch-count fusion
+(1799 kernels/token remain), explicit bounded SSD expert cache, and
+artifact-driven local serving.

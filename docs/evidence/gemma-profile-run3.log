@@ -1,0 +1,41 @@
+per-kernel forward: 2 tokens, total GPU 857.7 ms, 3598 kernels
+matvec total 451.7 ms (53% of GPU), non-matvec 405.9 ms
+top tensors by GPU time:
+  token_embd.weight     39.6 ms    8.8%     2 calls
+  blk.0.ffn_gate_up_exps.weight      8.2 ms    1.8%    16 calls
+  blk.2.ffn_gate_up_exps.weight      8.2 ms    1.8%    16 calls
+  blk.1.ffn_gate_up_exps.weight      7.9 ms    1.8%    16 calls
+  blk.3.ffn_gate_up_exps.weight      6.8 ms    1.5%    16 calls
+  blk.21.ffn_gate_up_exps.weight      6.3 ms    1.4%    16 calls
+  blk.20.ffn_gate_up_exps.weight      5.9 ms    1.3%    16 calls
+  blk.4.ffn_gate_up_exps.weight      5.9 ms    1.3%    16 calls
+  blk.19.ffn_gate_up_exps.weight      5.8 ms    1.3%    16 calls
+  blk.18.ffn_gate_up_exps.weight      5.7 ms    1.3%    16 calls
+  blk.29.ffn_gate_up_exps.weight      5.6 ms    1.2%    16 calls
+  blk.22.ffn_gate_up_exps.weight      5.5 ms    1.2%    16 calls
+by tensor family:
+  ffn_gate_up_exps.weight    172.5 ms   38.2%   480 calls
+  ffn_down_exps.weight     46.4 ms   10.3%   480 calls
+  token_embd.weight     39.6 ms    8.8%     2 calls
+  attn_output.weight     36.9 ms    8.2%    60 calls
+  ffn_gate_inp.weight     28.5 ms    6.3%    60 calls
+  attn_q.weight     24.7 ms    5.5%    60 calls
+  attn_k.weight     22.9 ms    5.1%    60 calls
+  ffn_gate.weight     22.1 ms    4.9%    60 calls
+  ffn_up.weight     22.1 ms    4.9%    60 calls
+  attn_v.weight     19.0 ms    4.2%    50 calls
+  ffn_down.weight     17.0 ms    3.8%    60 calls
+by kernel name (all dispatches, per-kernel mode):
+  g4_q4_matvec    383.6 ms   44.7%   1370 calls     280 us/call
+  g4_rmsnorm    382.1 ms   44.6%    662 calls     577 us/call
+  g4_q6_matvec     39.6 ms    4.6%      2 calls   19793 us/call
+  g4_f32_matvec     28.5 ms    3.3%     60 calls     475 us/call
+  g4_attn     13.4 ms    1.6%     60 calls     224 us/call
+  g4_rope      4.1 ms    0.5%    120 calls      34 us/call
+  g4_axpy      2.9 ms    0.3%    600 calls       5 us/call
+  g4_gelu_up      2.5 ms    0.3%    540 calls       5 us/call
+  g4_scale      0.6 ms    0.1%    120 calls       5 us/call
+  g4_add      0.3 ms    0.0%     60 calls       5 us/call
+  g4_softcap      0.0 ms    0.0%      2 calls      11 us/call
+  g4_q6_embed_row      0.0 ms    0.0%      2 calls      10 us/call
+PROFILE_COMPLETED

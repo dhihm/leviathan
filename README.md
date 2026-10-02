@@ -35,9 +35,10 @@ trusted stage-list DSL — honestly NOT arbitrary Python/torch tracing):
 python3 tools/forge_gemma/export_gemma_graph.py examples/gemma_model.py /tmp/cfg.json /tmp/graph.json
 
 # 2. Forge: validate against the GGUF -> typed SSA lowering -> full-logit
-#    correctness gates (vs the independent runner forward) -> measured
-#    candidates (wall-median objective, baseline fallback) -> plan artifact
-#    embedding the lowered executable schedule + real digests:
+#    correctness gates (vs the original runner forward — a separate
+#    execution path driving the same validated kernel primitives) ->
+#    measured candidates (wall-median objective, baseline fallback) ->
+#    plan artifact embedding the lowered executable schedule + digests:
 .build/release/leviathan-cli gemma-forge --file <gguf> --graph /tmp/graph.json \
     --plan /tmp/plan.json --prompt-ids 2,9259 --gen-tokens 8
 
@@ -46,12 +47,14 @@ python3 tools/forge_gemma/export_gemma_graph.py examples/gemma_model.py /tmp/cfg
 .build/release/leviathan-cli gemma-profile --file <gguf>
 ```
 
+Resources and architecture-diagram sections below describe the
+DENSE/RELU engine (the Gemma path has its own scoped limits above).
 Measured on this M1 Max (2026-10-02; raw logs under
 [docs/evidence/](docs/evidence/)): the graph executor matches the
 original hand-written runner.forward — a separate execution path that
 drives the same validated kernel primitives, not a mathematically
 independent full-model implementation — bit-identically on the
-per-kernel path and within rel 1.6e-05 on the selected optimized pass
+per-kernel path and within rel 2.5e-05 on the selected optimized pass
 (all 262,144 logits, gated per decode step), with exact greedy
 next-token equality over the tested 8-token workload
 (" upon-the-sands-of" — also identical TEXT with matching token counts
@@ -60,8 +63,9 @@ exposes no internal IDs, so that agreement is text+count, and no
 global no-quality-loss claim is made). Quantized kernels carry their
 own independent FP64 component gates. Selected pass = cross-op
 command-buffer batching (1799 → 127 submissions/token) + a tiled
-cooperative Q4_0 matvec: 921,952 → 290,382 µs wall per token within one
-gated run (3.17× vs the per-kernel baseline; ~3.4 decode tokens/s).
+cooperative Q4_0 matvec, and a tiled cooperative RMSNorm: 754,092 →
+122,565 µs wall per token within one gated run (6.2× vs the per-kernel
+baseline of that run; ~8.0 decode tokens/s).
 The gap to the same-GGUF Ollama baseline (server-reported ~71 eval
 tokens/s, cold load 7.5 s, prefill 163 ms; the API's streamed chunks
 arrive coalesced client-side, so no per-token interval is claimed)
@@ -188,14 +192,37 @@ the GPU path before any device memory is touched:
 
 ## Limitations
 
+Dense/ReLU engine (this section; the Gemma path below has its own
+scoped limits and evidence docs):
+
 - Two op types only (`dense`, `relu`); single input/output, strictly
-  sequential graphs. No convolutions, attention, or control flow yet.
-- Weights are synthetic (seeded); no real-model weights load yet — the first
-  real target is specified in [docs/MODEL_TARGET.md](docs/MODEL_TARGET.md).
+  sequential graphs. No convolutions, attention, or control flow.
+- Weights in this engine are synthetic (seeded) or restricted PyTorch
+  exports; real quantized model weights run through the separate
+  Gemma Forge path described above.
 - The artifact digest provides integrity, not authentication or signing.
 - Float32 only; backend comparisons use a 1e-4 absolute tolerance.
 - No benchmark suite; timings printed by `check` are indicative only.
 - No CI, no local serving API yet (planned, localhost-only).
+
+Gemma Forge path (measured, gated, still bounded):
+
+- The model.py capture is a bounded, trusted stage-list DSL lowered to
+  a typed SSA schedule — NOT arbitrary Python/torch tracing; unknown
+  ops/orders/shapes are rejected before any GPU work.
+- Correctness scope: per-step full-logit gates vs the original
+  hand-written runner.forward (a separate execution path driving the
+  same validated kernel primitives — not a mathematically independent
+  full-model implementation), quantized-kernel FP64/Double component
+  gates, and exact greedy equality over the TESTED workloads (raw
+  "Hello" 8 tokens; EN chat 8; KO chat 10) — no global no-quality-loss
+  claim.
+- Decode ~8.0 tokens/s wall on the M1 Max vs the same-GGUF Ollama
+  server-reported ~71 eval tokens/s (client streaming is buffered; no
+  per-token interval claimed) — a large gap remains; optimization
+  continues one measured gated pass at a time.
+- SSD expert streaming, prefill batching, and serving are not
+  implemented.
 
 ## Roadmap
 
@@ -203,12 +230,12 @@ the GPU path before any device memory is touched:
    Metal kernels for [Gemma 4 26B-A4B](docs/MODEL_TARGET.md): exact hybrid
    local/global attention with unified KV and p-RoPE, RMSNorm, MoE routing
    (top-8 of 128) plus shared expert, weights kept quantized on the GPU.
-   **Status 2026-10-02: the full 30-layer forward runs on the M1 Max GPU
-   from the quantized checkpoint (zero-copy mmap), and the greedy
-   next-token matches the same-GGUF Ollama 0.23.0 baseline on two
-   consecutive generated tokens** — bring-up evidence and exact scope in
-   [docs/GEMMA_PROGRESS.md](docs/GEMMA_PROGRESS.md). Tokenizer, text
-   generation, and logit-level parity remain open.
+   **Status 2026-10-02: DONE and superseded — the full model now runs
+   through the Forge SSA artifact pipeline with the original
+   GGUF-backed tokenizer (bounded 13-case Rust-oracle parity), bounded
+   text generation, and per-step full-logit + greedy gates; see
+   [docs/GEMMA_PROGRESS.md](docs/GEMMA_PROGRESS.md) and
+   [docs/FORGE_PROGRESS.md](docs/FORGE_PROGRESS.md).**
 2. **One measured automatic optimization decision** — a bounded candidate
    set (e.g. threadgroup widths 32/64/128) gated by correctness, then
    selected by median measured device time under a finite tuning budget.

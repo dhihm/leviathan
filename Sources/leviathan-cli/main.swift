@@ -860,10 +860,11 @@ case "forge":
                 try GemmaForge.savePlan(plan, to: planURL)
             }
             for r in plan.results {
-                print(String(format: "  candidate batching=%d tiledQ4=%d tiledQ6=%d: correct %d, wall %@/token, gpu %@/token, %@ kernels/token, %@ buffers/token — %@",
+                print(String(format: "  candidate batching=%d tiledQ4=%d tiledQ6=%d rmsTiled=%d: correct %d, wall %@/token, gpu %@/token, %@ kernels/token, %@ buffers/token — %@",
                              r.candidate.segmentBatching ? 1 : 0,
                              r.candidate.matvecTiledQ4 ? 1 : 0,
                              r.candidate.matvecTiledQ6 ? 1 : 0,
+                             r.candidate.rmsnormTiled ? 1 : 0,
                              r.correct ? 1 : 0,
                              r.medianWallMicrosPerToken.map { String(format: "%.0f us", $0) } ?? "-",
                              r.medianGpuMicrosPerToken.map { String(format: "%.0f us", $0) } ?? "-",
@@ -871,11 +872,13 @@ case "forge":
                              r.buffersPerToken.map { String(format: "%.0f", $0) } ?? "-",
                              r.note))
             }
-            print(String(format: "selected: batching=%d tiledQ4=%d tiledQ6=%d (tile widths q4=%d q6=%d), wall %.0f us/token, gpu %.0f us/token",
+            print(String(format: "selected: batching=%d tiledQ4=%d tiledQ6=%d rmsTiled=%d (tile widths q4=%d q6=%d rms=%d), wall %.0f us/token, gpu %.0f us/token",
                          plan.selected.segmentBatching ? 1 : 0,
                          plan.selected.matvecTiledQ4 ? 1 : 0,
                          plan.selected.matvecTiledQ6 ? 1 : 0,
+                         plan.selected.rmsnormTiled ? 1 : 0,
                          runner.tileWidths.q4, runner.tileWidths.q6,
+                         runner.tileWidths.rms,
                          plan.selectedMedianWallMicrosPerToken,
                          plan.selectedMedianGpuMicrosPerToken))
             if forgedFresh {
@@ -1004,6 +1007,13 @@ case "forge":
                 print(String(format: "  %-34@ %8.1f ms  %5.1f%%  %4d calls",
                              family, stat.gpu / 1000,
                              100 * stat.gpu / max(matvecSum, 1), stat.calls))
+            }
+            print("by kernel name (all dispatches, per-kernel mode):")
+            for k in runner.kernelGpuProfile() {
+                print(String(format: "  %-22@ %8.1f ms  %5.1f%%  %5d calls  %6.0f us/call",
+                             k.kernel, k.gpuMicros / 1000,
+                             100 * k.gpuMicros / max(total, 1), k.calls,
+                             k.gpuMicros / Double(max(k.calls, 1))))
             }
             print("PROFILE_COMPLETED")
         } catch {
