@@ -1,5 +1,6 @@
 import Foundation
 import LeviathanCore
+import Metal
 
 // Minimal original test harness. The XCTest and swift-testing modules are
 // not available with the active CommandLineTools toolchain, so this
@@ -271,6 +272,179 @@ check("maxAbsDiff rejects infinity", maxAbsDiff([1], [.infinity]) == nil)
 check("maxAbsDiff rejects length mismatch", maxAbsDiff([1, 2], [1]) == nil)
 checkEqual("maxAbsDiff computes difference", maxAbsDiff([1, -2], [0.5, -2]) ?? -1, 0.5)
 
+// MARK: - Metal GPU backend
+
+// GPU tests require a real Metal device; any unavailability, shader-compile
+// failure, dispatch failure, or command-buffer error must surface as an
+// explicit thrown error — never a silent CPU fallback.
+do {
+    check("metal device available", MTLCreateSystemDefaultDevice() != nil)
+
+    // Hand-computed dense + ReLU on the GPU: W = [[1,2],[3,4]], b = [-10, 0.5],
+    // x = [1, 1] → dense [-6, 6.5] → relu [0, 6.5].
+    let handGraph = GraphIR(inputDim: 2, ops: [.dense(outDim: 2), .relu])
+    _ = try validate(handGraph)
+    let handLowered = LoweredProgram(graph: handGraph, seed: 1)
+    let handProgram = LoweredProgram(
+        inputDim: 2, outputDim: 2, bufferCount: 2,
+        steps: handLowered.steps, weights: [1, 2, 3, 4, -10, 0.5])
+    let (handOut, handEvidence) = try MetalBackend.runReporting(
+        handProgram, batch: 1, input: [1, 1])
+    checkEqual("metal hand-computed dense+relu", handOut, [0, 6.5])
+    check("metal evidence: device named", !handEvidence.deviceName.isEmpty)
+    print("metal device: \(handEvidence.deviceName)")
+    check("metal evidence: shader compiled at runtime",
+          handEvidence.shaderLibraryCompiled)
+    checkEqual("metal evidence: command buffer completed",
+               handEvidence.commandStatus, "completed")
+    checkEqual("metal evidence: steps dispatched", handEvidence.dispatchedSteps, 2)
+    checkEqual("metal evidence: values read back", handEvidence.readbackElements, 2)
+
+    // Hand-computed batch-2 case with a negative and a positive row.
+    // x = [[1, 1], [0, 2]] → dense rows [-6, 6.5] and [-4, 8.5] → relu [0, 6.5], [0, 8.5]
+    checkEqual("metal hand-computed dense+relu batch 2",
+               try MetalBackend.run(handProgram, batch: 2, input: [1, 1, 0, 2]),
+               [0, 6.5, 0, 8.5])
+
+    // Dense-only, no ReLU: negative values must pass through untouched.
+    // W = [[1,2],[3,4]], b = [-10, 0.5], x = [1, 1] → [-6, 6.5]
+    let denseOnly = GraphIR(inputDim: 2, ops: [.dense(outDim: 2)])
+    _ = try validate(denseOnly)
+    let denseLowered = LoweredProgram(graph: denseOnly, seed: 1)
+    let denseProgram = LoweredProgram(
+        inputDim: 2, outputDim: 2, bufferCount: 2,
+        steps: denseLowered.steps, weights: [1, 2, 3, 4, -10, 0.5])
+    checkEqual("metal dense-only passes negatives through",
+               try MetalBackend.run(denseProgram, batch: 1, input: [1, 1]), [-6, 6.5])
+
+    // ReLU-only graph: no dense op, empty weights blob (zero-length buffer),
+    // single buffer, odd input dim and odd batch (non-power-of-two shape).
+    let reluOnly = LoweredProgram(
+        inputDim: 5, outputDim: 5, bufferCount: 1,
+        steps: [.relu(index: 0, buffer: 0)], weights: [])
+    let reluIn: [Float] = [-3, -1.5, 0, 2.25, 7, -8, 0.5, -0.25, 9, -2]
+    let reluWant: [Float] = [0, 0, 0, 2.25, 7, 0, 0.5, 0, 9, 0]
+    checkEqual("metal relu-only, zero weights, odd dims, batch 2",
+               try MetalBackend.run(reluOnly, batch: 2, input: reluIn), reluWant)
+
+    // Odd width graph end to end: 3 → dense(7) → relu, batch 3.
+    let oddGraph = GraphIR(inputDim: 3, ops: [.dense(outDim: 7), .relu])
+    _ = try validate(oddGraph)
+    let oddArtifact = try CompiledArtifact(graph: oddGraph, seed: 5)
+    let oddInput = seededInput(dim: 3, batch: 3, seed: 11)
+    let oddGPU = try MetalBackend.run(oddArtifact.program, batch: 3, input: oddInput)
+    let oddRef = try ScalarBackend.run(oddArtifact.program, batch: 3, input: oddInput)
+    if let diff = maxAbsDiff(oddGPU, oddRef) {
+        check("metal odd-width graph matches scalar within 1e-4", diff < 1e-4)
+    } else {
+        failed += 1
+        print("FAIL: metal odd-width graph — maxAbsDiff rejected input")
+    }
+
+    // Malformed raw plans must be rejected before any GPU access.
+    checkThrows("metal rejects out-of-range buffer index",
+                ArtifactError.badPlan("step 0: buffer index out of range")) {
+        _ = try MetalBackend.run(LoweredProgram(
+            inputDim: 2, outputDim: 2, bufferCount: 1,
+            steps: [.dense(index: 0, inputDim: 2, outputDim: 2,
+                           inputBuffer: 0, outputBuffer: 5,
+                           weightOffset: 0, weightCount: 4, biasOffset: 4)],
+            weights: [0, 0, 0, 0, 0, 0]), batch: 1, input: [1, 1])
+    }
+    checkThrows("metal rejects Int.max weight offset",
+                ArtifactError.badPlan("step 0: weight offsets out of range")) {
+        _ = try MetalBackend.run(LoweredProgram(
+            inputDim: 2, outputDim: 2, bufferCount: 2,
+            steps: [.dense(index: 0, inputDim: 2, outputDim: 2,
+                           inputBuffer: 0, outputBuffer: 1,
+                           weightOffset: Int.max, weightCount: 4, biasOffset: 4)],
+            weights: [0, 0, 0, 0, 0, 0]), batch: 1, input: [1, 1])
+    }
+    checkThrows("metal rejects zero buffer count",
+                ArtifactError.badPlan("buffer count 0 out of range")) {
+        _ = try MetalBackend.run(LoweredProgram(
+            inputDim: 2, outputDim: 2, bufferCount: 0,
+            steps: [.relu(index: 0, buffer: 0)], weights: []), batch: 1, input: [1, 1])
+    }
+    checkThrows("metal rejects non-finite weights",
+                ArtifactError.nonFiniteWeight(0)) {
+        _ = try MetalBackend.run(LoweredProgram(
+            inputDim: 2, outputDim: 2, bufferCount: 2,
+            steps: handLowered.steps,
+            weights: [.nan, 2, 3, 4, -10, 0.5]), batch: 1, input: [1, 1])
+    }
+    // Non-canonical buffer allocation must be rejected before GPU access.
+    checkThrows("metal rejects dense writing to buffer 0",
+                ArtifactError.badPlan("step 0: dense output buffer is not the next fresh buffer")) {
+        _ = try MetalBackend.run(LoweredProgram(
+            inputDim: 2, outputDim: 2, bufferCount: 2,
+            steps: [.dense(index: 0, inputDim: 2, outputDim: 2,
+                           inputBuffer: 0, outputBuffer: 0,
+                           weightOffset: 0, weightCount: 4, biasOffset: 4)],
+            weights: [1, 2, 3, 4, -10, 0.5]), batch: 1, input: [1, 1])
+    }
+    checkThrows("metal rejects dense reusing an earlier buffer",
+                ArtifactError.badPlan("step 2: dense output buffer is not the next fresh buffer")) {
+        // Three buffers declared; second dense reuses buffer 1 instead of
+        // allocating the next fresh buffer.
+        _ = try MetalBackend.run(LoweredProgram(
+            inputDim: 2, outputDim: 2, bufferCount: 3,
+            steps: [.dense(index: 0, inputDim: 2, outputDim: 2,
+                           inputBuffer: 0, outputBuffer: 1,
+                           weightOffset: 0, weightCount: 4, biasOffset: 4),
+                    .relu(index: 1, buffer: 1),
+                    .dense(index: 2, inputDim: 2, outputDim: 2,
+                           inputBuffer: 1, outputBuffer: 1,
+                           weightOffset: 6, weightCount: 4, biasOffset: 10)],
+            weights: [1, 2, 3, 4, -10, 0.5, 1, 2, 3, 4, -10, 0.5]),
+            batch: 1, input: [1, 1])
+    }
+    checkThrows("metal rejects unused declared buffer",
+                ArtifactError.badPlan("buffer count does not match allocated buffers")) {
+        _ = try MetalBackend.run(LoweredProgram(
+            inputDim: 2, outputDim: 2, bufferCount: 3,
+            steps: [.dense(index: 0, inputDim: 2, outputDim: 2,
+                           inputBuffer: 0, outputBuffer: 1,
+                           weightOffset: 0, weightCount: 4, biasOffset: 4)],
+            weights: [1, 2, 3, 4, -10, 0.5]), batch: 1, input: [1, 1])
+    }
+
+    // GPU vs independent CPU scalar oracle across batches on the full
+    // demo graph (three dense layers, two ReLUs).
+    let artifact = try CompiledArtifact(graph: demoGraph, seed: 42)
+    for batch in [1, 4, 8, 16, 64] {
+        let input = seededInput(dim: 16, batch: batch, seed: 7)
+        let gpu = try MetalBackend.run(artifact.program, batch: batch, input: input)
+        let reference = try ScalarBackend.run(artifact.program, batch: batch, input: input)
+        if let diff = maxAbsDiff(gpu, reference) {
+            check("metal matches scalar within 1e-4 at batch \(batch)", diff < 1e-4)
+        } else {
+            failed += 1
+            print("FAIL: metal vs scalar at batch \(batch) — maxAbsDiff rejected input")
+        }
+        let accelerate = try AccelerateBackend.run(artifact.program, batch: batch, input: input)
+        if let diff = maxAbsDiff(gpu, accelerate) {
+            check("metal matches accelerate within 1e-4 at batch \(batch)", diff < 1e-4)
+        } else {
+            failed += 1
+            print("FAIL: metal vs accelerate at batch \(batch) — maxAbsDiff rejected input")
+        }
+    }
+
+    // Run-time limits are enforced before any GPU dispatch.
+    checkThrows("metal rejects oversized batch",
+                ExecutionError.batchTooLarge(512, Limits.maxBatch)) {
+        _ = try MetalBackend.run(artifact.program, batch: 512, input: [])
+    }
+    checkThrows("metal rejects wrong input count",
+                ExecutionError.wrongInputCount(3, 16)) {
+        _ = try MetalBackend.run(artifact.program, batch: 1, input: [0, 0, 0])
+    }
+} catch {
+    failed += 1
+    print("FAIL: metal backend — threw \(error)")
+}
+
 // MARK: - CLI invalid inputs
 
 do {
@@ -285,6 +459,8 @@ do {
             ["run", "--artifact", "/dev/null", "--seed", "-3"],
             ["run", "--artifact", "/dev/null", "--seed", "xyz"],
             ["run", "--artifact", "/dev/null", "--batch", String(Limits.maxBatch + 1)],
+            ["run", "--artifact", "/dev/null", "--backend"],
+            ["run", "--artifact", "/dev/null", "--backend", "cuda"],
         ]
         for argv in cases {
             let process = Process()

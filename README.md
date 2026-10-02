@@ -1,56 +1,74 @@
 # Leviathan
 
-<img src="docs/assets/leviathan-logo.png" alt="Leviathan project logo: a small whale emblem marking the Leviathan inference compiler project" width="140">
+<img src="docs/assets/leviathan-logo.png" alt="Leviathan project logo: a small whale emblem marking the Leviathan inference engine project" width="140">
 
-Leviathan is a personal, from-scratch experiment in building a small **CPU
-inference compiler for Apple Silicon** in Swift. It is an exploration of the
-generic compiler pipeline — validated graph IR, deterministic lowering,
-reproducible compiled artifacts with integrity validation, and a correctness
-gate comparing an optimized backend against an independent reference
-implementation. It is **not** a trained model, not an LLM, and makes no claims
-about production-grade inference.
+Leviathan is being built as a local LLM serving engine for Apple Silicon
+Macs. The intended engine profiles the machine and the workload, generates a
+bounded set of legal optimization candidates, checks each one for numerical
+agreement with an independent reference within a tolerance, measures real
+device time, selects the best valid plan, and reuses compiled artifacts
+keyed by model, hardware, and toolchain — with execution on the Metal GPU.
+Serving itself is not implemented yet; it is planned as localhost-only.
 
-![Leviathan hero illustration: an original drawing of a giant whale devouring a kraken, symbolizing the Leviathan compiler swallowing workloads](docs/assets/leviathan-hero.png)
+![Leviathan hero illustration: an original drawing of a giant whale devouring a kraken, symbolizing the Leviathan engine swallowing workloads](docs/assets/leviathan-hero.png)
 
-## Status: first milestone (M1)
+**What runs today** is the verified foundation of that goal, honestly
+scoped: a small inference compiler for synthetic `dense`/`relu` graphs with
+real Metal GPU execution, integrity-checked compiled artifacts, and two
+independent CPU reference implementations. Real LLM model import and
+serving are the next milestone (see
+[docs/MODEL_TARGET.md](docs/MODEL_TARGET.md)); no full-model execution is
+claimed yet.
 
-What actually runs today, end to end, on an Apple M1 Max (10 CPU cores,
-macOS 26.2, Swift 6.2.1, arm64):
+## Features
 
-- A small **tensor graph IR** with exactly two op types, `dense` (float32
-  affine transform) and `relu`, operating on row-major `[batch, features]`
-  tensors, with structural and resource-limit validation.
-- A **deterministic lowering** pass that assigns buffers and synthesizes
-  reproducible weights from a seeded SplitMix64 stream (a clearly synthetic
-  network — no training, no pretrained downloads).
-- A **compiled artifact format** (`LVI1`) with canonical JSON header,
-  little-endian float32 weights blob, and a SHA-256 digest that is
-  recomputed and enforced on every load, plus full semantic re-validation of
-  the decoded plan (bounds, offsets, buffer-chain topology, non-finite
-  weight rejection). The digest is an integrity check, not a digital
-  signature; there is no author authentication.
-- Two execution backends: **Apple Accelerate (vDSP)** and an independent
-  **scalar reference** in plain Swift, cross-checked with a 1e-4 tolerance.
-- A CLI (`leviathan-cli`) with `compile`, `run`, and `check` commands.
-- An executable test harness (`leviathan-tests`) with 41 checks; the
-  standard XCTest / swift-testing modules are not available under the
-  CommandLineTools toolchain, so this project ships its own minimal harness.
+- **Metal GPU execution** — MSL compute kernels for dense and ReLU are
+  compiled from source at run time (`device.makeLibrary(source:)`),
+  dispatched on shared-memory buffers, and read back after a verified
+  command-buffer completion. No silent CPU fallback: any Metal failure
+  throws.
+- **Validated graph IR** — structural and resource-limit validation of
+  rank-2 float32 `[batch, features]` graphs (`dense {outDim}`, `relu`).
+- **Deterministic compilation** — seeded lowering produces byte-identical
+  artifacts with a SHA-256 integrity digest, full semantic re-validation on
+  every load (bounds, offsets, buffer-chain topology, finite weights).
+- **Independent CPU oracles** — Accelerate (vDSP) and a plain-Swift scalar
+  backend; the `check` and test commands compare Metal outputs against both
+  within 1e-4.
+- **CLI** — `compile`, `run` (default backend `metal`; explicit
+  `cpu-accelerate` / `cpu-scalar` for reference), and `check` for the
+  multi-batch correctness gate.
 
-## Quick start
+## Installation
+
+Requires an Apple Silicon Mac with Metal, macOS 13+, and Swift 6
+(Command Line Tools suffice; no Xcode test frameworks needed).
 
 ```sh
+git clone https://github.com/dhihm/leviathan.git
+cd leviathan
 swift build
+```
 
-# Run the correctness gate (Accelerate vs scalar reference)
+The current Swift package has no third-party dependencies; building it
+needs no downloads or credentials.
+
+## Usage
+
+```sh
+# Correctness gate: Metal vs both CPU references across batches
 swift run leviathan-cli check
 
 # Compile a graph JSON into an integrity-checked artifact
 swift run leviathan-cli compile --graph examples/demo-graph.json --out /tmp/demo.lvi
 
-# Load, validate, and run the artifact
+# Run on the GPU (default)
 swift run leviathan-cli run --artifact /tmp/demo.lvi --batch 4
 
-# Run the test suite (exits nonzero on any failure)
+# Run an explicit CPU backend for reference
+swift run leviathan-cli run --artifact /tmp/demo.lvi --batch 2 --backend cpu-scalar
+
+# Test suite (exits nonzero on any failure)
 swift run leviathan-tests
 ```
 
@@ -72,27 +90,38 @@ Example graph JSON (`dense` takes an output dimension; `relu` is a string):
 ## Architecture
 
 ```
-graph JSON ──validate──▶ GraphIR ──lower (seeded, deterministic)──▶ LoweredProgram
-                                                                        │
-                                              compile: canonical bytes + SHA-256 ──▶ .lvi artifact
-                                                                        │
-                                              load: digest + semantic plan validation
-                                                                        │
-                                     ┌──────────────────────────────────┴──────────┐
-                              AccelerateBackend (vDSP)                    ScalarBackend (reference)
-                                     └──────────────────┬──────────────────────────┘
-                                              max |diff| < 1e-4 correctness gate
+model import / graph JSON        [model import: planned; graph JSON: runs]
+        │
+        ▼
+ validate ── lower (seeded, deterministic) ── LoweredProgram      [runs]
+        │                                          │
+        │                    compile: canonical bytes + SHA-256 ──▶ .lvi artifact
+        │                                          │            [runs]
+        │                    load: digest + semantic plan validation
+        ▼                                          ▼
+ hardware & workload profiling ──▶ bounded legal candidates ──▶ correctness gate
+                          [planned]                              [runs]
+                                                                       │
+        reused model/hardware/toolchain-keyed artifact ◀── measured selection
+                    [artifact reuse: runs for graphs; keyed reuse: planned]   [planned]
+                                                                       │
+                                              Metal GPU runtime ──▶ loopback serving
+                                                    [runs]           [planned]
 ```
 
-See `docs/ARCHITECTURE.md` for details.
+Today, the solid path is graph JSON → validation → lowering → artifact →
+Metal dispatch → CPU-oracle comparison. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detail and
+[docs/VALIDATION.md](docs/VALIDATION.md) for measured hardware evidence.
 
 ## Resource limits
 
-Enforced in code (`Sources/LeviathanCore/Limits.swift`), not by convention:
+Enforced in code (`Sources/LeviathanCore/Limits.swift`), and re-enforced on
+the GPU path before any device memory is touched:
 
 | Limit | Value |
 |---|---|
-| Tensor shape | fixed rank-2 `[batch, features]` float32 (no general rank support) |
+| Tensor shape | fixed rank-2 `[batch, features]` float32 |
 | Tensor elements per tensor | 2^20 (4 MiB float32) |
 | Single dimension | 4096 |
 | Graph ops | 64 |
@@ -101,46 +130,43 @@ Enforced in code (`Sources/LeviathanCore/Limits.swift`), not by convention:
 | Whole artifact file | 17 MiB |
 | Graph JSON source file | 1 MiB |
 
-## Limitations (honest scope)
+## Limitations
 
-- Two op types only (`dense`, `relu`); no convolutions, attention, or
-  control flow. Single input, single output, strictly sequential graphs.
-- Weights are **synthetic**, generated deterministically from a seed. This
-  milestone demonstrates compiler mechanics, not model inference quality.
-- The artifact digest provides integrity (corruption/tamper detection), not
-  authentication or signing.
-- Float32 only; tolerance-based comparison between backends (1e-4 absolute).
-- No benchmark suite yet; timings printed by `check` are indicative only.
-- No CI; no third-party dependencies (deliberately, to keep provenance
-  simple and downloads at zero).
+- Two op types only (`dense`, `relu`); single input/output, strictly
+  sequential graphs. No convolutions, attention, or control flow yet.
+- Weights are synthetic (seeded); no real-model weights load yet — the first
+  real target is specified in [docs/MODEL_TARGET.md](docs/MODEL_TARGET.md).
+- The artifact digest provides integrity, not authentication or signing.
+- Float32 only; backend comparisons use a 1e-4 absolute tolerance.
+- No benchmark suite; timings printed by `check` are indicative only.
+- No CI, no local serving API yet (planned, localhost-only).
 
 ## Roadmap
 
-1. M1 (this): validated IR, deterministic artifacts, dual backends, CLI. ✅
-2. M2: more elementwise ops, real weight import, batched buffers reuse.
-3. M3: BNNS/Metal Performance Shaders backend comparison, benchmark harness.
-4. M4: small real model import (requires owner approval before any model
-   download), kernel-level optimization experiments.
+1. **First real model** — original Swift/safetensors BF16 loader and a
+   validated Llama-architecture graph for
+   [SmolLM2-135M](docs/MODEL_TARGET.md): Metal embedding, RMSNorm, RoPE,
+   GQA causal attention, SwiGLU, LM head; greedy token-ID generation, then
+   exact tokenizer, then text. No full-model execution is claimed until it
+   runs and is verified.
+2. **One measured automatic optimization decision** — a bounded candidate
+   set (e.g. threadgroup widths 32/64/128) gated by correctness, then
+   selected by median measured device time under a finite tuning budget.
+   Best-of-tested, not a claim of global optimality.
+3. **Loopback local serving** — localhost-only, bounded requests, after
+   real GPU generation works.
 
-## References
-
-- [vDSP / Accelerate documentation (Apple)](https://developer.apple.com/documentation/accelerate/vdsp)
-- [FIPS 180-4 (Secure Hash Standard)](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf)
-- [Swift Package Manager](https://www.swift.org/documentation/package-manager/)
-
-## Project note: "Connect to Forge"
-
-"Forge" in this project refers to the internal Forge-inspired compiler and
-optimization architecture — the local validate → lower → artifact → execute
-pipeline described above. No external Forge service is used or needed; future
-work may add optimization hooks inside this pipeline.
+Model weights are never committed to git; Apache-2.0 model files remain
+under their own license and are not relicensed by this repository's MIT
+terms.
 
 ## Artwork
 
-The logo and hero images in `docs/assets/` are original artwork generated
-specifically for the Leviathan project. They are not copied from any other
-project or organization.
+The logo and hero images in `docs/assets/` are original generated Leviathan
+artwork.
 
 ## License
 
-None granted yet. All rights reserved by the owner until a license is chosen.
+[MIT](LICENSE) © 2026 dhihm. Model files, if later downloaded, are governed
+by their upstream licenses and are not covered by this repository's MIT
+grant.

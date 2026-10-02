@@ -156,6 +156,11 @@ public struct CompiledArtifact: Sendable {
         var currentBuffer = 0
         var currentDim = header.inputDim
         var lastDenseOutput: Int? = nil
+        // Canonical buffer allocation: buffer 0 is the graph input; every
+        // dense op must allocate the NEXT fresh buffer (1, 2, ...), so no
+        // plan can alias its input, resurrect a stale buffer, or declare
+        // buffers that are never initialized.
+        var allocatedBuffers = 1
 
         for (position, step) in header.steps.enumerated() {
             switch step {
@@ -167,27 +172,41 @@ public struct CompiledArtifact: Sendable {
                 guard wCount == inDim * outDim, wCount <= Limits.maxTensorElements else {
                     throw bad("step \(position): weight count \(wCount) invalid")
                 }
-                guard wOff >= 0, bOff >= 0, wOff + wCount <= weights.count,
-                      bOff + outDim <= weights.count else {
+                // Overflow-safe: bound each offset by the blob size before
+                // any addition, so Int.max offsets cannot wrap around.
+                guard wOff >= 0, bOff >= 0, wOff <= weights.count, bOff <= weights.count,
+                      wCount >= 0, wCount <= weights.count, outDim <= weights.count,
+                      wOff <= weights.count - wCount,
+                      bOff <= weights.count - outDim else {
                     throw bad("step \(position): weight offsets out of range")
                 }
                 guard (0..<header.bufferCount).contains(inBuf),
                       (0..<header.bufferCount).contains(outBuf) else {
                     throw bad("step \(position): buffer index out of range")
                 }
-                // Topological consistency: reads the current buffer at the
-                // current feature width, allocates a fresh output buffer.
+                // Topological consistency: reads the chain head at the
+                // current feature width and allocates the next fresh
+                // buffer — never buffer 0, a reused earlier buffer, or a
+                // buffer out of canonical order.
                 guard inBuf == currentBuffer, inDim == currentDim else {
                     throw bad("step \(position): dense does not read chain head")
+                }
+                guard outBuf == allocatedBuffers else {
+                    throw bad("step \(position): dense output buffer is not the next fresh buffer")
                 }
                 currentBuffer = outBuf
                 currentDim = outDim
                 lastDenseOutput = outBuf
+                allocatedBuffers += 1
             case let .relu(_, buf):
                 guard (0..<header.bufferCount).contains(buf), buf == currentBuffer else {
                     throw bad("step \(position): relu buffer is not chain head")
                 }
             }
+        }
+
+        guard header.bufferCount == allocatedBuffers else {
+            throw bad("buffer count does not match allocated buffers")
         }
 
         guard currentDim == header.outputDim else {

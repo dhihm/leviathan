@@ -11,12 +11,17 @@ func usage() -> Never {
       compile --graph <file.json> --out <file.lvi> [--seed N]
           Validate a graph JSON file, lower it, and write an
           integrity-checked artifact.
-      run --artifact <file.lvi> [--batch N] [--seed N]
-          Load and integrity-check an artifact, run it on the Accelerate
-          backend with a deterministic seeded input, print the output.
-      check
-          Compile the built-in synthetic demo graph in memory, run both the
-          Accelerate and scalar reference backends, and compare them.
+      run --artifact <file.lvi> [--batch N] [--seed N] [--backend B]
+          Load and integrity-check an artifact, run it with a deterministic
+          seeded input, print the output. Backend B is one of:
+            metal          Apple Silicon GPU via Metal (default)
+            cpu-accelerate CPU reference using Apple Accelerate (vDSP)
+            cpu-scalar     CPU scalar reference in plain Swift
+      check [--backend B]
+          Compile the built-in synthetic demo graph in memory and compare
+          the selected primary backend (default: metal) against the
+          independent CPU references (Accelerate and scalar) across
+          several batch sizes.
     """)
     exit(64)
 }
@@ -37,8 +42,11 @@ func requireValue(_ flag: String, _ args: [String]) -> String {
 /// and negative values instead of trapping or silently using them.
 func optionalNonNegativeInt(_ flag: String, _ args: [String],
                             default defaultValue: Int) -> Int {
-    guard let index = args.firstIndex(of: flag), index + 1 < args.count else {
+    guard let index = args.firstIndex(of: flag) else {
         return defaultValue
+    }
+    guard index + 1 < args.count else {
+        fail("\(flag) requires a non-negative integer value")
     }
     guard let parsed = Int(args[index + 1]), parsed >= 0 else {
         fail("value for \(flag) must be a non-negative integer, got '\(args[index + 1])'")
@@ -79,6 +87,37 @@ func demoInput(dim: Int, batch: Int, seed: UInt64) -> [Float] {
 let args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else { usage() }
 
+/// Parses the optional --backend flag into a backend runner. Valid values:
+/// metal (default), cpu-accelerate, cpu-scalar. Anything else is an error,
+/// never a silent fallback.
+func backendRunner(_ args: [String],
+                   primary: @escaping (LoweredProgram, Int, [Float]) throws -> [Float])
+                   -> (String, (LoweredProgram, Int, [Float]) throws -> [Float]) {
+    guard let index = args.firstIndex(of: "--backend") else {
+        return ("metal", primary)
+    }
+    guard index + 1 < args.count else {
+        fail("--backend requires a value: metal, cpu-accelerate, or cpu-scalar")
+    }
+    switch args[index + 1] {
+    case "metal": return ("metal", primary)
+    case "cpu-accelerate": return ("cpu-accelerate", AccelerateBackend.run)
+    case "cpu-scalar": return ("cpu-scalar", ScalarBackend.run)
+    default: fail("value for --backend must be metal, cpu-accelerate, or cpu-scalar, "
+                  + "got '\(args[index + 1])'")
+    }
+}
+
+/// Wraps MetalBackend.runReporting so it matches the plain runner signature
+/// while printing evidence captured from the actual GPU run.
+func metalRunWithEvidence(_ program: LoweredProgram, batch: Int, input: [Float]) throws -> [Float] {
+    let (output, evidence) = try MetalBackend.runReporting(program, batch: batch, input: input)
+    print("metal device: \(evidence.deviceName)")
+    print("shader library compiled at runtime; \(evidence.dispatchedSteps) step(s) dispatched; "
+          + "command buffer \(evidence.commandStatus); \(evidence.readbackElements) value(s) read back")
+    return output
+}
+
 switch command {
 case "compile":
     let graphPath = requireValue("--graph", args)
@@ -112,6 +151,7 @@ case "run":
     let artifactPath = requireValue("--artifact", args)
     let batch = optionalNonNegativeInt("--batch", args, default: 1)
     let seed = toUInt64(optionalNonNegativeInt("--seed", args, default: 7), "--seed")
+    let (backendName, runner) = backendRunner(args, primary: metalRunWithEvidence)
     guard batch >= 1, batch <= Limits.maxBatch else {
         fail("batch must be between 1 and \(Limits.maxBatch), got \(batch)")
     }
@@ -120,40 +160,44 @@ case "run":
         print("artifact OK, digest \(artifact.digest.prefix(16))…")
         let input = demoInput(dim: artifact.header.inputDim, batch: batch, seed: seed)
         let start = ContinuousClock.now
-        let output = try AccelerateBackend.run(artifact.program, batch: batch, input: input)
+        let output = try runner(artifact.program, batch, input)
         let elapsed = ContinuousClock.now - start
         print(String(format: "output[%d]: %@", output.count,
                      output.map { String(format: "%.6f", $0) }.joined(separator: " ")))
-        print(String(format: "ran %d step(s), batch %d, in %.3f ms",
-                     artifact.header.steps.count, batch,
+        print(String(format: "ran %d step(s), batch %d, backend %@, in %.3f ms",
+                     artifact.header.steps.count, batch, backendName,
                      Double(elapsed.components.attoseconds) / 1e15 + Double(elapsed.components.seconds) * 1e3))
     } catch {
         fail("run failed: \(error)")
     }
 
 case "check":
+    let (backendName, runner) = backendRunner(args, primary: metalRunWithEvidence)
     do {
         _ = try LeviathanCore.validate(demoGraph)
         let artifact = try CompiledArtifact(graph: demoGraph, seed: 42)
-        let batch = 4
-        let input = demoInput(dim: demoGraph.inputDim, batch: batch, seed: 7)
-
-        let fastStart = ContinuousClock.now
-        let fast = try AccelerateBackend.run(artifact.program, batch: batch, input: input)
-        let fastElapsed = ContinuousClock.now - fastStart
-        let refStart = ContinuousClock.now
-        let reference = try ScalarBackend.run(artifact.program, batch: batch, input: input)
-        let refElapsed = ContinuousClock.now - refStart
-
-        guard let diff = maxAbsDiff(fast, reference), diff < 1e-4 else {
-            fail("backends disagree: maxAbsDiff out of tolerance")
-        }
         print("digest: \(artifact.digest)")
-        print(String(format: "max |accelerate - scalar| = %.3e (tolerance 1e-4)", diff))
-        print(String(format: "accelerate: %.3f ms, scalar: %.3f ms, batch %d, %d ops",
-                     Double(fastElapsed.components.attoseconds) / 1e15 + Double(fastElapsed.components.seconds) * 1e3,
-                     Double(refElapsed.components.attoseconds) / 1e15 + Double(refElapsed.components.seconds) * 1e3,
-                     batch, demoGraph.ops.count))
+        var worstDiff: Float = 0
+        for batch in [1, 4, 16, 64] {
+            let input = demoInput(dim: demoGraph.inputDim, batch: batch, seed: 7)
+            let start = ContinuousClock.now
+            let primary = try runner(artifact.program, batch, input)
+            let elapsed = ContinuousClock.now - start
+            let reference = try ScalarBackend.run(artifact.program, batch: batch, input: input)
+            let accelerate = try AccelerateBackend.run(artifact.program, batch: batch, input: input)
+            guard let diffScalar = maxAbsDiff(primary, reference),
+                  let diffAccel = maxAbsDiff(primary, accelerate),
+                  diffScalar < 1e-4, diffAccel < 1e-4 else {
+                fail("backends disagree at batch \(batch): out of tolerance")
+            }
+            let worstForBatch = max(diffScalar, diffAccel)
+            worstDiff = max(worstDiff, worstForBatch)
+            print(String(format: "batch %3d: max |%@ - reference| = %.3e (%.3f ms)",
+                         batch, backendName, worstForBatch,
+                         Double(elapsed.components.attoseconds) / 1e15
+                             + Double(elapsed.components.seconds) * 1e3))
+        }
+        print(String(format: "all batches agree within 1e-4 (worst %.3e)", worstDiff))
         print("PASS")
     } catch {
         fail("check failed: \(error)")
