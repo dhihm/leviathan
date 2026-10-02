@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Metal
 
 /// Errors from the Gemma 4 (26B-A4B, QAT Q4_0) original runtime.
@@ -355,14 +356,15 @@ public enum Gemma4Math {
 /// consumed position continue); call `reset()` to start a fresh context.
 public final class Gemma4Runner {
 
-    private let config: Gemma4Config
-    private let ggufFile: GGUFFile
+    public let config: Gemma4Config
+    /// The parsed GGUF file (tokenizer metadata is read from it).
+    public let ggufFile: GGUFFile
     private let device: MTLDevice
     private let queue: MTLCommandQueue
     private var library: MTLLibrary!
     private var pipelines: [String: MTLComputePipelineState] = [:]
-    private var dispatchCountTotal = 0
-    private var gpuMicrosTotal: Double = 0
+    internal var dispatchCountTotal = 0
+    internal var gpuMicrosTotal: Double = 0
 
     // Weight storage. The mapping's lifetime is owned by `weightsBuffer`'s
     // deallocator (RAII); no manual munmap outside init failure paths.
@@ -371,24 +373,26 @@ public final class Gemma4Runner {
     private var mapEnd = 0    // exclusive absolute offset covered by the buffer
 
     // Activation buffers (F32, tiny compared with weights).
-    private var bufX, bufH, bufT1, bufT2, bufT3, bufKV, bufGU, bufAct: MTLBuffer!
-    private var bufShared, bufRouter, bufEmbed, bufLogits: MTLBuffer!
-    private var localFreqBuffer, globalFreqBuffer: MTLBuffer!
+    internal var bufX, bufH, bufT1, bufT2, bufT3, bufKV, bufGU, bufAct: MTLBuffer!
+    /// Dedicated expert-loop scratch (never aliases SSA-bound buffers).
+    internal var bufExpertGU, bufExpertAct, bufExpertAcc: MTLBuffer!
+    internal var bufShared, bufRouter, bufEmbed, bufLogits: MTLBuffer!
+    internal var localFreqBuffer, globalFreqBuffer: MTLBuffer!
     // KV caches per layer: [maxContext * kvHeads * headDim] F32 each.
-    private var kCaches: [MTLBuffer] = []
-    private var vCaches: [MTLBuffer] = []
+    internal var kCaches: [MTLBuffer] = []
+    internal var vCaches: [MTLBuffer] = []
 
     // Tensor addressing table.
-    private var ref: [String: G4TensorRef] = [:]
+    internal var ref: [String: G4TensorRef] = [:]
     // Small F32 parameters read into CPU arrays at init (finite-checked).
-    private var expertScales: [[Float]] = []   // [layer][128] router per-expert scale
-    private var layerScalars: [Float] = []     // layer_output_scale
-    private var routerScales: [[Float]] = []   // [layer][2816] router input scale
+    internal var expertScales: [[Float]] = []   // [layer][128] router per-expert scale
+    internal var layerScalars: [Float] = []     // layer_output_scale
+    internal var routerScales: [[Float]] = []   // [layer][2816] router input scale
 
-    private let hidden: Int
-    private let maxContext: Int
-    private var consumedPosition = 0
-    private var peakFootprint = 0
+    internal let hidden: Int
+    internal let maxContext: Int
+    internal var consumedPosition = 0
+    internal var peakFootprint = 0
     /// Diagnostic: print per-layer residual max |x| (and non-finite counts)
     /// to localize divergence during bring-up.
     public var traceLayers = false
@@ -510,7 +514,7 @@ public final class Gemma4Runner {
         // ---- shaders + pipelines (compiled once).
         do { library = try device.makeLibrary(source: Self.shaderSource, options: nil) }
         catch { throw Gemma4Error.shaderCompileFailed("\(error)") }
-        for name in ["g4_q4_matvec", "g4_q6_matvec", "g4_f32_matvec", "g4_q6_embed_row",
+        for name in ["g4_q4_matvec", "g4_q4_matvec_tiled", "g4_q6_matvec", "g4_f32_matvec", "g4_q6_embed_row",
                      "g4_rmsnorm", "g4_gelu_up", "g4_rope", "g4_attn",
                      "g4_axpy", "g4_add", "g4_scale", "g4_softcap"] {
             guard let fn = library.makeFunction(name: name),
@@ -518,6 +522,17 @@ public final class Gemma4Runner {
                 throw Gemma4Error.functionMissing(name)
             }
             pipelines[name] = p
+        }
+        // Hardware-derived tile width for the tiled Q4_0 candidate: the
+        // largest legal power of two (tree reduction, kernel partials cap
+        // 128) that is at most 2× the pipeline's execution width and the
+        // device maximum; 32 minimum.
+        if let tiled = pipelines["g4_q4_matvec_tiled"] {
+            let ceiling = min(128, tiled.maxTotalThreadsPerThreadgroup,
+                              max(32, 2 * tiled.threadExecutionWidth))
+            var w = 128
+            while w > ceiling { w /= 2 }
+            q4TileWidth = max(32, w)
         }
 
         // ---- activation buffers. Widths are preflighted for every use:
@@ -546,6 +561,14 @@ public final class Gemma4Runner {
         bufRouter = try alloc(config.expertCount)
         bufEmbed = try alloc(hidden)
         bufLogits = try alloc(config.vocabSize)
+        // DEDICATED expert-loop scratch, physically separate from every
+        // SSA-bound activation buffer: the compound expert op's internal
+        // effects can never clobber still-live SSA values (gate/up/act/t2
+        // remain valid across the expert chain).
+        bufExpertGU = try alloc(2 * config.sharedIntermediate)
+        bufExpertAct = try alloc(max(config.sharedIntermediate,
+                                     config.expertIntermediate))
+        bufExpertAcc = try alloc(hidden)
         localFreqBuffer = try upload(config.localInvFreq())
         globalFreqBuffer = try upload(config.globalInvFreq(factors: storedFactors))
         for layer in 0..<config.layerCount {
@@ -577,11 +600,93 @@ public final class Gemma4Runner {
 
     // MARK: - kernel dispatch
 
-    /// Encodes one kernel in its own command buffer, commits, and waits.
-    /// Correct and simple; batching is a later, measured optimization.
-    private func dispatch(_ name: String, grid: Int,
+    // Deferred command-buffer encoding (graph-executor segment batching):
+    // when a segment is open, dispatch() only encodes into it; any CPU
+    // readback must flush first. Numerically identical to per-kernel
+    // commit (same kernels, same order) — only submission granularity
+    // changes. GPU time is accounted at flush for the whole segment.
+    internal var openCmd: MTLCommandBuffer? = nil
+    internal var openEnc: MTLComputeCommandEncoder? = nil
+    /// When true, dispatch() lazily opens segments (see above).
+    internal var autoSegment = false
+    /// Submitted command buffers (separate from kernel count) — makes
+    /// the batching effect observable.
+    internal var submittedBuffers = 0
+    /// Profiling attribution (per-kernel mode only): accumulated GPU
+    /// microseconds per weight-tensor name across matvec calls.
+    internal var matvecGpuMicrosByTensor: [String: Double] = [:]
+    internal var matvecCallsByTensor: [String: Int] = [:]
+
+    /// When true, Q4_0 matvecs dispatch the tiled cooperative kernel
+    /// (a Forge candidate — gated against the FP64 oracle and measured
+    /// on real hardware before selection).
+    internal var q4TiledKernel = false
+    /// Hardware-derived tile width (set at init from the compiled
+    /// pipeline): 2× execution width, clamped to the device maximum and
+    /// the kernel's 128-slot partials array.
+    internal var q4TileWidth = 64
+
+    /// Commits and waits for the open deferred segment, if any.
+    internal func flushOpenSegment() throws {
+        guard let cmd = openCmd, let enc = openEnc else { return }
+        openCmd = nil
+        openEnc = nil
+        enc.endEncoding()
+        cmd.commit()
+        submittedBuffers += 1
+        cmd.waitUntilCompleted()
+        guard cmd.status == .completed, cmd.error == nil else {
+            throw Gemma4Error.commandBufferFailed(
+                "deferred segment: status \(cmd.status.rawValue), \(String(describing: cmd.error))")
+        }
+        gpuMicrosTotal += (cmd.gpuEndTime - cmd.gpuStartTime) * 1e6
+    }
+
+    /// Error cleanup: ends (without committing) any open deferred encoder,
+    /// drops the uncommitted command buffer, and disables auto-segment.
+    /// Used on execution failure so no encoder leaks and no later flush can
+    /// commit kernels from a failed partial run. The thrown error is the
+    /// caller's to preserve.
+    internal func discardOpenSegment() {
+        openEnc?.endEncoding()
+        openEnc = nil
+        openCmd = nil
+        autoSegment = false
+    }
+
+    /// Opens a deferred segment: subsequent dispatches encode into one
+    /// command buffer until `flushOpenSegment()`.
+    internal func beginSegment() throws {
+        try flushOpenSegment()
+        guard let cmd = queue.makeCommandBuffer(),
+              let enc = cmd.makeComputeCommandEncoder() else {
+            throw Gemma4Error.metalUnavailable
+        }
+        openCmd = cmd
+        openEnc = enc
+    }
+
+    /// Encodes one kernel in its own command buffer, commits, and waits —
+    /// unless a deferred segment is open, in which case the kernel is
+    /// encoded into it (same kernels, same order).
+    internal func dispatch(_ name: String, grid: Int,
                           _ bind: (MTLComputeCommandEncoder) -> Void) throws {
-        guard let pipeline = pipelines[name], let cmd = queue.makeCommandBuffer(),
+        guard let pipeline = pipelines[name] else { throw Gemma4Error.metalUnavailable }
+        // Auto-segment mode (graph executor batching candidate): open a
+        // segment lazily so consecutive GPU-only kernels across ops share
+        // one command buffer; CPU readback flushes it.
+        if openEnc == nil, autoSegment { try beginSegment() }
+        if let deferredEnc = openEnc {
+            deferredEnc.setComputePipelineState(pipeline)
+            bind(deferredEnc)
+            let width = max(1, min(grid, pipeline.maxTotalThreadsPerThreadgroup))
+            let groups = (grid + width - 1) / width
+            deferredEnc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
+                                             threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+            dispatchCountTotal += 1   // count kernels, not buffers
+            return
+        }
+        guard let cmd = queue.makeCommandBuffer(),
               let enc = cmd.makeComputeCommandEncoder() else {
             throw Gemma4Error.metalUnavailable
         }
@@ -593,6 +698,60 @@ public final class Gemma4Runner {
                                  threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
         enc.endEncoding()
         cmd.commit()
+        submittedBuffers += 1
+        cmd.waitUntilCompleted()
+        guard cmd.status == .completed, cmd.error == nil else {
+            throw Gemma4Error.commandBufferFailed(
+                "kernel \(name): status \(cmd.status.rawValue), \(String(describing: cmd.error))")
+        }
+        gpuMicrosTotal += (cmd.gpuEndTime - cmd.gpuStartTime) * 1e6
+        dispatchCountTotal += 1
+    }
+
+    /// Shared PRODUCTION validator for cooperative kernel widths: a
+    /// positive power of two (tree reduction), at most 128 (the kernels'
+    /// partials arrays), and within the pipeline's device maximum. Used
+    /// by dispatchExplicit AND by numerical tests — one decision, no
+    /// mirrored guards.
+    public static func legalCooperativeWidth(_ w: Int, pipelineMax: Int) -> Bool {
+        w > 0 && w & (w - 1) == 0 && w <= 128 && w <= pipelineMax
+    }
+
+    /// Like dispatch(), but with an EXPLICIT threadgroup shape (groups ×
+    /// threads) for cooperative kernels. The width must pass
+    /// legalCooperativeWidth — illegal widths are REJECTED, never
+    /// silently clamped.
+    internal func dispatchExplicit(_ name: String, groups: Int, threads: Int,
+                                   _ bind: (MTLComputeCommandEncoder) -> Void) throws {
+        guard let pipeline = pipelines[name] else { throw Gemma4Error.metalUnavailable }
+        guard Self.legalCooperativeWidth(threads,
+                                         pipelineMax: pipeline.maxTotalThreadsPerThreadgroup)
+        else {
+            throw Gemma4Error.badTensorGeometry(
+                "illegal cooperative tile width \(threads) for \(name)")
+        }
+        let width = threads
+        if openEnc == nil, autoSegment { try beginSegment() }
+        if let deferredEnc = openEnc {
+            deferredEnc.setComputePipelineState(pipeline)
+            bind(deferredEnc)
+            deferredEnc.dispatchThreadgroups(
+                MTLSize(width: groups, height: 1, depth: 1),
+                threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+            dispatchCountTotal += 1
+            return
+        }
+        guard let cmd = queue.makeCommandBuffer(),
+              let enc = cmd.makeComputeCommandEncoder() else {
+            throw Gemma4Error.metalUnavailable
+        }
+        enc.setComputePipelineState(pipeline)
+        bind(enc)
+        enc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
+                                 threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+        enc.endEncoding()
+        cmd.commit()
+        submittedBuffers += 1
         cmd.waitUntilCompleted()
         guard cmd.status == .completed, cmd.error == nil else {
             throw Gemma4Error.commandBufferFailed(
@@ -608,7 +767,7 @@ public final class Gemma4Runner {
     /// (`rows` rows of `inDim` values, row-major blocks). `extraOffset`
     /// selects an expert slice of a 3-D tensor. Byte bounds are checked
     /// against the tensor's own file extent before anything is encoded.
-    private func matvec(tensor: String, extraOffset: Int = 0,
+    internal func matvec(tensor: String, extraOffset: Int = 0,
                         x: MTLBuffer, xCount: Int,
                         y: MTLBuffer, yCapacity: Int,
                         rows: Int? = nil,
@@ -653,19 +812,33 @@ public final class Gemma4Runner {
         }
         var p = SIMD2<UInt32>(UInt32(r.inDim), UInt32(outRows))
         var off = UInt64(wStart)
-        try dispatch(kernel, grid: outRows) { enc in
+        let gpuBefore = gpuMicrosTotal
+        func bind(_ enc: MTLComputeCommandEncoder) {
             enc.setBytes(&p, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
             enc.setBytes(&off, length: MemoryLayout<UInt64>.stride, index: 1)
             enc.setBuffer(wb, offset: 0, index: 2)
             enc.setBuffer(x, offset: 0, index: 3)
             enc.setBuffer(y, offset: yByteOffset, index: 4)
         }
+        if r.type == .q4_0 && q4TiledKernel {
+            // Tiled cooperative dispatch: one threadgroup per row with an
+            // explicit hardware-derived width.
+            try dispatchExplicit("g4_q4_matvec_tiled", groups: outRows,
+                                 threads: q4TileWidth, bind)
+        } else {
+            try dispatch(kernel, grid: outRows, bind)
+        }
+        // Per-tensor GPU attribution (exact in per-kernel mode; in
+        // deferred-segment mode the whole segment's time lands on the
+        // tensor that triggered the flush — documented limitation).
+        matvecGpuMicrosByTensor[tensor, default: 0] += gpuMicrosTotal - gpuBefore
+        matvecCallsByTensor[tensor, default: 0] += 1
     }
 
     /// Per-vector RMSNorm over `vectors` contiguous vectors of length `n`
     /// (1 thread per vector; in-place x==y is safe). `weightTensor` nil =
     /// scale-free (router norm, v_norm).
-    private func rmsnorm(x: MTLBuffer, y: MTLBuffer, n: Int, vectors: Int,
+    internal func rmsnorm(x: MTLBuffer, y: MTLBuffer, n: Int, vectors: Int,
                          weightTensor: String?) throws {
         var wOff: UInt64 = 0
         if let name = weightTensor {
@@ -698,7 +871,7 @@ public final class Gemma4Runner {
 
     /// In-place RoPE over `heads` vectors of headDim = 2*half values
     /// (1 thread per head; pairs (i, i+half) rotated by inv[i] * position).
-    private func rope(x: MTLBuffer, heads: Int, half: Int, position: Int,
+    internal func rope(x: MTLBuffer, heads: Int, half: Int, position: Int,
                       freqs: MTLBuffer) throws {
         guard half > 0, heads > 0,
               freqs.length >= half * 4,
@@ -717,7 +890,7 @@ public final class Gemma4Runner {
     }
 
     /// y[i] = gelu_tanh(gu[i]) * gu[n+i]  (fused gate|up layout).
-    private func geluUp(gu: MTLBuffer, y: MTLBuffer, n: Int) throws {
+    internal func geluUp(gu: MTLBuffer, y: MTLBuffer, n: Int) throws {
         guard gu.length >= 2 * n * 4, y.length >= n * 4 else {
             throw Gemma4Error.badTensorGeometry("gelu_up buffer too small for n=\(n)")
         }
@@ -729,7 +902,7 @@ public final class Gemma4Runner {
         }
     }
 
-    private func axpy(x: MTLBuffer, y: MTLBuffer, c: Float, n: Int) throws {
+    internal func axpy(x: MTLBuffer, y: MTLBuffer, c: Float, n: Int) throws {
         guard x.length >= n * 4, y.length >= n * 4 else {
             throw Gemma4Error.badTensorGeometry("axpy buffer too small for n=\(n)")
         }
@@ -743,7 +916,7 @@ public final class Gemma4Runner {
         }
     }
 
-    private func add(a: MTLBuffer, b: MTLBuffer, y: MTLBuffer, n: Int) throws {
+    internal func add(a: MTLBuffer, b: MTLBuffer, y: MTLBuffer, n: Int) throws {
         guard a.length >= n * 4, b.length >= n * 4, y.length >= n * 4 else {
             throw Gemma4Error.badTensorGeometry("add buffer too small for n=\(n)")
         }
@@ -756,7 +929,7 @@ public final class Gemma4Runner {
         }
     }
 
-    private func scaleInPlace(x: MTLBuffer, c: Float, n: Int) throws {
+    internal func scaleInPlace(x: MTLBuffer, c: Float, n: Int) throws {
         guard x.length >= n * 4 else {
             throw Gemma4Error.badTensorGeometry("scale buffer too small for n=\(n)")
         }
@@ -771,12 +944,16 @@ public final class Gemma4Runner {
 
     // MARK: - CPU access to shared buffers
 
-    private func read(_ buffer: MTLBuffer, _ count: Int) -> [Float] {
-        [Float](UnsafeBufferPointer(start: buffer.contents().assumingMemoryBound(to: Float.self),
-                                    count: count))
+    internal func read(_ buffer: MTLBuffer, _ count: Int) throws -> [Float] {
+        // A deferred segment must be committed (and verified) before CPU
+        // readback — a failed segment must surface, not vanish.
+        try flushOpenSegment()
+        return [Float](UnsafeBufferPointer(start: buffer.contents().assumingMemoryBound(to: Float.self),
+                                           count: count))
     }
 
-    private func write(_ values: [Float], to buffer: MTLBuffer) {
+    internal func write(_ values: [Float], to buffer: MTLBuffer) throws {
+        try flushOpenSegment()
         _ = values.withUnsafeBytes { raw in
             memcpy(buffer.contents(), raw.baseAddress!, values.count * 4)
         }
@@ -784,10 +961,81 @@ public final class Gemma4Runner {
 
     // MARK: - forward pass
 
+    /// Current context length (tokens whose KV is populated).
+    internal func contextPosition() -> Int { consumedPosition }
+
+    /// Public bounded accessor for the final logits vector (flushes any
+    /// open deferred segment first).
+    public func currentLogits() throws -> [Float] {
+        try read(bufLogits, config.vocabSize)
+    }
+
+    /// Snapshot of the matvec GPU-time attribution (per-kernel mode),
+    /// sorted by descending GPU time.
+    public func matvecGpuProfile() -> [(tensor: String, gpuMicros: Double, calls: Int)] {
+        matvecGpuMicrosByTensor
+            .map { (tensor: $0.key, gpuMicros: $0.value,
+                    calls: matvecCallsByTensor[$0.key] ?? 0) }
+            .sorted { $0.gpuMicros > $1.gpuMicros }
+    }
+
+    /// SHA-256 of the RUNNING EXECUTABLE's bytes (bounded streaming, read
+    /// once per process): any rebuilt binary — Swift executor, lowering,
+    /// pass policy, allocation — changes this digest, so plan caches
+    /// invalidate automatically on engine rebuilds. FAILS CLOSED: if the
+    /// real binary bytes cannot be resolved/hashed, an error propagates
+    /// and no plan identity is produced (no placeholder digest).
+    static func executableDigest() throws -> String {
+        guard let exec = Bundle.main.executableURL else {
+            throw Gemma4Error.metalUnavailable
+        }
+        let digest = try GemmaForge.fileDigest(exec)
+        guard digest.count == 64,
+              digest.allSatisfy({ ($0 >= "0" && $0 <= "9") || ($0 >= "a" && $0 <= "f") })
+        else {
+            throw Gemma4Error.badMetadata("executable digest malformed")
+        }
+        return digest
+    }
+
+    /// Identity of the pass engine: the running executable's content
+    /// digest (automatic build identity), the SHA-256 of the ACTUAL
+    /// embedded MSL source (compiled via makeLibrary(source:, options:
+    /// nil) — DEFAULT compiler options, recorded here as options=default;
+    /// we make no claim about what the default set does or does not
+    /// enable), the compiled pipeline set, the SSA schedule schema, and
+    /// the candidate-set signature.
+    public func engineIdentity() throws -> String {
+        let msl = SHA256.hex(SHA256.hash(Array(Self.shaderSource.utf8)))
+        let candidates = GemmaForge.candidates()
+            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)" }.sorted().joined(separator: ",")
+        return "gemma-graph-executor-v1|exe=" + (try Self.executableDigest())
+            + "|msl=" + msl
+            + "|pipelines=" + pipelines.keys.sorted().joined(separator: ",")
+            + "|ssaSchema=\(GemmaSSA.schemaVersion)"
+            + "|candidates=" + candidates
+            + "|q4TileWidth=\(q4TileWidth)"
+            + "|mslOptions=default"
+    }
+
+    /// Measured hardware profile of the device this runner holds.
+    public func hardwareProfile() -> ForgeHardwareProfile {
+        ForgeHardwareProfile(
+            deviceName: device.name,
+            maxTotalThreadsPerThreadgroup: pipelines.values.map { $0.maxTotalThreadsPerThreadgroup }.min() ?? 0,
+            threadExecutionWidth: pipelines.values.map { $0.threadExecutionWidth }.min() ?? 0,
+            recommendedMaxWorkingSetSize: Int(clamping: device.recommendedMaxWorkingSetSize))
+    }
+
+    /// Advances the context by one externally-executed token (graph
+    /// executor decode continuation).
+    internal func advancePosition() { consumedPosition += 1 }
+
     /// Resets the KV caches' consumed position; the next `forward` starts a
     /// fresh context at position 0. (Cache bytes need no clearing: only
     /// positions < consumedPosition are ever read.)
     public func reset() {
+        discardOpenSegment()
         consumedPosition = 0
     }
 
@@ -809,7 +1057,7 @@ public final class Gemma4Runner {
             peakFootprint = max(peakFootprint, Gemma4Runner.physFootprint())
         }
         consumedPosition += tokenIds.count
-        let logits = read(bufLogits, config.vocabSize)
+        let logits = try read(bufLogits, config.vocabSize)
         guard logits.allSatisfy({ $0.isFinite }) else {
             throw Gemma4Error.nonFiniteActivation("final logits")
         }
@@ -833,7 +1081,7 @@ public final class Gemma4Runner {
 
     /// Dequantizes one Q6_K embedding row on the GPU (2816 values = 11
     /// blocks), scaled by sqrt(hidden) per the official Gemma4 embedding.
-    private func decodeEmbedding(_ token: Int) throws {
+    internal func decodeEmbedding(_ token: Int) throws {
         guard let emb = ref["token_embd.weight"] else {
             throw Gemma4Error.badTensorGeometry("missing token_embd.weight")
         }
@@ -860,7 +1108,7 @@ public final class Gemma4Runner {
     @discardableResult
     public func verifyEmbeddingRow(token: Int) throws -> Float {
         try decodeEmbedding(token)
-        let gpu = read(bufEmbed, hidden)
+        let gpu = try read(bufEmbed, hidden)
         guard gpu.allSatisfy({ $0.isFinite }) else {
             throw Gemma4Error.nonFiniteActivation("embedding row \(token)")
         }
@@ -888,11 +1136,11 @@ public final class Gemma4Runner {
     /// greedy argmax of the (already softcapped) logits.
     private func forwardToken(_ token: Int, position: Int) throws -> Int {
         try decodeEmbedding(token)
-        let embVals = read(bufEmbed, hidden)
+        let embVals = try read(bufEmbed, hidden)
         guard embVals.allSatisfy({ $0.isFinite }) else {
             throw Gemma4Error.nonFiniteActivation("embedding row \(token)")
         }
-        write(embVals, to: bufX)
+        try write(embVals, to: bufX)
 
         for layer in 0..<config.layerCount {
             try forwardLayer(layer, position: position)
@@ -912,7 +1160,7 @@ public final class Gemma4Runner {
             enc.setBuffer(bufLogits, offset: 0, index: 1)
             enc.setBytes(&cap, length: MemoryLayout<Float>.stride, index: 2)
         }
-        let logits = read(bufLogits, config.vocabSize)
+        let logits = try read(bufLogits, config.vocabSize)
         guard let bad = logits.firstIndex(where: { !$0.isFinite }) else {
             return logits.enumerated().max { $0.element < $1.element }!.offset
         }
@@ -942,8 +1190,8 @@ public final class Gemma4Runner {
         if isGlobal {
             // k_eq_v: v IS the raw k_proj output (pre k_norm, pre RoPE),
             // then scale-free per-head RMSNorm (v_norm).
-            let kRaw = read(bufT2, kvWidth)
-            write(kRaw, to: bufKV)
+            let kRaw = try read(bufT2, kvWidth)
+            try write(kRaw, to: bufKV)
             try rmsnorm(x: bufT2, y: bufT2, n: headDim, vectors: kvHeads,
                         weightTensor: prefix + "attn_k_norm.weight")
             try rope(x: bufT2, heads: kvHeads, half: headDim / 2, position: position,
@@ -959,8 +1207,8 @@ public final class Gemma4Runner {
                      freqs: localFreqBuffer)
             try rmsnorm(x: bufKV, y: bufKV, n: headDim, vectors: kvHeads, weightTensor: nil)
         }
-        let kNormed = read(bufT2, kvWidth)
-        let vNormed = read(bufKV, kvWidth)
+        let kNormed = try read(bufT2, kvWidth)
+        let vNormed = try read(bufKV, kvWidth)
         memcpy(kCaches[layer].contents() + position * kvWidth * 4, kNormed, kvWidth * 4)
         memcpy(vCaches[layer].contents() + position * kvWidth * 4, vNormed, kvWidth * 4)
 
@@ -1000,9 +1248,9 @@ public final class Gemma4Runner {
                    xCount: config.sharedIntermediate,
                    y: bufShared, yCapacity: hidden)
         if traceLayers {
-            let gu = read(bufGU, 2 * config.sharedIntermediate)
-            let act = read(bufAct, config.sharedIntermediate)
-            let dn = read(bufShared, hidden)
+            let gu = try read(bufGU, 2 * config.sharedIntermediate)
+            let act = try read(bufAct, config.sharedIntermediate)
+            let dn = try read(bufShared, hidden)
             func stat(_ v: [Float]) -> (Int, Float) {
                 (v.lazy.filter { !$0.isFinite }.count,
                  v.lazy.map { $0.isFinite ? abs($0) : 0 }.max() ?? 0)
@@ -1018,7 +1266,7 @@ public final class Gemma4Runner {
         try rmsnorm(x: bufShared, y: bufShared, n: hidden, vectors: 1,
                     weightTensor: prefix + "post_ffw_norm_1.weight")
         if traceLayers {
-            let s = read(bufShared, hidden)
+            let s = try read(bufShared, hidden)
             print("  layer \(layer) shared mlp: nonfinite \(s.lazy.filter { !$0.isFinite }.count), " +
                   "max \(s.lazy.map { $0.isFinite ? abs($0) : 0 }.max() ?? 0)")
         }
@@ -1028,13 +1276,13 @@ public final class Gemma4Runner {
         // top-8 (ties -> lower index), renormalize, * per-expert QAT scale.
         try rmsnorm(x: bufX, y: bufH, n: hidden, vectors: 1, weightTensor: nil)
         try scaleInPlace(x: bufH, c: Float(1.0 / sqrt(Double(hidden))), n: hidden)
-        var routerIn = read(bufH, hidden)
+        var routerIn = try read(bufH, hidden)
         let routerScale = routerScales[layer]
         for i in 0..<hidden { routerIn[i] *= routerScale[i] }
-        write(routerIn, to: bufH)
+        try write(routerIn, to: bufH)
         try matvec(tensor: prefix + "ffn_gate_inp.weight", x: bufH, xCount: hidden,
                    y: bufRouter, yCapacity: config.expertCount)
-        let scores = read(bufRouter, config.expertCount)
+        let scores = try read(bufRouter, config.expertCount)
         guard scores.allSatisfy({ $0.isFinite }) else {
             throw Gemma4Error.nonFiniteActivation("layer \(layer) router scores")
         }
@@ -1078,7 +1326,7 @@ public final class Gemma4Runner {
         try rmsnorm(x: bufT3, y: bufT3, n: hidden, vectors: 1,
                     weightTensor: prefix + "post_ffw_norm_2.weight")
         if traceLayers {
-            let m = read(bufT3, hidden)
+            let m = try read(bufT3, hidden)
             print("  layer \(layer) moe sum: nonfinite \(m.lazy.filter { !$0.isFinite }.count), " +
                   "max \(m.lazy.map { $0.isFinite ? abs($0) : 0 }.max() ?? 0), " +
                   "topIdx \(topIdx), weights \(weights.map { String(format: "%.3f", $0) })")
@@ -1090,7 +1338,7 @@ public final class Gemma4Runner {
         try axpy(x: bufH, y: bufX, c: 1, n: hidden)
         try scaleInPlace(x: bufX, c: layerScalars[layer], n: hidden)
         if traceLayers {
-            let x = read(bufX, hidden)
+            let x = try read(bufX, hidden)
             let bad = x.lazy.filter { !$0.isFinite }.count
             let maxAbs = x.lazy.map { $0.isFinite ? abs($0) : 0 }.max() ?? 0
             print("layer \(layer): nonfinite \(bad), max|x| \(maxAbs), scalar \(layerScalars[layer])")
@@ -1115,7 +1363,7 @@ public final class Gemma4Runner {
 
     // MARK: - MSL
 
-    static let shaderSource = """
+    public static let shaderSource = """
     #include <metal_stdlib>
     using namespace metal;
 
@@ -1143,6 +1391,47 @@ public final class Gemma4Runner {
             }
         }
         y[row] = sum;
+    }
+
+    // Tiled cooperative variant: one threadgroup computes ONE row; each
+    // thread accumulates a strided subset of blocks, then a threadgroup
+    // reduction combines the partials. NOTE: the reduction reassociates
+    // the addition order, so results are NOT bit-identical to the
+    // single-thread kernel — correctness is gated against the
+    // independent FP64 oracle with a justified tolerance, and greedy
+    // equality is enforced end-to-end by the Forge gates.
+    kernel void g4_q4_matvec_tiled(constant const uint2& p [[buffer(0)]],
+                                   constant const ulong& wOff [[buffer(1)]],
+                                   device const uchar* wbase [[buffer(2)]],
+                                   device const float* x [[buffer(3)]],
+                                   device float* y [[buffer(4)]],
+                                   uint lid [[thread_position_in_threadgroup]],
+                                   uint lsizeUInt [[threads_per_threadgroup]],
+                                   uint wid [[threadgroup_position_in_grid]]) {
+        uint row = wid;
+        uint lsize = lsizeUInt;
+        if (row >= p.y) { return; }
+        uint blocksPerRow = p.x / 32u;
+        device const uchar* rowBytes = wbase + wOff + (ulong)row * blocksPerRow * 18u;
+        float sum = 0.0f;
+        for (uint b = lid; b < blocksPerRow; b += lsize) {
+            device const uchar* blk = rowBytes + b * 18u;
+            ushort dbits = ushort(blk[0]) | (ushort(blk[1]) << 8u);
+            float d = float(as_type<half>(dbits));
+            for (uint l = 0; l < 16u; l++) {
+                uchar q = blk[2u + l];
+                sum += d * (float(q & 0x0Fu) - 8.0f) * x[b * 32u + l];
+                sum += d * (float(q >> 4) - 8.0f) * x[b * 32u + 16u + l];
+            }
+        }
+        threadgroup float partials[128];
+        partials[lid] = sum;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint s = lsize / 2u; s > 0u; s >>= 1u) {
+            if (lid < s) { partials[lid] += partials[lid + s]; }
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }
+        if (lid == 0u) { y[row] = partials[0]; }
     }
 
     kernel void g4_q6_matvec(constant const uint2& p [[buffer(0)]],

@@ -528,6 +528,462 @@ case "forge":
             fail("gemma-token-lookup failed: \(error)")
         }
 
+    case "gguf-tokenizer-export":
+        // Export the GGUF tokenizer metadata (tokens, scores, token types,
+        // merges, chat template, and key scalars) as one JSON file so the
+        // tokenizer semantics can be pinned and cross-verified offline.
+        // Reads metadata only; no weights are loaded or executed.
+        let path = requireValue("--file", args)
+        let outPath = requireValue("--out", args)
+        do {
+            let file = try GGUFReader.read(URL(fileURLWithPath: path))
+            guard case let .array(_, tokenCount, _, _, _, tokens, _)? =
+                    file.metadata["tokenizer.ggml.tokens"] else {
+                fail("missing tokenizer.ggml.tokens")
+            }
+            func intArray(_ key: String) -> [Int]? {
+                guard case let .array(_, count, _, ints, _, _, _)? = file.metadata[key],
+                      count == tokenCount else { return nil }
+                return ints.map(Int.init)
+            }
+            func strArray(_ key: String) -> [String]? {
+                guard case let .array(_, _, _, _, _, strings, _)? = file.metadata[key] else {
+                    return nil
+                }
+                return strings
+            }
+            var out: [String: Any] = [
+                "tokens": tokens,
+            ]
+            if let scores = file.metadata["tokenizer.ggml.scores"],
+               case let .array(_, scoreCount, _, _, floats, _, _) = scores,
+               scoreCount == tokenCount {
+                out["scores"] = floats
+            }
+            if let types = intArray("tokenizer.ggml.token_type") { out["types"] = types }
+            if let merges = strArray("tokenizer.ggml.merges") { out["merges"] = merges }
+            if case let .string(template)? = file.metadata["tokenizer.chat_template"] {
+                out["chat_template"] = template
+            }
+            for (jsonKey, metaKey) in [("bos_token_id", "tokenizer.ggml.bos_token_id"),
+                                       ("eos_token_id", "tokenizer.ggml.eos_token_id"),
+                                       ("unknown_token_id", "tokenizer.ggml.unknown_token_id"),
+                                       ("padding_token_id", "tokenizer.ggml.padding_token_id"),
+                                       ("mask_token_id", "tokenizer.ggml.mask_token_id")] {
+                if case let .uint32(v)? = file.metadata[metaKey] { out[jsonKey] = Int(v) }
+            }
+            if case let .bool(v)? = file.metadata["tokenizer.ggml.add_bos_token"] {
+                out["add_bos_token"] = v
+            }
+            if case let .bool(v)? = file.metadata["tokenizer.ggml.add_space_prefix"] {
+                out["add_space_prefix"] = v
+            }
+            if case let .string(v)? = file.metadata["tokenizer.ggml.model"] {
+                out["ggml_model"] = v
+            }
+            let data = try JSONSerialization.data(withJSONObject: out, options: [.sortedKeys])
+            try data.write(to: URL(fileURLWithPath: outPath))
+            print("exported \(tokenCount) tokens to \(outPath) (\(data.count) bytes)")
+        } catch {
+            fail("gguf-tokenizer-export failed: \(error)")
+        }
+
+    case "gemma-tokenize":
+        // Exact Gemma 4 tokenization of a text prompt (SPM-style BPE over
+        // the GGUF vocab, space→▁ escape, newline pre-split, ranked merges,
+        // <0xXX> byte fallback, forced BOS). --chat applies the model's
+        // simple user→model chat path (bos + <|turn>user\n…<turn|>\n +
+        // <|turn>model\n<|channel>thought\n<channel|>) derived from the
+        // GGUF's embedded Jinja template (no tools/thinking path).
+        // Prints IDs and the decode round-trip for verification.
+        let path = requireValue("--file", args)
+        let text = requireValue("--text", args)
+        let chat = args.contains("--chat")
+        do {
+            let file = try GGUFReader.read(URL(fileURLWithPath: path))
+            let tokenizer = try GemmaTokenizer(gguf: file)
+            let input = chat
+                ? "<|turn>user\n" + text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+                : text
+            let ids = try tokenizer.encode(input)
+            print(ids.map(String.init).joined(separator: " "))
+            print("count: \(ids.count)")
+            print("decoded: \(try tokenizer.decode(ids))")
+        } catch {
+            fail("gemma-tokenize failed: \(error)")
+        }
+
+    case "gemma-generate":
+        // Bounded greedy text generation on the real GGUF. Input is EITHER
+        // exact token IDs (--tokens, authoritative) or text (--text /
+        // --chat) encoded by the exact in-repo tokenizer (BPE verified
+        // against an independent Rust oracle). The KV cache continues
+        // incrementally (each token dispatches one command buffer per
+        // kernel, ~1799/token currently); generation stops at --max-tokens
+        // or end-of-generation. Prints token IDs for exact baseline
+        // comparison, the decoded text, and separately measured load /
+        // prefill (TTFT) / per-token decode durations.
+        let path = requireValue("--file", args)
+        let maxTokens = args.firstIndex(of: "--max-tokens").map { _ in
+            Int(requireValue("--max-tokens", args)) ?? 0
+        } ?? 8
+        guard maxTokens > 0, maxTokens <= 256 else { fail("--max-tokens must be 1...256") }
+        do {
+            // Parse and validate the prompt BEFORE any GPU allocation.
+            let fileURL = URL(fileURLWithPath: path)
+            let tokenizer = try GemmaTokenizer(gguf: GGUFReader.read(fileURL))
+            var promptIDs: [Int]
+            if let tokensArg = args.firstIndex(of: "--tokens").map({ _ in
+                requireValue("--tokens", args) }) {
+                promptIDs = tokensArg.split(separator: ",").map {
+                    guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+                          id >= 0, id < tokenizer.vocabSize else {
+                        fail("invalid token id '\($0)'")
+                    }
+                    return id
+                }
+            } else {
+                let text = requireValue("--text", args)
+                let input = args.contains("--chat")
+                    ? "<|turn>user\n" + text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+                    : text
+                promptIDs = try tokenizer.encode(input)
+            }
+            guard !promptIDs.isEmpty, promptIDs.count + maxTokens <= 4096 else {
+                fail("prompt + max-tokens must fit the 4096 context")
+            }
+            print("prompt ids: \(promptIDs.map(String.init).joined(separator: " "))")
+
+            let loadStart = ContinuousClock.now
+            let runner = try Gemma4Runner(fileAt: fileURL)
+            func ms(_ t: ContinuousClock.Duration) -> Double {
+                Double(t.components.seconds) * 1e3 + Double(t.components.attoseconds) / 1e15
+            }
+            let loadMs = ms(ContinuousClock.now - loadStart)
+
+            let prefillStart = ContinuousClock.now
+            var evidence = try runner.forward(tokenIds: promptIDs)
+            let ttftMs = ms(ContinuousClock.now - prefillStart)
+            var gpuMicrosTotal = evidence.gpuMicros
+
+            var generated = [evidence.argmaxToken]
+            var decodeMs = [Double]()
+            while generated.count < maxTokens {
+                if tokenizer.isEndOfGeneration(generated.last!) {
+                    print("eos: token \(generated.last!)")
+                    break
+                }
+                let stepStart = ContinuousClock.now
+                evidence = try runner.forward(tokenIds: [generated.last!])
+                decodeMs.append(ms(ContinuousClock.now - stepStart))
+                gpuMicrosTotal += evidence.gpuMicros
+                generated.append(evidence.argmaxToken)
+            }
+            print("generated ids: \(generated.map(String.init).joined(separator: " "))")
+            print("generated text: \(try tokenizer.decode(generated))")
+            let decodeSum = decodeMs.reduce(0, +)
+            let medianText: String
+            if decodeMs.isEmpty {
+                medianText = "n/a"
+            } else {
+                let sorted = decodeMs.sorted()
+                let mid = sorted.count / 2
+                let median = sorted.count % 2 == 1
+                    ? sorted[mid]
+                    : (sorted[mid - 1] + sorted[mid]) / 2
+                medianText = String(format: "%.2f", median)
+            }
+            print(String(format: "load: %.1f ms | prefill/TTFT: %.1f ms (%d prompt tokens) | decode: %.1f ms total (%d steps), median ms/token %@ | gpu total: %.1f ms",
+                         loadMs, ttftMs, promptIDs.count, decodeSum,
+                         decodeMs.count, medianText, gpuMicrosTotal / 1000))
+            print("GENERATION_COMPLETED")
+        } catch {
+            fail("gemma-generate failed: \(error)")
+        }
+
+    case "gemma-config-export":
+        // Exports the DSL config JSON for tools/forge_gemma capture from
+        // the authorized GGUF (validated reader; no GPU allocation).
+        do {
+            let cfg = try Gemma4Config(file: GGUFReader.read(
+                URL(fileURLWithPath: requireValue("--file", args))))
+            let config: [String: Any] = [
+                "layerCount": cfg.layerCount, "hidden": cfg.hiddenSize,
+                "qHeads": cfg.qHeads, "localKVHeads": cfg.localKVHeads,
+                "globalKVHeads": cfg.globalKVHeads,
+                "localHeadDim": cfg.localHeadDim, "globalHeadDim": cfg.globalHeadDim,
+                "slidingWindow": cfg.slidingWindow, "vocabSize": cfg.vocabSize,
+                "expertCount": cfg.expertCount, "expertUsedCount": cfg.topKExperts,
+                "expertIntermediate": cfg.expertIntermediate,
+                "sharedIntermediate": cfg.sharedIntermediate,
+                "finalSoftcap": cfg.finalSoftcap,
+                "globalLayers": cfg.globalLayers,
+            ]
+            let out = requireValue("--out", args)
+            let data = try JSONSerialization.data(withJSONObject: config,
+                                                   options: [.sortedKeys, .prettyPrinted])
+            try data.write(to: URL(fileURLWithPath: out))
+            print("config exported: \(out)")
+        } catch {
+            fail("gemma-config-export failed: \(error)")
+        }
+
+    case "gemma-forge":
+        // Gemma through the ACTUAL Forge pipeline: captured model.py graph
+        // (restricted stage-list DSL, honestly labeled — typed operand IR
+        // is the next milestone) → validation against the real GGUF →
+        // full-logit correctness gates vs the independently validated
+        // runner forward → measured candidate selection (wall median,
+        // GPU median reported separately, baseline fallback with a
+        // chosen 2% noise threshold) → plan cache with digest-based
+        // integrity → verified graph-executed greedy generation (fixed
+        // step count or EOS, a correctness benchmark, not general text
+        // generation).
+        let path = requireValue("--file", args)
+        let graphPath = requireValue("--graph", args)
+        let planPath = requireValue("--plan", args)
+        let promptArg = args.firstIndex(of: "--prompt-ids").map { _ in
+            requireValue("--prompt-ids", args) } ?? "2,9259"
+        let genTokens = args.firstIndex(of: "--gen-tokens").map { _ in
+            Int(requireValue("--gen-tokens", args)) ?? 0 } ?? 8
+        guard genTokens >= 2, genTokens <= 64 else { fail("--gen-tokens must be 2...64") }
+        do {
+            let fileURL = URL(fileURLWithPath: path)
+            // Bounded graph read (never a full-file allocation first).
+            let graphHandle = try FileHandle(forReadingFrom: URL(fileURLWithPath: graphPath))
+            var graphData = Data()
+            while graphData.count <= 8 << 20 {
+                let chunk = try graphHandle.read(upToCount: 1 << 16) ?? Data()
+                if chunk.isEmpty { break }
+                graphData.append(chunk)
+            }
+            try? graphHandle.close()
+            guard graphData.count <= 8 << 20 else {
+                fail("graph file > 8 MiB: \(graphPath)")
+            }
+            let graph = try GemmaGraph.parse(graphData)
+            // Validate graph + prompt against the GGUF-parsed config and
+            // the real tensor directory BEFORE the runner (and GPU) is
+            // allocated.
+            let preFile = try GGUFReader.read(fileURL)
+            let preConfig = try Gemma4Config(file: preFile)
+            let prompt = promptArg.split(separator: ",").map {
+                guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+                      id >= 0, id < preConfig.vocabSize else {
+                    fail("invalid prompt id '\($0)'"); return 0
+                }
+                return id
+            }
+            let decodeTokens = GemmaForge.warmupTokens + GemmaForge.timedTokens
+            guard !prompt.isEmpty,
+                  prompt.count + max(genTokens, decodeTokens) <= 4096 else {
+                fail("bad prompt workload")
+            }
+            try GemmaGraph.validate(graph, config: preConfig, file: preFile)
+
+            let runner = try Gemma4Runner(fileAt: fileURL)
+            let hardware = runner.hardwareProfile()
+            let engine = GemmaForge.engineDigest(try runner.engineIdentity())
+            print("graph validated: \(graph.ops.count) ops, model \(graph.model)")
+            print("hardware: \(hardware.deviceName), max threads/threadgroup \(hardware.maxTotalThreadsPerThreadgroup), exec width \(hardware.threadExecutionWidth), working set \(hardware.recommendedMaxWorkingSetSize) bytes")
+            print("engine digest: \(engine)")
+
+            var plan: GemmaForgePlan
+            var forgedFresh = false
+            let planURL = URL(fileURLWithPath: planPath)
+            if FileManager.default.fileExists(atPath: planPath) {
+                print("hashing GGUF for plan identity (streaming, one pass)…")
+                let ggufDigest = try GemmaForge.fileDigest(fileURL)
+                if let loaded = try? GemmaForge.loadPlan(from: planURL),
+                   (try? GemmaForge.validatePlan(loaded, graph: graph,
+                                                 ggufDigest: ggufDigest,
+                                                 engineDigest: engine,
+                                                 hardware: hardware,
+                                                 prompt: prompt,
+                                                 decodeTokens: decodeTokens)) != nil {
+                    // Cache reuse still passes the correctness gate before
+                    // any output is trusted.
+                    runner.reset()
+                    let ref = try runner.forward(tokenIds: prompt)
+                    let refLogits = try runner.currentLogits()
+                    runner.reset()
+                    let (am, lg, _, _, _) = try GemmaForge.executeGraph(
+                        graph, runner: runner, tokenIds: prompt,
+                        candidate: loaded.selected, schedule: loaded.schedule)
+                    guard am == ref.argmaxToken, lg.count == refLogits.count,
+                          zip(lg, refLogits).allSatisfy({
+                              abs(Double($0.0 - $0.1))
+                                  / max(1.0, abs(Double($0.1))) < 1e-4
+                          }) else {
+                        fail("cached plan \(loaded.planDigest) failed the correctness gate")
+                    }
+                    print("cache hit: plan \(loaded.planDigest)")
+                    plan = loaded
+                } else {
+                    print("stale/foreign plan at \(planPath) — re-forging")
+                    let forged = try GemmaForge.forge(graph: graph, runner: runner,
+                                                      ggufURL: fileURL, prompt: prompt,
+                                                      decodeTokens: decodeTokens,
+                                                      hardware: hardware)
+                    plan = forged.plan
+                    forgedFresh = true
+                    try GemmaForge.savePlan(plan, to: planURL)
+                }
+            } else {
+                let forged = try GemmaForge.forge(graph: graph, runner: runner,
+                                                  ggufURL: fileURL, prompt: prompt,
+                                                  decodeTokens: decodeTokens,
+                                                  hardware: hardware)
+                plan = forged.plan
+                forgedFresh = true
+                try GemmaForge.savePlan(plan, to: planURL)
+            }
+            for r in plan.results {
+                print(String(format: "  candidate segmentBatching=%d: correct %d, wall %@/token, gpu %@/token, %@ kernels/token, %@ buffers/token — %@",
+                             r.candidate.segmentBatching ? 1 : 0, r.correct ? 1 : 0,
+                             r.medianWallMicrosPerToken.map { String(format: "%.0f us", $0) } ?? "-",
+                             r.medianGpuMicrosPerToken.map { String(format: "%.0f us", $0) } ?? "-",
+                             r.kernelsPerToken.map { String(format: "%.0f", $0) } ?? "-",
+                             r.buffersPerToken.map { String(format: "%.0f", $0) } ?? "-",
+                             r.note))
+            }
+            print(String(format: "selected: segmentBatching=%d, wall %.0f us/token, gpu %.0f us/token",
+                         plan.selected.segmentBatching ? 1 : 0,
+                         plan.selectedMedianWallMicrosPerToken,
+                         plan.selectedMedianGpuMicrosPerToken))
+            if forgedFresh {
+                print("plan saved: \(planPath), digest \(plan.planDigest)")
+            } else {
+                print("plan reused from cache (not rewritten): digest \(plan.planDigest)")
+            }
+
+            // Final verified generation: capture the reference greedy
+            // sequence ONCE with the independently validated runner
+            // forward, then replay it through the graph executor, gating
+            // prefill AND every step (exact next token + full 262144
+            // logits < 1e-4). Fixed step count or EOS — a correctness
+            // benchmark, not general text generation.
+            let tokenizer = try GemmaTokenizer(gguf: GGUFReader.read(fileURL))
+            runner.reset()
+            let prefill = try runner.forward(tokenIds: prompt)
+            let prefillLogits = try runner.currentLogits()
+            var refSeq = [prefill.argmaxToken]
+            var refStepLogits = [[Float]]()
+            var prev = prefill.argmaxToken
+            while refSeq.count < genTokens {
+                let ev = try runner.forward(tokenIds: [prev])
+                refStepLogits.append(try runner.currentLogits())
+                refSeq.append(ev.argmaxToken)
+                prev = ev.argmaxToken
+            }
+            runner.reset()
+            let (graphArgmax, graphPrefillLogits, pgpu, _, _) = try GemmaForge.executeGraph(
+                graph, runner: runner, tokenIds: prompt, candidate: plan.selected,
+                schedule: plan.schedule)
+            // Gate the graph prefill itself against the reference prefill.
+            guard graphArgmax == prefill.argmaxToken,
+                  graphPrefillLogits.count == prefillLogits.count,
+                  graphPrefillLogits.allSatisfy({ $0.isFinite }),
+                  zip(graphPrefillLogits, prefillLogits).allSatisfy({
+                      abs(Double($0.0 - $0.1)) / max(1.0, abs(Double($0.1))) < 1e-4
+                  }) else {
+                fail("graph prefill diverged from runner reference")
+            }
+            var gen = [graphArgmax]
+            var wallSamples: [Double] = []
+            var gpuSum = pgpu
+            for step in 1..<genTokens {
+                if tokenizer.isEndOfGeneration(gen.last!) {
+                    print("eos at step \(step): token \(gen.last!) — stopping early")
+                    refSeq = Array(refSeq.prefix(step))
+                    break
+                }
+                let tok = refSeq[step - 1]
+                let t0 = DispatchTime.now()
+                let (next, lg, gpu, kernels, buffers) = try GemmaForge.executeGraphContinue(
+                    graph, runner: runner, token: tok, candidate: plan.selected,
+                    schedule: plan.schedule)
+                let wall = Double(DispatchTime.now().uptimeNanoseconds
+                                  - t0.uptimeNanoseconds) / 1000
+                let want = refStepLogits[step - 1]
+                guard next == refSeq[step], lg.count == want.count,
+                      lg.allSatisfy({ $0.isFinite }),
+                      zip(lg, want).allSatisfy({
+                          abs(Double($0.0 - $0.1))
+                              / max(1.0, abs(Double($0.1))) < 1e-4
+                      }) else {
+                    fail("graph step \(step) diverged from runner reference")
+                }
+                gen.append(next)
+                wallSamples.append(wall)
+                gpuSum += gpu
+                print(String(format: "  step %d: token %d, wall %.0f us, gpu %.0f us, %d kernels, %d buffers",
+                             step, next, wall, gpu, kernels, buffers))
+            }
+            let sortedWall = wallSamples.sorted()
+            let mid = sortedWall.count / 2
+            let medianWall = sortedWall.count % 2 == 1
+                ? sortedWall[mid] : (sortedWall[mid - 1] + sortedWall[mid]) / 2
+            print("greedy ids (reference == graph): \(refSeq.map(String.init).joined(separator: " "))")
+            print("text: \(try tokenizer.decode(refSeq))")
+            print(String(format: "verified generation: %d steps, median wall %.0f us/token, gpu total %.1f ms",
+                         wallSamples.count, medianWall, gpuSum / 1000))
+            print("FORGE_PASS")
+        } catch {
+            fail("gemma-forge failed: \(error)")
+        }
+
+    case "gemma-profile":
+        // Measures where per-token GPU time goes: one reference
+        // (per-kernel) forward, then matvec GPU time aggregated per
+        // tensor and per tensor FAMILY (attn/expert/shared/lm_head...).
+        // Honest attribution: exact in per-kernel mode.
+        let path = requireValue("--file", args)
+        let promptArg = args.firstIndex(of: "--prompt-ids").map { _ in
+            requireValue("--prompt-ids", args) } ?? "2,9259"
+        do {
+            let prompt = promptArg.split(separator: ",").map { Int($0) ?? -1 }
+            let runner = try Gemma4Runner(fileAt: URL(fileURLWithPath: path))
+            guard prompt.allSatisfy({ $0 >= 0 && $0 < runner.config.vocabSize }) else {
+                fail("bad prompt ids")
+            }
+            runner.reset()
+            let evidence = try runner.forward(tokenIds: prompt)
+            let total = evidence.gpuMicros
+            print(String(format: "per-kernel forward: %d tokens, total GPU %.1f ms, %d kernels",
+                         prompt.count, total / 1000, evidence.dispatchedKernels))
+            let profile = runner.matvecGpuProfile()
+            let matvecSum = profile.reduce(0.0) { $0 + $1.gpuMicros }
+            var byFamily = [String: (gpu: Double, calls: Int)]()
+            for entry in profile {
+                let comps = entry.tensor.split(separator: ".")
+                let family = comps.count > 2 && comps[0] == "blk"
+                    ? comps.dropFirst(2).joined(separator: ".") : entry.tensor
+                byFamily[family, default: (0, 0)].gpu += entry.gpuMicros
+                byFamily[family, default: (0, 0)].calls += entry.calls
+            }
+            print(String(format: "matvec total %.1f ms (%.0f%% of GPU), non-matvec %.1f ms",
+                         matvecSum / 1000, 100 * matvecSum / max(total, 1),
+                         (total - matvecSum) / 1000))
+            print("top tensors by GPU time:")
+            for entry in profile.prefix(12) {
+                print(String(format: "  %-34@ %8.1f ms  %5.1f%%  %4d calls",
+                             entry.tensor, entry.gpuMicros / 1000,
+                             100 * entry.gpuMicros / max(matvecSum, 1), entry.calls))
+            }
+            print("by tensor family:")
+            for (family, stat) in byFamily.sorted(by: { $0.value.gpu > $1.value.gpu }).prefix(14) {
+                print(String(format: "  %-34@ %8.1f ms  %5.1f%%  %4d calls",
+                             family, stat.gpu / 1000,
+                             100 * stat.gpu / max(matvecSum, 1), stat.calls))
+            }
+            print("PROFILE_COMPLETED")
+        } catch {
+            fail("gemma-profile failed: \(error)")
+        }
+
     default:
         usage()
 }

@@ -102,6 +102,8 @@ public struct GGUFFile: Sendable {
     /// General alignment (metadata `general.alignment`, default 32).
     public let alignment: Int
     public let byteCount: Int
+    /// The file this was parsed from (nil for in-memory fixtures).
+    public let sourceURL: URL?
     /// Memory-mapped (or caller-provided) file bytes; slices only.
     let data: Data
 
@@ -195,10 +197,10 @@ public enum GGUFReader {
     /// Maps the file read-only; no full-file copy is ever made.
     public static func read(_ url: URL) throws -> GGUFFile {
         let data = try Data(contentsOf: url, options: [.mappedIfSafe, .alwaysMapped])
-        return try parse(data)
+        return try parse(data, sourceURL: url)
     }
 
-    public static func parse(_ data: Data) throws -> GGUFFile {
+    public static func parse(_ data: Data, sourceURL: URL? = nil) throws -> GGUFFile {
         var cursor = Cursor(data: data)
         guard cursor.remainingBytes >= 12 else {
             throw GGUFError.truncated("header")
@@ -270,7 +272,7 @@ public enum GGUFReader {
 
         let file = GGUFFile(version: version, metadata: metadata, tensors: tensors,
                             dataOffset: dataOffset, alignment: alignment,
-                            byteCount: data.count, data: data)
+                            byteCount: data.count, sourceURL: sourceURL, data: data)
         // Validate every tensor immediately — geometry, alignment, file
         // bounds — and reject overlapping storage, so a malformed
         // directory can never produce out-of-range or aliased reads.

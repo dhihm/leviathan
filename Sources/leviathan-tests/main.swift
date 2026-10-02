@@ -1249,6 +1249,19 @@ struct GGUFTestBuilder {
         for v in values { appendU32(UInt32(bitPattern: v)) }
         kvCount += 1
     }
+    mutating func kvStringArray(_ key: String, _ values: [String]) {
+        appendString(key); appendU32(9); appendU32(8); appendU64(UInt64(values.count))
+        for v in values { appendString(v) }
+        kvCount += 1
+    }
+    mutating func kvF32Array(_ key: String, _ values: [Float]) {
+        appendString(key); appendU32(9); appendU32(6); appendU64(UInt64(values.count))
+        for v in values { appendU32(v.bitPattern) }
+        kvCount += 1
+    }
+    mutating func kvBool(_ key: String, _ value: Bool) {
+        appendString(key); appendU32(7); bytes.append(value ? 1 : 0); kvCount += 1
+    }
     mutating func tensor(_ name: String, dims: [Int], type: UInt32, offset: Int) {
         appendString(name)
         appendU32(UInt32(dims.count))
@@ -1353,6 +1366,554 @@ do {
     }
 } catch {
     failed += 1; print("FAIL: kv-head pattern test — threw \(error)")
+}
+
+// MARK: - Gemma tokenizer malformed-metadata rejection (crafted fixtures)
+
+do {
+    // Minimal but CONTRACT-VALID gemma4 tokenizer metadata: the full
+    // 256-token byte-fallback set plus specials and pieces. Fields are
+    // parameterized once (no duplicate GGUF keys).
+    // `extraTokens`/`extraTypes` append AFTER the 256 byte tokens +
+    // <bos>/<eos>/<unk>; `merges` are real ranked merge rules.
+    func tokenizerFixture(
+        extraTokens: [String] = ["hello", "world"],
+        extraTypes: [Int32] = [1, 1],
+        merges: [String] = [],
+        addBOS: Bool = true, addSpacePrefix: Bool = false,
+        bosID: UInt32 = 256, removeByte41: Bool = false
+    ) -> Data {
+        var b = GGUFTestBuilder()
+        var tokens = byteTokens()
+        var types = [Int32](repeating: 6, count: 256)   // .byte
+        if removeByte41 {
+            tokens.remove(at: 0x41)
+            types.remove(at: 0x41)
+        }
+        tokens += ["<bos>", "<eos>", "<unk>"] + extraTokens
+        types += [3, 3, 2] + extraTypes
+        b.kvString("tokenizer.ggml.model", "gemma4")
+        b.kvStringArray("tokenizer.ggml.tokens", tokens)
+        b.kvInt32Array("tokenizer.ggml.token_type", types)
+        b.kvF32Array("tokenizer.ggml.scores", [Float](repeating: 0, count: tokens.count))
+        b.kvStringArray("tokenizer.ggml.merges", merges)
+        b.kvU32("tokenizer.ggml.bos_token_id", bosID)
+        b.kvU32("tokenizer.ggml.eos_token_id", 257)
+        b.kvU32("tokenizer.ggml.unknown_token_id", 258)
+        b.kvBool("tokenizer.ggml.add_bos_token", addBOS)
+        b.kvBool("tokenizer.ggml.add_space_prefix", addSpacePrefix)
+        return b.finish()
+    }
+    func byteTokens() -> [String] { (0..<256).map { String(format: "<0x%02X>", $0) } }
+
+    // Valid: "hello" has NO merge chain, so BPE falls back to bytes:
+    // [BOS, 'h','e','l','l','o'] byte tokens — the exact llama.cpp
+    // byte-fallback behavior this contract mandates.
+    let tok = try GemmaTokenizer(gguf: GGUFReader.parse(tokenizerFixture()))
+    checkEqual("crafted tokenizer encode hello (byte fallback)",
+               try tok.encode("hello"), [256, 104, 101, 108, 108, 111])
+    checkEqual("crafted tokenizer decode round-trip (BOS control dropped)",
+               try tok.decode([256, 104, 101, 108, 108, 111]), "hello")
+    checkEqual("crafted tokenizer byte decode", try tok.decode([0x41]), "A")
+    check("crafted tokenizer EOG at eos", tok.isEndOfGeneration(257))
+    check("crafted tokenizer not EOG at normal", !tok.isEndOfGeneration(259))
+    // Merge ranks are honored: with the "l l" rule and the piece "ll" in
+    // vocab, the merged symbol resolves to its vocab id.
+    let tok2 = try GemmaTokenizer(gguf: GGUFReader.parse(
+        tokenizerFixture(extraTokens: ["hello", "world", "ll"],
+                         extraTypes: [1, 1, 1], merges: ["l l"])))
+    checkEqual("crafted tokenizer merge rule applied",
+               try tok2.encode("hello"), [256, 104, 101, 261, 111])
+    // Malformed metadata must be REJECTED at init, never silently fixed.
+    do {
+        _ = try GemmaTokenizer(gguf: GGUFReader.parse(
+            tokenizerFixture(extraTokens: ["hello", "world", "<0xZZ>"],
+                             extraTypes: [1, 1, 6])))
+        failed += 1; print("FAIL: malformed byte syntax accepted")
+    } catch let e as GemmaTokenizerError {
+        check("tokenizer malformed byte syntax rejected",
+              "\(e)".contains("inconsistent"))
+    }
+    do {
+        _ = try GemmaTokenizer(gguf: GGUFReader.parse(tokenizerFixture(removeByte41: true)))
+        failed += 1; print("FAIL: missing byte token accepted")
+    } catch let e as GemmaTokenizerError {
+        check("tokenizer missing byte token rejected",
+              "\(e)".contains("byte-fallback") || "\(e)".contains("<0x41>"))
+    }
+    do {
+        _ = try GemmaTokenizer(gguf: GGUFReader.parse(tokenizerFixture(addBOS: false)))
+        failed += 1; print("FAIL: add_bos=false accepted")
+    } catch let e as GemmaTokenizerError {
+        check("tokenizer add_bos=false rejected", "\(e)".contains("add_bos"))
+    }
+    do {
+        _ = try GemmaTokenizer(gguf: GGUFReader.parse(
+            tokenizerFixture(addSpacePrefix: true)))
+        failed += 1; print("FAIL: add_space_prefix=true accepted")
+    } catch let e as GemmaTokenizerError {
+        check("tokenizer add_space_prefix=true rejected",
+              "\(e)".contains("add_space_prefix"))
+    }
+    do {
+        _ = try GemmaTokenizer(gguf: GGUFReader.parse(
+            tokenizerFixture(bosID: 999)))
+        failed += 1; print("FAIL: out-of-range bos accepted")
+    } catch let e as GemmaTokenizerError {
+        check("tokenizer out-of-range bos rejected", "\(e)".contains("bos/eos"))
+    }
+    // Unknown token_type code (9) across the array.
+    do {
+        var types9 = [Int32](repeating: 9, count: 256 + 3 + 2)
+        _ = types9
+        // Reuse the fixture with an all-9 type array via a tiny builder:
+        var b = GGUFTestBuilder()
+        let tokens = byteTokens() + ["<bos>", "<eos>", "<unk>", "hello", "world"]
+        b.kvString("tokenizer.ggml.model", "gemma4")
+        b.kvStringArray("tokenizer.ggml.tokens", tokens)
+        b.kvInt32Array("tokenizer.ggml.token_type",
+                       [Int32](repeating: 9, count: tokens.count))
+        b.kvF32Array("tokenizer.ggml.scores", [Float](repeating: 0, count: tokens.count))
+        b.kvStringArray("tokenizer.ggml.merges", [])
+        b.kvU32("tokenizer.ggml.bos_token_id", 256)
+        b.kvU32("tokenizer.ggml.eos_token_id", 257)
+        b.kvU32("tokenizer.ggml.unknown_token_id", 258)
+        b.kvBool("tokenizer.ggml.add_bos_token", true)
+        _ = try GemmaTokenizer(gguf: GGUFReader.parse(b.finish()))
+        failed += 1; print("FAIL: unknown token_type accepted")
+    } catch let e as GemmaTokenizerError {
+        check("tokenizer unknown token_type rejected", "\(e)".contains("token_type"))
+    }
+} catch {
+    failed += 1; print("FAIL: crafted tokenizer fixture — threw \(error)")
+}
+
+// MARK: - Gemma graph mutation rejection (captured graph governs execution)
+
+do {
+    // The captured graph is the ONLY thing the graph executor will run:
+    // public executeGraph/executeGraphContinue call GemmaGraph.validate
+    // against the real config + tensor directory before any kernel, so
+    // any mutation of the captured IR is rejected before GPU access.
+    // These tests prove rejection of every mutation class.
+    var b = GGUFTestBuilder()
+    b.appendGemma4Metadata()
+    let file = try GGUFReader.parse(b.finish())
+    let cfg = try Gemma4Config(file: file)
+    let gc = GemmaGraphIR.GraphConfig(
+        layerCount: cfg.layerCount, hidden: cfg.hiddenSize, qHeads: cfg.qHeads,
+        localKVHeads: cfg.localKVHeads, globalKVHeads: cfg.globalKVHeads,
+        localHeadDim: cfg.localHeadDim, globalHeadDim: cfg.globalHeadDim,
+        slidingWindow: cfg.slidingWindow, vocabSize: cfg.vocabSize,
+        expertCount: cfg.expertCount, expertUsedCount: cfg.topKExperts,
+        expertIntermediate: cfg.expertIntermediate,
+        sharedIntermediate: cfg.sharedIntermediate,
+        finalSoftcap: cfg.finalSoftcap, globalLayers: cfg.globalLayers)
+    let expected = GemmaGraph.expectedSequence(gc)
+    checkEqual("expected op count 934", expected.count, 934)
+    func graph(_ ops: [GemmaGraphIR.Op], schema: Int = 1,
+               model: String = "gemma4-26b-a4b",
+               config: GemmaGraphIR.GraphConfig = gc) -> GemmaGraphIR {
+        GemmaGraphIR(schema: schema, model: model, config: config, ops: ops)
+    }
+    // The synthetic file has NO tensors: the exact expected sequence passes
+    // the full structural pass and is rejected at tensor-binding existence.
+    do {
+        try GemmaGraph.validate(graph(expected), config: cfg, file: file)
+        failed += 1; print("FAIL: tensorless file accepted")
+    } catch let e as GemmaGraphError {
+        if case .missingTensor = e { passed += 1 }
+        else { failed += 1; print("FAIL: valid sequence on tensorless file — wrong case \(e)") }
+    } catch {
+        failed += 1; print("FAIL: valid sequence on tensorless file — \(error)")
+    }
+    func expectGraphError(_ name: String, _ isCase: (GemmaGraphError) -> Bool,
+                          _ body: () throws -> Void) {
+        do {
+            try body()
+            failed += 1; print("FAIL: \(name) — no error thrown")
+        } catch let e as GemmaGraphError {
+            if isCase(e) {
+                passed += 1
+            } else {
+                failed += 1; print("FAIL: \(name) — wrong case: \(e)")
+            }
+        } catch {
+            failed += 1; print("FAIL: \(name) — wrong error type: \(error)")
+        }
+    }
+    // Dropped op (structural pass complete before tensor checks).
+    expectGraphError("dropped op rejected", { if case .badSequence = $0 { true } else { false } }) {
+        try GemmaGraph.validate(graph(Array(expected.dropLast())), config: cfg, file: file)
+    }
+    // Reordered ops.
+    expectGraphError("reordered ops rejected", { if case .badSequence = $0 { true } else { false } }) {
+        var ops = expected; ops.swapAt(0, ops.count - 1)
+        try GemmaGraph.validate(graph(ops), config: cfg, file: file)
+    }
+    // Unknown op string.
+    expectGraphError("unknown op rejected", { if case .unsupportedOp = $0 { true } else { false } }) {
+        var ops = expected; ops[0] = GemmaGraphIR.Op(op: "conv2d")
+        try GemmaGraph.validate(graph(ops), config: cfg, file: file)
+    }
+    // Wrong layer index on an inner op.
+    expectGraphError("wrong layer index rejected", { if case .badSequence = $0 { true } else { false } }) {
+        var ops = expected
+        ops[1] = GemmaGraphIR.Op(op: "attn_norm", layer: 7,
+                                 tensor: "blk.7.attn_norm.weight")
+        try GemmaGraph.validate(graph(ops), config: cfg, file: file)
+    }
+    // Config mismatch (checked before sequence/tensor validation).
+    expectGraphError("config mismatch rejected", { if case .configMismatch = $0 { true } else { false } }) {
+        let wrong = GemmaGraphIR.GraphConfig(
+            layerCount: 29, hidden: gc.hidden, qHeads: gc.qHeads,
+            localKVHeads: gc.localKVHeads, globalKVHeads: gc.globalKVHeads,
+            localHeadDim: gc.localHeadDim, globalHeadDim: gc.globalHeadDim,
+            slidingWindow: gc.slidingWindow, vocabSize: gc.vocabSize,
+            expertCount: gc.expertCount, expertUsedCount: gc.expertUsedCount,
+            expertIntermediate: gc.expertIntermediate,
+            sharedIntermediate: gc.sharedIntermediate,
+            finalSoftcap: gc.finalSoftcap, globalLayers: gc.globalLayers)
+        try GemmaGraph.validate(graph(expected, config: wrong), config: cfg, file: file)
+    }
+    // Schema and model tag.
+    expectGraphError("wrong schema rejected", { if case .badJSON = $0 { true } else { false } }) {
+        try GemmaGraph.validate(graph(expected, schema: 2), config: cfg, file: file)
+    }
+    expectGraphError("wrong model tag rejected", { if case .badJSON = $0 { true } else { false } }) {
+        try GemmaGraph.validate(graph(expected, model: "other"), config: cfg, file: file)
+    }
+    // Digest: deterministic and mutation-sensitive.
+    let d1 = try GemmaGraph.digest(graph(expected))
+    checkEqual("graph digest stable", try GemmaGraph.digest(graph(expected)), d1)
+    var ops = expected
+    ops[1] = GemmaGraphIR.Op(op: "attn_norm", layer: 1,
+                             tensor: "blk.1.attn_norm.weight")
+    if let d2 = try? GemmaGraph.digest(graph(ops)) {
+        check("graph digest changes under attribute mutation", d2 != d1)
+    } else {
+        failed += 1; print("FAIL: digest mutation threw")
+    }
+
+    // Typed SSA: the lowered schedule for the expected graph is valid;
+    // adversarially mutated schedules (rewired/stale/undefined operands,
+    // shape edits, unknown ops, non-logits terminals) are rejected by
+    // dataflow validation — the dataflow, not stage names, governs what
+    // the executor may run. Mutations go through the JSON representation
+    // (also exercising the parse path).
+    let ssa: GemmaSSAIR
+    do {
+        ssa = try GemmaSSA.lower(graph(expected))
+    } catch {
+        failed += 1; print("FAIL: SSA lowering of expected graph — \(error)")
+        ssa = GemmaSSAIR(schema: 1, values: [], instructions: [])
+    }
+    checkEqual("ssa instruction count == stage ops", ssa.instructions.count, expected.count)
+    do {
+        let lowered2 = try GemmaSSA.lower(graph(expected))
+        checkEqual("ssa lowering deterministic", lowered2, ssa)
+        checkEqual("ssa digest stable", try GemmaSSA.digest(lowered2),
+                   try GemmaSSA.digest(ssa))
+    } catch {
+        failed += 1; print("FAIL: SSA determinism/digest — \(error)")
+    }
+    func mutatedSSA(_ mutate: (inout [String: Any]) -> Void) -> GemmaSSAIR? {
+        guard let data = try? JSONEncoder().encode(ssa),
+              var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        mutate(&obj)
+        guard let out = try? JSONSerialization.data(withJSONObject: obj),
+              let back = try? JSONDecoder().decode(GemmaSSAIR.self, from: out)
+        else { return nil }
+        return back
+    }
+    func expectSSAReject(_ name: String, _ contains: String,
+                         _ mutate: @escaping (inout [String: Any]) -> Void) {
+        guard let bad = mutatedSSA(mutate) else {
+            failed += 1; print("FAIL: \(name) — mutation unrepresentable")
+            return
+        }
+        do {
+            try GemmaSSA.validate(bad, config: gc)
+            failed += 1; print("FAIL: \(name) — mutated SSA accepted")
+        } catch let e as GemmaSSAError {
+            check(name, "\(e)".contains(contains))
+        } catch {
+            failed += 1; print("FAIL: \(name) — wrong error \(error)")
+        }
+    }
+    expectSSAReject("ssa undefined operand rejected", "undefined") { obj in
+        obj["instructions"] = (obj["instructions"] as! [[String: Any]]).map { inst in
+            var i = inst
+            if (i["op"] as? String) == "matvec", var ins = i["inputs"] as? [String] {
+                ins[0] = "x@999"; i["inputs"] = ins
+            }
+            return i
+        }
+    }
+    expectSSAReject("ssa stale version read rejected", "non-live") { obj in
+        // Rewire the FINAL layer's rmsnorm input to an ancient x version.
+        obj["instructions"] = (obj["instructions"] as! [[String: Any]]).map { inst in
+            var i = inst
+            if (i["op"] as? String) == "rmsnorm", var ins = i["inputs"] as? [String],
+               ins[0].hasPrefix("x@") { ins[0] = "x@0"; i["inputs"] = ins }
+            return i
+        }
+    }
+    expectSSAReject("ssa shape mutation rejected", "length") { obj in
+        obj["values"] = (obj["values"] as! [[String: Any]]).map { v in
+            var w = v
+            if (w["name"] as? String) == "h" { w["length"] = 12345 }
+            return w
+        }
+    }
+    expectSSAReject("ssa unknown op rejected", "unknown ssa op") { obj in
+        obj["instructions"] = (obj["instructions"] as! [[String: Any]]).map { inst in
+            var i = inst
+            if (i["op"] as? String) == "copy" { i["op"] = "conv2d" }
+            return i
+        }
+    }
+    expectSSAReject("ssa non-logits terminal rejected", "logits") { obj in
+        var insts = obj["instructions"] as! [[String: Any]]
+        insts.removeLast()
+        obj["instructions"] = insts
+    }
+    expectSSAReject("ssa duplicate value id rejected", "duplicate") { obj in
+        var vals = obj["values"] as! [[String: Any]]
+        vals.append(vals[0])
+        obj["values"] = vals
+    }
+    expectSSAReject("ssa missing cache attrs rejected", "cache_append") { obj in
+        obj["instructions"] = (obj["instructions"] as! [[String: Any]]).map { inst in
+            var i = inst
+            if i["op"] as? String == "cache_append", var a = i["attrs"] as? [String: Int] {
+                a.removeValue(forKey: "kvHeads"); i["attrs"] = a
+            }
+            return i
+        }
+    }
+    expectSSAReject("ssa absurd dimension rejected", "bad value") { obj in
+        obj["values"] = (obj["values"] as! [[String: Any]]).map { v in
+            var w = v
+            if (w["name"] as? String) == "h" { w["length"] = Int.max }
+            return w
+        }
+    }
+    expectSSAReject("ssa bad kind rejected", "name/kind") { obj in
+        obj["values"] = (obj["values"] as! [[String: Any]]).map { v in
+            var w = v
+            if (w["name"] as? String) == "h" { w["kind"] = "routing" }
+            return w
+        }
+    }
+    // Bad dtype makes the artifact JSON UNDECODABLE — also a rejection
+    // (at parse, before validation even runs).
+    do {
+        if let data = try? JSONEncoder().encode(ssa),
+           var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            obj["values"] = (obj["values"] as! [[String: Any]]).map { v in
+                var w = v
+                if (w["name"] as? String) == "x" { w["dtype"] = "f16" }
+                return w
+            }
+            let out = try JSONSerialization.data(withJSONObject: obj)
+            if (try? JSONDecoder().decode(GemmaSSAIR.self, from: out)) != nil {
+                failed += 1; print("FAIL: ssa bad dtype decoded")
+            } else {
+                passed += 1
+            }
+        } else {
+            failed += 1; print("FAIL: ssa dtype mutation unrepresentable")
+        }
+    } catch {
+        failed += 1; print("FAIL: ssa dtype check — \(error)")
+    }
+    expectSSAReject("ssa layer out of range rejected", "layer") { obj in
+        obj["instructions"] = (obj["instructions"] as! [[String: Any]]).map { inst in
+            var i = inst
+            if i["op"] as? String == "attention" { i["layer"] = 999 }
+            return i
+        }
+    }
+    expectSSAReject("ssa gate/up slice interference rejected", "gelu_up") { obj in
+        obj["values"] = (obj["values"] as! [[String: Any]]).map { v in
+            var w = v
+            if (w["name"] as? String) == "up" { w["sliceOffset"] = 0 }
+            return w
+        }
+    }
+    do {
+        let d1ssa = try GemmaSSA.digest(ssa)
+        if let bad = mutatedSSA({ obj in
+            obj["instructions"] = (obj["instructions"] as! [[String: Any]]).map { inst in
+                var i = inst
+                if (i["op"] as? String) == "rope", var a = i["attrs"] as? [String: Int] {
+                    a["heads"] = 3; i["attrs"] = a
+                }
+                return i
+            }
+        }), let dBad = try? GemmaSSA.digest(bad) {
+            check("ssa digest changes under mutation", dBad != d1ssa)
+        } else {
+            failed += 1; print("FAIL: ssa digest mutation unrepresentable")
+        }
+    } catch {
+        failed += 1; print("FAIL: ssa digest check — \(error)")
+    }
+} catch {
+    failed += 1; print("FAIL: graph mutation test — threw \(error)")
+}
+
+// MARK: - Tiled cooperative Q4_0 matvec vs FP64 oracle (ACTUAL runtime shader)
+
+struct Q4TiledTestError: Error, CustomStringConvertible {
+    let message: String
+    var description: String { message }
+    init(_ m: String) { message = m }
+}
+
+do {
+    // Compiles Gemma4Runner.shaderSource itself (the same MSL the runner
+    // uses — never a duplicated shader) and dispatches BOTH
+    // g4_q4_matvec (one thread per row) and g4_q4_matvec_tiled (one
+    // threadgroup per row, tree reduction) over synthetic Q4_0 weights
+    // with MIXED-SIGN FP16 scales and cancellation-prone inputs, at real
+    // model dimensions. The tiled reduction reassociates the addition
+    // order, so agreement with the FP64 oracle is a tolerance gate
+    // (rel < 1e-5 here), not bit equality; row widths 32/704/2816 cover
+    // single-block, expert-intermediate, and hidden geometries.
+    guard let device = MTLCreateSystemDefaultDevice(),
+          let queue = device.makeCommandQueue() else {
+        throw Q4TiledTestError("Metal unavailable")
+    }
+    let library = try device.makeLibrary(source: Gemma4Runner.shaderSource, options: nil)
+    func pipeline(_ name: String) throws -> MTLComputePipelineState {
+        guard let fn = library.makeFunction(name: name),
+              let p = try? device.makeComputePipelineState(function: fn) else {
+            throw Q4TiledTestError("pipeline \(name) missing")
+        }
+        return p
+    }
+    let plain = try pipeline("g4_q4_matvec")
+    let tiled = try pipeline("g4_q4_matvec_tiled")
+
+    func fp64Oracle(blocks: [UInt8], outDim: Int, inDim: Int, x: [Float]) -> [Double] {
+        let blocksPerRow = inDim / 32
+        var y = [Double](repeating: 0, count: outDim)
+        for row in 0..<outDim {
+            var sum = 0.0
+            for b in 0..<blocksPerRow {
+                let base = (row * blocksPerRow + b) * 18
+                let dbits = UInt16(blocks[base]) | (UInt16(blocks[base + 1]) << 8)
+                let d = Double(Float(Float16(bitPattern: dbits)))
+                for l in 0..<16 {
+                    let q = blocks[base + 2 + l]
+                    let lo = Double(Float(q & 0x0F) - 8)
+                    let hi = Double(Float(q >> 4) - 8)
+                    sum += d * lo * Double(x[b * 32 + l])
+                    sum += d * hi * Double(x[b * 32 + 16 + l])
+                }
+            }
+            y[row] = sum
+        }
+        return y
+    }
+    func runKernel(_ p: MTLComputePipelineState, blocks: [UInt8], outDim: Int,
+                   inDim: Int, x: [Float], tileWidth: Int?) throws -> [Float] {
+        let wb = device.makeBuffer(bytes: blocks, length: blocks.count,
+                                   options: .storageModeShared)!
+        let xb = device.makeBuffer(bytes: x, length: x.count * 4,
+                                   options: .storageModeShared)!
+        let yb = device.makeBuffer(length: outDim * 4, options: .storageModeShared)!
+        var param = SIMD2<UInt32>(UInt32(inDim), UInt32(outDim))
+        var off = UInt64(0)
+        let cmd = queue.makeCommandBuffer()!
+        let enc = cmd.makeComputeCommandEncoder()!
+        enc.setComputePipelineState(p)
+        enc.setBytes(&param, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
+        enc.setBytes(&off, length: MemoryLayout<UInt64>.stride, index: 1)
+        enc.setBuffer(wb, offset: 0, index: 2)
+        enc.setBuffer(xb, offset: 0, index: 3)
+        enc.setBuffer(yb, offset: 0, index: 4)
+        if let w = tileWidth {
+            // The PRODUCTION validator decides — no mirrored test guard.
+            guard Gemma4Runner.legalCooperativeWidth(w, pipelineMax: p.maxTotalThreadsPerThreadgroup) else {
+                throw Q4TiledTestError("illegal tile width \(w)")
+            }
+            enc.dispatchThreadgroups(MTLSize(width: outDim, height: 1, depth: 1),
+                                     threadsPerThreadgroup: MTLSize(width: w, height: 1, depth: 1))
+        } else {
+            let width = p.maxTotalThreadsPerThreadgroup
+            let groups = (outDim + width - 1) / width
+            enc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
+                                     threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+        }
+        enc.endEncoding()
+        cmd.commit()
+        cmd.waitUntilCompleted()
+        guard cmd.status == .completed, cmd.error == nil else {
+            throw Q4TiledTestError("kernel failed: \(String(describing: cmd.error))")
+        }
+        return [Float](UnsafeBufferPointer(start: yb.contents().assumingMemoryBound(to: Float.self),
+                                           count: outDim))
+    }
+    var rng = SplitMix64(seed: 4242)
+    let widths = [32, 704, 2112, 2816]
+    for inDim in widths {
+        let outDim = 16
+        let blocksPerRow = inDim / 32
+        var blocks = [UInt8]()
+        blocks.reserveCapacity(outDim * blocksPerRow * 18)
+        for _ in 0..<(outDim * blocksPerRow) {
+            // Mixed-sign scales (nextUniform() is [-1,1), so
+            // nextUniform()*2-1 spans [-3,1)) incl. exact negatives;
+            // nibbles uniform for cancellation-heavy dot products.
+            let scale = Float16(rng.nextUniform() * 2 - 1)
+            blocks += [UInt8(scale.bitPattern & 0xFF), UInt8(scale.bitPattern >> 8)]
+            for _ in 0..<16 { blocks.append(UInt8(rng.next() & 0xFF)) }
+        }
+        // Cancellation-prone input: alternating-sign magnitudes.
+        var x = [Float](repeating: 0, count: inDim)
+        for i in 0..<inDim {
+            x[i] = (i % 2 == 0 ? 1 : -1) * Float(rng.nextUniform() * 10 - 5)
+        }
+        let oracle = fp64Oracle(blocks: blocks, outDim: outDim, inDim: inDim, x: x)
+        let plainOut = try runKernel(plain, blocks: blocks, outDim: outDim,
+                                     inDim: inDim, x: x, tileWidth: nil)
+        var worstPlain = 0.0
+        for i in 0..<outDim {
+            worstPlain = max(worstPlain,
+                             abs(Double(plainOut[i]) - oracle[i]) / max(1, abs(oracle[i])))
+        }
+        check(String(format: "q4 plain kernel vs fp64 oracle (inDim %d, worst %.2e)",
+                     inDim, worstPlain), worstPlain < 1e-5)
+        for tile in [32, 64, 128] {
+            guard tile <= tiled.maxTotalThreadsPerThreadgroup else { continue }
+            let out = try runKernel(tiled, blocks: blocks, outDim: outDim,
+                                    inDim: inDim, x: x, tileWidth: tile)
+            var worst = 0.0
+            for i in 0..<outDim {
+                worst = max(worst,
+                            abs(Double(out[i]) - oracle[i]) / max(1, abs(oracle[i])))
+            }
+            check(String(format: "q4 tiled kernel width %d vs fp64 oracle (inDim %d, worst %.2e)",
+                         tile, inDim, worst), worst < 1e-5)
+        }
+    }
+    // Illegal widths rejected by the PRODUCTION validator (0, 33, 256;
+    // and the same decision the runtime dispatchExplicit makes).
+    for bad in [0, 33, 256] {
+        check("q4 tiled illegal width \(bad) rejected by production validator",
+              !Gemma4Runner.legalCooperativeWidth(bad,
+                  pipelineMax: tiled.maxTotalThreadsPerThreadgroup))
+    }
+    check("q4 tiled legal width 64 accepted by production validator",
+          Gemma4Runner.legalCooperativeWidth(64,
+              pipelineMax: tiled.maxTotalThreadsPerThreadgroup))
+    print("q4 tiled numerical gates completed")
+} catch {
+    failed += 1; print("FAIL: q4 tiled gate — threw \(error)")
 }
 
 // MARK: - Gemma 4 real-model gates (opt-in via LEVIATHAN_GEMMA_GGUF)

@@ -1,0 +1,21 @@
+graph validated: 934 ops, model gemma4-26b-a4b
+hardware: Apple M1 Max, max threads/threadgroup 1024, exec width 32, working set 26800603136 bytes
+engine digest: 9373812b54b8de6c67f030c744933713477c51bfb38441ffbf0c45933aba45b4
+  candidate segmentBatching=0: correct 1, wall 921952 us/token, gpu 577401 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 921952 us, gpu 577401 us, 1799 kernels, 1799 buffers/token
+  candidate segmentBatching=1: correct 1, wall 440816 us/token, gpu 399539 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 440816 us, gpu 399539 us, 1799 kernels, 127 buffers/token
+  candidate segmentBatching=0: correct 1, wall 589942 us/token, gpu 276586 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 589942 us, gpu 276586 us, 1799 kernels, 1799 buffers/token
+  candidate segmentBatching=1: correct 1, wall 290382 us/token, gpu 249313 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 290382 us, gpu 249313 us, 1799 kernels, 127 buffers/token
+selected: segmentBatching=1, wall 290382 us/token, gpu 249313 us/token
+plan saved: /tmp/leviathan-forge2-tooling/gemma-plan4.json, digest cd2b9607d983a2d664c466687c954dffbf24d9e96784f159073885d3830f43c6
+  step 1: token 236772, wall 285011 us, gpu 249314 us, 1799 kernels, 127 buffers
+  step 2: token 1437, wall 287342 us, gpu 252845 us, 1799 kernels, 127 buffers
+  step 3: token 236772, wall 294481 us, gpu 258433 us, 1799 kernels, 127 buffers
+  step 4: token 236751, wall 296609 us, gpu 259416 us, 1799 kernels, 127 buffers
+  step 5: token 2964, wall 299030 us, gpu 261433 us, 1799 kernels, 127 buffers
+  step 6: token 236772, wall 302360 us, gpu 265539 us, 1799 kernels, 127 buffers
+  step 7: token 1340, wall 302366 us, gpu 265485 us, 1799 kernels, 127 buffers
+greedy ids (reference == graph): 3324 236772 1437 236772 236751 2964 236772 1340
+text:  upon-the-sands-of
+verified generation: 7 steps, median wall 296609 us/token, gpu total 2290.2 ms
+FORGE_PASS
+exit=0

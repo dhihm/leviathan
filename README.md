@@ -21,12 +21,55 @@ with **real parameter weights** — validated, hashed, parity-checked
 against PyTorch (measured 2.2e-08) — and automatically generates, gates,
 and selects GPU pass candidates with a reusable measured plan cache; see
 [docs/FORGE.md](docs/FORGE.md). The example weights are random
-initializations, not a trained model. Real LLM model import and
-serving are the next milestone; the target model is
-Gemma 4 26B-A4B (MoE, QAT Q4_0) — see
-[docs/MODEL_CANDIDATES.md](docs/MODEL_CANDIDATES.md) and
-[docs/MODEL_TARGET.md](docs/MODEL_TARGET.md) (SmolLM2 superseded); no
-full-model execution is claimed yet.
+initializations, not a trained model.
+
+**Real-model Gemma 4 26B-A4B (QAT Q4_0) now runs end-to-end through the
+Forge pipeline** on an M1 Max — the original GGUF-backed tokenizer
+(bounded 13-case exact-ID parity vs an independent Rust oracle),
+bounded greedy generation, and the model.py capture path (a bounded,
+trusted stage-list DSL — honestly NOT arbitrary Python/torch tracing):
+
+```bash
+# 1. Capture: user's trusted restricted model.py DSL -> graph JSON
+.build/release/leviathan-cli gemma-config-export --file <gguf> --out /tmp/cfg.json
+python3 tools/forge_gemma/export_gemma_graph.py examples/gemma_model.py /tmp/cfg.json /tmp/graph.json
+
+# 2. Forge: validate against the GGUF -> typed SSA lowering -> full-logit
+#    correctness gates (vs the independent runner forward) -> measured
+#    candidates (wall-median objective, baseline fallback) -> plan artifact
+#    embedding the lowered executable schedule + real digests:
+.build/release/leviathan-cli gemma-forge --file <gguf> --graph /tmp/graph.json \
+    --plan /tmp/plan.json --prompt-ids 2,9259 --gen-tokens 8
+
+# 3. Generation + GPU-time profile:
+.build/release/leviathan-cli gemma-generate --file <gguf> --text "Hello" --chat --max-tokens 8
+.build/release/leviathan-cli gemma-profile --file <gguf>
+```
+
+Measured on this M1 Max (2026-10-02; raw logs under
+[docs/evidence/](docs/evidence/)): the graph executor matches the
+original hand-written runner.forward — a separate execution path that
+drives the same validated kernel primitives, not a mathematically
+independent full-model implementation — bit-identically on the
+per-kernel path and within rel 1.6e-05 on the selected optimized pass
+(all 262,144 logits, gated per decode step), with exact greedy
+next-token equality over the tested 8-token workload
+(" upon-the-sands-of" — also identical TEXT with matching token counts
+to the same-GGUF Ollama 0.23.0 raw greedy baseline; the baseline API
+exposes no internal IDs, so that agreement is text+count, and no
+global no-quality-loss claim is made). Quantized kernels carry their
+own independent FP64 component gates. Selected pass = cross-op
+command-buffer batching (1799 → 127 submissions/token) + a tiled
+cooperative Q4_0 matvec: 921,952 → 290,382 µs wall per token within one
+gated run (3.17× vs the per-kernel baseline; ~3.4 decode tokens/s).
+The gap to the same-GGUF Ollama baseline (server-reported ~71 eval
+tokens/s, cold load 7.5 s, prefill 163 ms; the API's streamed chunks
+arrive coalesced client-side, so no per-token interval is claimed)
+remains large; optimization continues one measured, gated pass at a
+time. Limits: the captured DSL is a bounded Gemma-specific subset;
+serving, SSD expert streaming, and prefill batching are not
+implemented. See [docs/GEMMA_PROGRESS.md](docs/GEMMA_PROGRESS.md) and
+[docs/FORGE_PROGRESS.md](docs/FORGE_PROGRESS.md).
 
 ## Features
 
