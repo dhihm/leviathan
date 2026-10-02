@@ -268,7 +268,14 @@ Two engine paths share the validated-IR + measured-plan core:
   (`gemma-serve`).
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detail and
-[docs/VALIDATION.md](docs/VALIDATION.md) for measured hardware evidence.
+[docs/VALIDATION.md](docs/VALIDATION.md) for measured hardware
+evidence. A pass-8 design audit of why the Forge candidate grid does
+not generalize to arbitrary operators/hardware — and a staged
+redesign recommendation — is in
+[docs/ARCHITECTURE_AUDIT.md](docs/ARCHITECTURE_AUDIT.md). Status
+assessment: automatic candidate selection exists, but the joint goal
+of a general Python model compiler with competitive performance is
+UNMET (see the audit).
 
 ## Resource limits
 
@@ -325,7 +332,15 @@ Gemma Forge path (measured, gated, still bounded):
   requested generation length) currently blocks the faster tiled
   candidates — including the 20x-faster-per-kernel tiled F32 router —
   from 32-token selection; the selected vectorized-load RMSNorm
-  passes it with zero measured drift (bit-identical kernel).
+  passes it with zero measured drift (bit-identical kernel). A
+  teacher-forced layerwise diagnosis
+  (`leviathan-cli gemma-diagnose`, opt-in, probe off by default with
+  fail-closed bit-invariance checks) attributes the tiled-candidate
+  gate failures to differences consistent with float32
+  reduction-order reassociation on the tested fixture (single-Q4
+  FP64 sample; no exclusive cause proven, gates unchanged); see
+  [docs/FORGE_PROGRESS.md](docs/FORGE_PROGRESS.md) pass 8 and
+  [docs/evidence/gemma-diagnose-hello32.log](docs/evidence/gemma-diagnose-hello32.log).
 
 ## Roadmap
 

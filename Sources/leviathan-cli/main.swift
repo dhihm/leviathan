@@ -970,6 +970,435 @@ case "forge":
             fail("gemma-generate failed: \(error)")
         }
 
+    case "gemma-diagnose":
+        // Bounded opt-in teacher-forced layerwise numerical diagnosis.
+        // Runs the plain runner reference path ONCE to generate a greedy
+        // history, then REPLAYS the EXACT SAME token history (teacher
+        // forcing: no autoregressive feedback) under each kernel/
+        // scheduling axis separately — the same flags the forge executor
+        // sets per candidate — comparing per-layer residual checkpoints
+        // and full logits against the reference. Also reports gate-
+        // criterion context (top1-top2 margin, softmax KL, L2) so a tiny
+        // logit difference can be judged against the argmax margin, and
+        // runs an independent FP64 CPU oracle over the attention-Q matvec
+        // at the worst step/layer to attribute the error (which kernel is
+        // closer to exact math). Diagnostic ONLY: no gate is loosened,
+        // nothing here feeds candidate selection.
+        let path = requireValue("--file", args)
+        let genTokens = args.firstIndex(of: "--gen-tokens").map { _ in
+            Int(requireValue("--gen-tokens", args)) ?? 0 } ?? 32
+        guard genTokens >= 2, genTokens <= 64 else {
+            fail("--gen-tokens must be 2...64")
+        }
+        let rowProbe = args.firstIndex(of: "--row-probe").map { _ in
+            Int(requireValue("--row-probe", args)) ?? 0 } ?? 128
+        guard rowProbe >= 16, rowProbe <= 1024 else {
+            fail("--row-probe must be 16...1024")
+        }
+        do {
+            let fileURL = URL(fileURLWithPath: path)
+            let tokenizer = try GemmaTokenizer(gguf: GGUFReader.read(fileURL))
+            var history: [Int]
+            if let tokensArg = args.firstIndex(of: "--tokens").map({ _ in
+                requireValue("--tokens", args) }) {
+                history = tokensArg.split(separator: ",").map {
+                    guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+                          id >= 0, id < tokenizer.vocabSize else {
+                        fail("invalid token id '\($0)'")
+                    }
+                    return id
+                }
+            } else {
+                let text = requireValue("--text", args)
+                history = try tokenizer.encode(text)
+            }
+            guard !history.isEmpty, history.count + genTokens <= 4096 else {
+                fail("prompt + gen-tokens must fit the 4096 context")
+            }
+            print("prompt ids: \(history.map(String.init).joined(separator: " "))")
+            let runner = try Gemma4Runner(fileAt: fileURL)
+
+            // ---- reference pass A (probe ON): greedy history + snapshots.
+            // Snapshots keyed (step, layer, stage); steps index the
+            // teacher-forced forward of history[i] (step 0 = first prompt
+            // token's forward is folded: forward(history) then logits at
+            // each position). Step s logits predict generated[s].
+            var refSnap = [String: [Float]]()
+            var refIds = [Int]()
+            var refLogitsA = [[Float]]()
+            runner.layerProbe = { stage, layer, position, x in
+                refSnap["\(position):\(layer):\(stage)"] = x
+            }
+            runner.reset()
+            do {
+                let prefill = try runner.forward(tokenIds: history)
+                refLogitsA.append(try runner.currentLogits())
+                refIds.append(prefill.argmaxToken)
+                var prev = prefill.argmaxToken
+                while refIds.count < genTokens {
+                    if tokenizer.isEndOfGeneration(prev) { break }
+                    let ev = try runner.forward(tokenIds: [prev])
+                    refLogitsA.append(try runner.currentLogits())
+                    refIds.append(ev.argmaxToken)
+                    prev = ev.argmaxToken
+                }
+            } catch { fail("reference pass A failed: \(error)") }
+            runner.layerProbe = nil
+            let steps = refLogitsA.count
+            print("reference greedy ids (\(steps)): \(refIds.map(String.init).joined(separator: " "))")
+
+            // Teacher-forced replay helper: feeds prompt then the ref ids
+            // (all but the last — the last id's own forward is not needed),
+            // ONE token per forward so probe positions align exactly with
+            // the reference pass (step s logits come from position
+            // history.count - 1 + s in both).
+            func teacherForced(_ afterStep: (Int, [Float]) throws -> Void) throws {
+                runner.reset()
+                for t in history {
+                    try runner.forward(tokenIds: [t])
+                }
+                try afterStep(0, try runner.currentLogits())
+                for s in 1..<steps {
+                    try runner.forward(tokenIds: [refIds[s - 1]])
+                    try afterStep(s, try runner.currentLogits())
+                }
+            }
+
+            // ---- reference pass B (probe OFF): pure per-kernel logits.
+            // Fail closed: the probe's readbacks only flush deferred
+            // segments (same kernels, same order), so the reference must
+            // be BIT-IDENTICAL between the probe-on and probe-off passes.
+            var refLogitsB = [[Float]]()
+            try teacherForced { s, lg in
+                guard refLogitsA[s].count == lg.count,
+                      zip(refLogitsA[s], lg).allSatisfy({
+                          $0.bitPattern == $1.bitPattern }) else {
+                    fail("reference probe-on/off logits differ at step \(s) — probe changed numerics; diagnosis invalid")
+                }
+                refLogitsB.append(lg)
+            }
+
+            // Logit metrics of candidate logits `lg` vs reference `ref` at
+            // one step: gate-formula worst rel, argmax agreement, reference
+            // top1-top2 margin, softmax KL (Double, full vocab), relative L2.
+            // Fail-closed: shape mismatch or any non-finite value is an
+            // error, never a silently truncated zip or a NaN-driven zero.
+            func logitMetrics(_ lg: [Float], _ ref: [Float])
+                    -> (worstRel: Double, argmaxEq: Bool, margin: Float,
+                        kl: Double, l2rel: Double) {
+                guard lg.count == ref.count, !lg.isEmpty,
+                      lg.allSatisfy({ $0.isFinite }),
+                      ref.allSatisfy({ $0.isFinite }) else {
+                    fail("logit metrics: shape/nonfinite violation "
+                         + "(\(lg.count) vs \(ref.count))")
+                }
+                var worst = 0.0
+                var l2 = 0.0
+                var refN = 0.0
+                for (a, b) in zip(lg, ref) {
+                    let rel = abs(Double(a - b)) / max(1.0, abs(Double(b)))
+                    if rel > worst { worst = rel }
+                    let dd = Double(a - b)
+                    l2 += dd * dd
+                    refN += Double(b) * Double(b)
+                }
+                let argmax = lg.enumerated().max { $0.element < $1.element }!.offset
+                let refArg = ref.enumerated().max { $0.element < $1.element }!.offset
+                let sorted = ref.sorted(by: >)
+                let maxRef = Double(sorted[0])
+                let mExp = ref.map { exp(Double($0) - maxRef) }
+                let mSum = mExp.reduce(0, +)
+                let cExp = lg.map { exp(Double($0) - maxRef) }
+                let cSum = cExp.reduce(0, +)
+                var kl = 0.0
+                for (p, q) in zip(mExp, cExp) {
+                    let pi = p / mSum, qi = q / cSum
+                    if pi > 0 { kl += pi * log(pi / max(qi, 1e-300)) }
+                }
+                return (worst, argmax == refArg, sorted[0] - sorted[1],
+                        kl, sqrt(l2 / max(refN, 1e-300)))
+            }
+
+            struct AxisConfig {
+                let name: String
+                let q4: Bool, q6: Bool, rms: Bool, f32: Bool, vl: Bool, seg: Bool
+            }
+            let axes = [
+                AxisConfig(name: "segment_only", q4: false, q6: false, rms: false,
+                           f32: false, vl: false, seg: true),
+                AxisConfig(name: "q4_tiled", q4: true, q6: false, rms: false,
+                           f32: false, vl: false, seg: false),
+                AxisConfig(name: "q6_tiled", q4: false, q6: true, rms: false,
+                           f32: false, vl: false, seg: false),
+                AxisConfig(name: "rms_tiled", q4: false, q6: false, rms: true,
+                           f32: false, vl: false, seg: false),
+                AxisConfig(name: "f32_tiled", q4: false, q6: false, rms: false,
+                           f32: true, vl: false, seg: false),
+                AxisConfig(name: "tiled_all+segment", q4: true, q6: true, rms: true,
+                           f32: true, vl: false, seg: true),
+                AxisConfig(name: "vl+segment", q4: false, q6: false, rms: false,
+                           f32: false, vl: true, seg: true),
+            ]
+
+            // (axis, position) layerwise results: per-position worst rel at
+            // each checkpoint + the layer attaining the post_attn/post_layer
+            // max, and whether ANY snapshot differed at bit level (rel 0 is
+            // numerical equality, not proof of bit identity).
+            struct StepResult {
+                var postAttn = 0.0; var postAttnLayer = -1
+                var postLayer = 0.0; var postLayerLayer = -1
+                var attnNormH = 0.0
+                var anyBitsDiffer = false
+                // Per-layer rel at each checkpoint (index = layer) for the
+                // first-nonzero / propagation table at the worst position.
+                var perLayerAttn = [Double](repeating: 0, count: 30)
+                var perLayerPost = [Double](repeating: 0, count: 30)
+            }
+            for axis in axes {
+                runner.applyDiagnosticAxis(q4Tiled: axis.q4, q6Tiled: axis.q6,
+                                           rmsTiled: axis.rms, f32Tiled: axis.f32,
+                                           vectorizedLoads: axis.vl,
+                                           segmentBatching: axis.seg)
+                // Pass A: probe ON, layerwise comparison against refSnap.
+                // Indexed by teacher-forced POSITION (0 = first prompt
+                // token); the teacher-forced history covers exactly
+                // positions 0..<history.count + steps - 1.
+                let positionCount = history.count + steps - 1
+                var layerResults = [StepResult](repeating: StepResult(), count: positionCount)
+                runner.layerProbe = { stage, layer, position, x in
+                    guard position >= 0, position < positionCount else {
+                        fail("probe position \(position) outside teacher-forced history")
+                    }
+                    guard let want = refSnap["\(position):\(layer):\(stage)"],
+                          want.count == x.count,
+                          x.allSatisfy({ $0.isFinite }),
+                          want.allSatisfy({ $0.isFinite }) else {
+                        fail("probe key/shape/finite mismatch: position \(position) layer \(layer) \(stage)")
+                    }
+                    var worst = 0.0
+                    var bitsDiffer = false
+                    for (a, b) in zip(x, want) {
+                        if a.bitPattern != b.bitPattern { bitsDiffer = true }
+                        let rel = abs(Double(a - b)) / max(1.0, abs(Double(b)))
+                        if rel > worst { worst = rel }
+                    }
+                    var r = layerResults[position]
+                    r.anyBitsDiffer = r.anyBitsDiffer || bitsDiffer
+                    switch stage {
+                    case "post_attn":
+                        r.perLayerAttn[layer] = worst
+                        if worst > r.postAttn { r.postAttn = worst; r.postAttnLayer = layer }
+                    case "post_layer":
+                        r.perLayerPost[layer] = worst
+                        if worst > r.postLayer { r.postLayer = worst; r.postLayerLayer = layer }
+                    case "attn_norm_h": r.attnNormH = max(r.attnNormH, worst)
+                    default: break
+                    }
+                    layerResults[position] = r
+                }
+                // RUN pass A (probe ON): teacher-forced replay with the
+                // layerwise capture comparing against refSnap as it fires;
+                // the full logits of THIS pass are compared bitwise with
+                // the probe-OFF pass below (probe-invariance per axis).
+                var passALogits = [[Float]]()
+                try teacherForced { _, lg in passALogits.append(lg) }
+                runner.layerProbe = nil
+                // Pass B: probe OFF, pure full-batching logits metrics
+                // (gate-formula worst rel, argmax, margin, KL, L2, and
+                // bit equality against the reference logits).
+                var pure = [(worstRel: Double, argmaxEq: Bool, margin: Float,
+                             kl: Double, l2rel: Double, bitsEq: Bool)]()
+                var stepWorst = [Double](repeating: 0, count: steps)
+                var passBLogits = [[Float]]()
+                try teacherForced { s, lg in
+                    let m = logitMetrics(lg, refLogitsB[s])
+                    let bitsEq = zip(lg, refLogitsB[s]).allSatisfy {
+                        $0.bitPattern == $1.bitPattern }
+                    pure.append((m.worstRel, m.argmaxEq, m.margin, m.kl, m.l2rel, bitsEq))
+                    stepWorst[s] = m.worstRel
+                    passBLogits.append(lg)
+                }
+                runner.applyDiagnosticAxis()
+
+                // Probe-invariance for THIS axis: the probe-on pass logits
+                // must be bit-identical to the probe-off pass logits (the
+                // probe only adds segment flushes; same kernels, order).
+                guard passALogits.count == passBLogits.count,
+                      zip(passALogits, passBLogits).allSatisfy({
+                          $0.count == $1.count && zip($0, $1).allSatisfy {
+                              $0.bitPattern == $1.bitPattern } }) else {
+                    fail("axis \(axis.name): probe-on/off logits differ bitwise — probe changed numerics under this axis; diagnosis invalid")
+                }
+
+                // Teacher-forced POSITION p maps to output step
+                // p - (history.count - 1); report both.
+                let firstOut = history.count - 1
+                let argmaxMismatches = pure.filter { !$0.argmaxEq }.count
+                let maxLayerStep = layerResults.enumerated().max {
+                    $0.element.postLayer < $1.element.postLayer }
+                let maxPureStep = stepWorst.enumerated().max { $0.element < $1.element }
+                print("axis \(axis.name): max post_layer rel \(String(format: "%.3e", maxLayerStep?.element.postLayer ?? 0)) at position \(maxLayerStep?.offset ?? -1) (output step \((maxLayerStep?.offset ?? -1) - firstOut)) layer \(maxLayerStep?.element.postLayerLayer ?? -1); max post_attn rel \(String(format: "%.3e", layerResults.map(\.postAttn).max() ?? 0)); pure logits worst rel \(String(format: "%.3e", maxPureStep?.element ?? 0)) at output step \(maxPureStep?.offset ?? -1); argmax mismatch steps \(argmaxMismatches)/\(steps)")
+                if axis.name == "segment_only" {
+                    let allBits = pure.allSatisfy(\.bitsEq)
+                    let snapBits = !layerResults.contains(where: \.anyBitsDiffer)
+                    print("axis segment_only: logits BIT-IDENTICAL to reference: \(allBits); layer snapshots bit-identical: \(snapBits)")
+                }
+                // Gate-criterion context for the worst pure step.
+                if let ws = maxPureStep, ws.element > 0 {
+                    let m = pure[ws.offset]
+                    print(String(format: "  step %d: worstRel %.3e | argmax match %@ | ref margin(top1-top2) %.4f | KL %.3e | relL2 %.3e",
+                                 ws.offset, m.worstRel,
+                                 m.argmaxEq ? "yes" : "NO", m.margin, m.kl, m.l2rel))
+                }
+                if axis.name == "tiled_all+segment" || axis.name == "q4_tiled" {
+                    // Per-step pure worst rel growth table (compact).
+                    let line = stepWorst.enumerated().map {
+                        String(format: "%d:%.1e", $0.offset, $0.element)
+                    }.joined(separator: " ")
+                    print("  per-step pure worstRel: \(line)")
+                    // Per-layer propagation table at the worst layerwise
+                    // position: first nonzero layer and the rel trajectory.
+                    if let worstPos = maxLayerStep {
+                        let attnLine = worstPos.element.perLayerAttn.map {
+                            String(format: "%.1e", $0) }.joined(separator: " ")
+                        let postLine = worstPos.element.perLayerPost.map {
+                            String(format: "%.1e", $0) }.joined(separator: " ")
+                        let firstNonzero = worstPos.element.perLayerPost.firstIndex {
+                            $0 > 0 } ?? -1
+                        print("  per-layer post_attn rel at position \(worstPos.offset): \(attnLine)")
+                        print("  per-layer post_layer rel at position \(worstPos.offset): \(postLine)")
+                        print("  first nonzero post_layer layer: \(firstNonzero)")
+                    }
+                }
+            }
+
+            // ---- SSA graph executor linkage (optional --graph): teacher-
+            // force the ACTUAL failing forge candidate (and the selected
+            // vectorized-loads one) through executeGraphContinue and
+            // compare full logits to the runner reference — connecting the
+            // layerwise axis diagnosis to the real 32-token gate failure.
+            if let graphArg = args.firstIndex(of: "--graph").map({ _ in
+                requireValue("--graph", args) }) {
+                let graphHandle = try FileHandle(
+                    forReadingFrom: URL(fileURLWithPath: graphArg))
+                var graphData = Data()
+                while graphData.count <= 8 << 20 {
+                    let chunk = try graphHandle.read(upToCount: 1 << 16) ?? Data()
+                    if chunk.isEmpty { break }
+                    graphData.append(chunk)
+                }
+                try? graphHandle.close()
+                guard graphData.count <= 8 << 20 else { fail("graph file > 8 MiB") }
+                let graph = try GemmaGraph.parse(graphData)
+                let graphCandidates: [(String, GemmaForgeCandidate)] = [
+                    // The EXACT three pass-7 32-token-gate rejections from
+                    // the persisted plan record, then the selected VL
+                    // candidate; "tiled_all" (with Q6/F32 too) is an extra
+                    // extreme diagnostic, labeled as such.
+                    ("ssa batch+q4+rms (rejected step25 1.171e-04)",
+                     GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                         matvecTiledQ4: true, rmsnormTiled: true)),
+                    ("ssa batch+q4 (rejected step28 1.032e-04)",
+                     GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                         matvecTiledQ4: true)),
+                    ("ssa batch+q4+q6 (rejected step28 1.041e-04)",
+                     GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                         matvecTiledQ4: true, matvecTiledQ6: true)),
+                    ("ssa batch+rmsVL (selected)",
+                     GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                         vectorizedLoads: true)),
+                    ("ssa tiled_all+segment (EXTREME extra, not a pass-7 candidate)",
+                     GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                         matvecTiledQ4: true, matvecTiledQ6: true,
+                                         rmsnormTiled: true, matvecTiledF32: true)),
+                ]
+                for (name, cand) in graphCandidates {
+                    runner.reset()
+                    let (_, lg0, _, _, _) = try GemmaForge.executeGraph(
+                        graph, runner: runner, tokenIds: history, candidate: cand)
+                    var worstAll = logitMetrics(lg0, refLogitsB[0]).worstRel
+                    var worstStep = 0
+                    var argmaxMismatchSteps = 0
+                    if !logitMetrics(lg0, refLogitsB[0]).argmaxEq { argmaxMismatchSteps += 1 }
+                    for s in 1..<steps {
+                        let (_, lg, _, _, _) = try GemmaForge.executeGraphContinue(
+                            graph, runner: runner, token: refIds[s - 1], candidate: cand)
+                        let m = logitMetrics(lg, refLogitsB[s])
+                        if m.worstRel > worstAll { worstAll = m.worstRel; worstStep = s }
+                        if !m.argmaxEq { argmaxMismatchSteps += 1 }
+                    }
+                    print(String(format: "axis %@: logits worst rel %.3e at output step %d | argmax mismatch steps %d/%d",
+                                 name, worstAll, worstStep, argmaxMismatchSteps, steps))
+                }
+            }
+
+            // ---- independent FP64 attribution at the attention-Q matvec:
+            // at the reference's attn_norm_h input for the layer with the
+            // largest post_attn error in a chosen step, evaluate plain and
+            // tiled kernels and an FP64 CPU oracle over the first rowProbe
+            // rows; whichever kernel is closer to FP64 is the numerically
+            // better reduction for this invocation.
+            do {
+                // Re-run the q4_tiled axis probe ON to find the worst
+                // (step, layer) post_attn checkpoint (cheap: reuse logic).
+                runner.applyDiagnosticAxis(q4Tiled: true)
+                var best = (rel: 0.0, step: 0, layer: 0)
+                runner.layerProbe = { stage, layer, position, x in
+                    guard stage == "post_attn",
+                          let want = refSnap["\(position):\(layer):post_attn"] else { return }
+                    var worst = 0.0
+                    for (a, b) in zip(x, want) {
+                        let rel = abs(Double(a - b)) / max(1.0, abs(Double(b)))
+                        if rel > worst { worst = rel }
+                    }
+                    if worst > best.rel { best = (worst, position, layer) }
+                }
+                try teacherForced { _, _ in }
+                runner.layerProbe = nil
+                runner.applyDiagnosticAxis()
+                let (stepL, layerL) = (best.step, best.layer)
+                guard let xRef = refSnap["\(stepL):\(layerL):attn_norm_h"] else {
+                    fail("missing reference attn_norm_h for attribution")
+                }
+                let tensor = "blk.\(layerL).attn_q.weight"
+                let plain = try runner.diagnosticMatvec(tensor: tensor, x: xRef,
+                                                        rows: rowProbe, tiled: false)
+                let tiled = try runner.diagnosticMatvec(tensor: tensor, x: xRef,
+                                                        rows: rowProbe, tiled: true)
+                // FP64 oracle over the same rows, decoded from GGUF bytes.
+                let info = try runner.ggufFile.tensor(tensor)
+                let data = try runner.ggufFile.tensorData(info)
+                let inDim = runner.config.hiddenSize
+                let blocksPerRow = inDim / Q4_0.valuesPerBlock
+                let rowBytes = blocksPerRow * Q4_0.bytesPerBlock
+                var worstPlain = 0.0, worstTiled = 0.0
+                for r in 0..<rowProbe {
+                    let rowStart = data.startIndex + r * rowBytes
+                    var acc = 0.0
+                    for b in 0..<blocksPerRow {
+                        let blk = data[rowStart + b * 18..<rowStart + b * 18 + 18]
+                        let dbits = UInt16(blk[blk.startIndex]) | (UInt16(blk[blk.startIndex + 1]) << 8)
+                        let d = Double(Float16(bitPattern: dbits))
+                        for l in 0..<16 {
+                            let q = blk[blk.startIndex + 2 + l]
+                            let lo = Double(Int(q & 0x0F) - 8)
+                            let hi = Double(Int(q >> 4) - 8)
+                            acc += d * lo * Double(xRef[b * 32 + l])
+                            acc += d * hi * Double(xRef[b * 32 + 16 + l])
+                        }
+                    }
+                    worstPlain = max(worstPlain, abs(Double(plain[r]) - acc) / max(1.0, abs(acc)))
+                    worstTiled = max(worstTiled, abs(Double(tiled[r]) - acc) / max(1.0, abs(acc)))
+                }
+                print(String(format: "fp64 attribution at position %d (output step %d) layer %d (%@, %d rows): rel-to-FP64 worst plain %.3e | tiled %.3e",
+                             stepL, stepL - (history.count - 1), layerL, tensor,
+                             rowProbe, worstPlain, worstTiled))
+            } catch { fail("fp64 attribution failed: \(error)") }
+            print("DIAGNOSIS_COMPLETED")
+        } catch {
+            fail("gemma-diagnose failed: \(error)")
+        }
+
     case "gemma-config-export":
         // Exports the DSL config JSON for tools/forge_gemma capture from
         // the authorized GGUF (validated reader; no GPU allocation).

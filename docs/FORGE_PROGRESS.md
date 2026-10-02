@@ -847,3 +847,82 @@ rejected and recorded first; the same-session end-to-end numbers are
 above). Post-improvement breakdown: GPU 84.4-85.5%, flush-host
 10.5-11.1% (the freed GPU time shifts the split toward host share).
 Default suite: 527 passed / 0 failed.
+
+## Pass 8 (measured 2026-10-03 local / KST, 2026-10-02 UTC): teacher-forced layerwise numerical diagnosis + bounded Q6 composition candidate
+
+Goal: determine WHY the parallel tiled candidates exceed the strict
+1e-4 logits gate at 32 tokens, before writing any further kernels. A
+new opt-in diagnostic subcommand `gemma-diagnose` (Sources/leviathan-cli,
+`--file`, `--tokens`/`--text`, `--gen-tokens 2...64`, optional
+`--graph`) teacher-forces the reference-generated greedy token history
+and replays each kernel/scheduling axis separately against per-layer
+residual checkpoints (attn_norm_h, post_attn, post_layer). The probe is
+OFF by default and adds no readbacks in production runs; branch cost at
+the three checkpoint call sites is unmeasured. Fail-closed checks:
+reference probe-on vs probe-off must be bit-identical, every axis's
+probe-on vs probe-off logits must be bit-identical, and metric helpers
+fail on shape/count/nonfinite inputs.
+
+Workload: Hello fixture, prompt ids 2 9259, 31 reference continuation
+inputs + 2 prompt tokens = 33 teacher-forced positions for 32 output
+steps. Same token history for every axis, which rules out different
+greedy-token feedback on this fixture; numeric KV/residual propagation
+differences remain possible. Full log:
+docs/evidence/gemma-diagnose-hello32.log.
+
+Findings (full 262144-logit gate formula |a-b|/max(1,|ref|)):
+  - segment_only and vl+segment are BIT-IDENTICAL to reference over
+    all 32 steps (snapshot bitPattern comparison, anyBitsDiffer=false).
+  - q4_tiled alone reproduces the pass-7 rejection digit-for-digit:
+    worst rel 1.032e-04 at output step 28; per-axis composed SSA
+    re-runs of the three persisted pass-7 rejections give
+    batch+q4+rms 1.892e-04 (its former first failure was at step 25),
+    batch+q4 1.032e-04, batch+q4+q6 1.041e-04; selected batching+rmsVL
+    is 0.0e+00. argmax mismatch 0/32 on EVERY axis including the
+    tiled ones. At the q4_tiled worst step (28): reference argmax
+    margin (top1-top2) 2.5625, KL 1.151e-10, relL2 8.883e-06.
+  - rms_tiled worst rel 2.882e-04, f32_tiled 1.347e-04,
+    q6_tiled 9.332e-06 — all with 0/32 argmax mismatches.
+  - Per-layer residual error is nonzero from layer 0 and its
+    magnitude oscillates, with larger errors observed at some later
+    layers (not monotonic, not universal); per-step error is 2-6e-05
+    with input-dependent spikes (steps 25/28), not monotonic in
+    position.
+  - Bounded ORIGINAL independent FP64 oracle on the actual GGUF bytes
+    (layer 17 attn_q, 256 rows, input captured at position 29):
+    rel-to-FP64 worst plain 1.300e-06 vs tiled 4.734e-07. This is a
+    SINGLE Q4 sample; it does not bound all tiled reductions, all
+    operators, or overall math quality.
+
+Scoped reading: the observations are CONSISTENT WITH per-op float32
+reassociation (reduction-order rounding) differences amplified by
+later-layer sensitivity on this fixture. They do NOT prove absence of
+semantic/layout/cache-routing/quant decode bugs, do not establish an
+exclusive root cause, and the tiny KL / matching argmax on this one
+fixture does not demonstrate broad lexical quality. The production
+strict 1e-4 gate, exact-ID, and finiteness contracts are UNCHANGED; no
+gate loosening and no FP64-anchored gate change is proposed. The FP64
+sample is a one-operator oracle, not an independent full-model
+reference.
+
+Bounded candidate-composition experiment (the one pass this phase):
+two legal Q6-tiled+RMS-VL entries (batched and unbatched) appended to
+GemmaForge.candidates(). Fresh full Forge run at fullGateTokens=32:
+FORGE_PASS, engine 988efa10ae6d287bf3d5dd285ea39911afedf5feaca0867cdba1c32c14fd31cf,
+plan digest 57a2d5d9b942df0e51db39287be0616a59f404f40d1669ee3b6ea92711f70686
+(docs/evidence/gemma-plan-q6vl.json, full log
+docs/evidence/gemma-forge-q6vl-32.log). fullGateRejections = 2 in this
+run's order (batch+q4+rms, batch+q4); the third pass-7 rejection
+(batch+q4+q6) sorts after the first passer in this run's timing order
+and was not re-gated, so the composed Q6 candidate's own 32-token gate
+outcome is UNKNOWN (selection stops at the first passer). Short
+3-sample timing in the same forge observed the Q6+VL batched candidate
+at 326,671 us/token vs incumbent RMS-VL 317,388 us/token, so Q6+VL was
+NOT SELECTED this run; occupancy/utilization counters were NOT
+measured, so no causal or global "Q6 is slower" claim is made. The Q6
+~4.6% headroom figure remains a HISTORICAL per-kernel plain-mode GPU
+diagnostic, not a current batched-breakdown attribution.
+
+Default suite with the real GGUF on Metal: 627 passed / 0 failed
+(docs/evidence/tests-q6vl-627.log). No competitive-performance claim is
+made for this phase.

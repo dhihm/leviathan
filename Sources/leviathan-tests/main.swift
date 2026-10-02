@@ -3139,6 +3139,46 @@ if let gemmaPath, !gemmaPath.isEmpty, FileManager.default.fileExists(atPath: gem
         checkEqual("real GGUF greedy token 1 vs Ollama baseline", e1.argmaxToken, 3324)
         let e2 = try runner.forward(tokenIds: [3324])
         checkEqual("real GGUF greedy token 2 vs Ollama baseline", e2.argmaxToken, 236772)
+
+        // Teacher-forced layerwise diagnostic surface (opt-in tooling):
+        // the probe fires at the three checkpoints per layer and does not
+        // change the greedy result; applyDiagnosticAxis toggles exactly
+        // the executor's candidate flags and restores them; the bounded
+        // diagnosticMatvec is deterministic and, with tiled=false, runs
+        // the ORIGINAL kernel (bit-stable across two calls).
+        runner.reset()
+        var probeCalls = 0
+        var stagesSeen = Set<String>()
+        runner.layerProbe = { stage, layer, position, x in
+            probeCalls += 1
+            stagesSeen.insert(stage)
+            check("probe checkpoint shape (stage \(stage) layer \(layer))",
+                  layer >= 0 && layer < 30 && position >= 0 && x.count == 2816)
+        }
+        let e3 = try runner.forward(tokenIds: [2])
+        runner.layerProbe = nil
+        checkEqual("probe run advances context by one", e3.contextLength, 1)
+        checkEqual("probe fired 3x per layer", probeCalls, 90)
+        checkEqual("probe stages", stagesSeen.sorted(),
+                   ["attn_norm_h", "post_attn", "post_layer"])
+        runner.applyDiagnosticAxis(q4Tiled: true, segmentBatching: true)
+        check("applyDiagnosticAxis sets flags",
+              runner.q4TiledKernel && runner.segmentBatchingActive && !runner.rmsTiledKernel)
+        runner.applyDiagnosticAxis()
+        check("applyDiagnosticAxis() restores reference flags",
+              !runner.q4TiledKernel && !runner.q6TiledKernel && !runner.rmsTiledKernel
+                  && !runner.f32TiledKernel && !runner.vectorizedLoads && !runner.segmentBatchingActive)
+        let normedH = [Float](repeating: 0.01, count: 2816)
+        let d1 = try runner.diagnosticMatvec(tensor: "blk.0.attn_q.weight",
+                                              x: normedH, rows: 64, tiled: false)
+        let d2 = try runner.diagnosticMatvec(tensor: "blk.0.attn_q.weight",
+                                              x: normedH, rows: 64, tiled: false)
+        check("diagnosticMatvec plain kernel bit-stable",
+              zip(d1, d2).allSatisfy { $0.bitPattern == $1.bitPattern })
+        check("diagnosticMatvec rejects bad width",
+              (try? runner.diagnosticMatvec(tensor: "blk.0.attn_q.weight",
+                                            x: [Float](repeating: 0, count: 16),
+                                            rows: 64, tiled: false)) == nil)
     } catch {
         failed += 1; print("FAIL: real-model Gemma gates — threw \(error)")
     }

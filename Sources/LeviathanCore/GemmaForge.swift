@@ -250,6 +250,22 @@ public enum GemmaForge {
                                 vectorizedLoads: true),
             GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
                                 vectorizedLoads: true),
+            // Q6_K tiled LM-head matvec stacked on the bit-identical
+            // batched VL baseline. Bounded pass justified by the teacher-
+            // forced layerwise diagnosis (raw Hello, 32 tokens): q6_tiled
+            // ALONE showed worst logit rel 9.3e-06 vs the plain kernel
+            // (10x inside the strict 1e-4 gate) while segment batching and
+            // the VL RMSNorm are bit-identical. CAVEATS: the FP64
+            // attribution sampled the Q4 tiled matvec only (layer-17
+            // attn_q, 256 rows) — it does NOT measure Q6 accuracy; the Q6
+            // head is ~4.6% of historical per-kernel GPU time (not the
+            // dominant cost), so the gain may be modest; the FULL 32-token
+            // gate on the composed candidate decides selection, unchanged
+            // and fail-closed.
+            GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false,
+                                matvecTiledQ6: true, vectorizedLoads: true),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                matvecTiledQ6: true, vectorizedLoads: true),
         ]
     }
 

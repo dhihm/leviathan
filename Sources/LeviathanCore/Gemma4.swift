@@ -736,6 +736,77 @@ public final class Gemma4Runner {
     /// diagnostic. The runner's reference forward path keeps the
     /// original kernels unless this is set.
     public var vectorizedLoads = false
+    /// Opt-in teacher-forced layerwise diagnostic probe (OFF by default:
+    /// nil — the forward path is completely untouched). When set,
+    /// forwardLayer invokes it at per-layer checkpoints with the stage
+    /// name, layer index, position, and a CPU copy of the checkpoint
+    /// vector ("attn_norm_h" = the normed input of the attention Q
+    /// matvec; "post_attn"/"post_layer" = the residual stream after the
+    /// attention block / the whole layer). Diagnostic ONLY: it never
+    /// gates, mutates, or alters any computation. NOTE: the probe's
+    /// readbacks flush open deferred segments, so a probe-active run
+    /// does not measure full segment batching — comparisons stay valid
+    /// because the reference pass carries the same probe.
+    public var layerProbe: ((_ stage: String, _ layer: Int, _ position: Int,
+                             _ x: [Float]) throws -> Void)?
+
+    /// Bounded opt-in axis selection for the teacher-forced layerwise
+    /// error diagnosis: sets EXACTLY the flags the forge executor sets
+    /// per candidate (executeToken), but persists them across plain
+    /// `forward` calls so a whole teacher-forced history can be replayed
+    /// under one kernel/scheduling axis. All-false restores the original
+    /// reference kernels with per-kernel commits.
+    public func applyDiagnosticAxis(q4Tiled: Bool = false, q6Tiled: Bool = false,
+                                    rmsTiled: Bool = false, f32Tiled: Bool = false,
+                                    vectorizedLoads: Bool = false,
+                                    segmentBatching: Bool = false) {
+        self.q4TiledKernel = q4Tiled
+        self.q6TiledKernel = q6Tiled
+        self.rmsTiledKernel = rmsTiled
+        self.f32TiledKernel = f32Tiled
+        self.vectorizedLoads = vectorizedLoads
+        self.autoSegment = segmentBatching
+    }
+
+    /// Read-only view of the deferred-segment mode (diagnostics/tests —
+    /// the setter stays applyDiagnosticAxis/executeToken only).
+    public var segmentBatchingActive: Bool { autoSegment }
+
+    /// Diagnostic-only bounded matvec probe: writes `x` into the normed-
+    /// activation buffer and evaluates the FIRST `rows` output rows of
+    /// `tensor` with either the original (tiled=false) or the tiled
+    /// (tiled=true) kernel FORCED for this one call (the other kernel
+    /// selection flags are saved and restored). Returns the row outputs
+    /// for offline comparison against an independent FP64 oracle.
+    public func diagnosticMatvec(tensor: String, x: [Float], rows: Int,
+                                 tiled: Bool) throws -> [Float] {
+        guard let r = ref[tensor] else {
+            throw Gemma4Error.badTensorGeometry("missing \(tensor)")
+        }
+        guard x.count == r.inDim, rows > 0, rows <= r.outDim,
+              rows <= config.qHeads * config.globalHeadDim else {
+            throw Gemma4Error.badTensorGeometry(
+                "diagnosticMatvec \(tensor): x \(x.count) != inDim \(r.inDim), rows \(rows) of \(r.outDim)")
+        }
+        let saved = (q4TiledKernel, q6TiledKernel, f32TiledKernel)
+        defer {
+            q4TiledKernel = saved.0
+            q6TiledKernel = saved.1
+            f32TiledKernel = saved.2
+        }
+        try write(x, to: bufH)
+        switch r.type {
+        case .q4_0: q4TiledKernel = tiled
+        case .q6_K: q6TiledKernel = tiled
+        case .float32: f32TiledKernel = tiled
+        case .float16:
+            throw Gemma4Error.badTensorGeometry("F16 unsupported for \(tensor)")
+        }
+        try matvec(tensor: tensor, x: bufH, xCount: r.inDim, y: bufT1,
+                   yCapacity: config.qHeads * config.globalHeadDim, rows: rows)
+        return try read(bufT1, rows)
+    }
+
     /// Hardware-derived tile width (set at init from the compiled
     /// pipeline): 2× execution width, clamped to the device maximum and
     /// the kernel's 128-slot partials array.
@@ -1647,6 +1718,9 @@ public final class Gemma4Runner {
         // ---- attention block ----
         try rmsnorm(x: bufX, y: bufH, n: hidden, vectors: 1,
                     weightTensor: prefix + "attn_norm.weight")
+        if let probe = layerProbe {
+            try probe("attn_norm_h", layer, position, try read(bufH, hidden))
+        }
         try matvec(tensor: prefix + "attn_q.weight", x: bufH, xCount: hidden,
                    y: bufT1, yCapacity: config.qHeads * config.globalHeadDim)
         // QK-norm per head (1 thread/head), then RoPE on q (1 thread/head).
@@ -1700,6 +1774,9 @@ public final class Gemma4Runner {
         try rmsnorm(x: bufT2, y: bufH, n: hidden, vectors: 1,
                     weightTensor: prefix + "post_attention_norm.weight")
         try axpy(x: bufH, y: bufX, c: 1, n: hidden)   // x += postnorm(attn_out)
+        if let probe = layerProbe {
+            try probe("post_attn", layer, position, try read(bufX, hidden))
+        }
 
         // ---- FFN block: shared expert + routed MoE ----
         try rmsnorm(x: bufX, y: bufH, n: hidden, vectors: 1,
@@ -1822,6 +1899,9 @@ public final class Gemma4Runner {
                     weightTensor: prefix + "post_ffw_norm.weight")
         try axpy(x: bufH, y: bufX, c: 1, n: hidden)
         try scaleInPlace(x: bufX, c: layerScalars[layer], n: hidden)
+        if let probe = layerProbe {
+            try probe("post_layer", layer, position, try read(bufX, hidden))
+        }
         if traceLayers {
             let x = try read(bufX, hidden)
             let bad = x.lazy.filter { !$0.isFinite }.count

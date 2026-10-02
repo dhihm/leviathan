@@ -1,0 +1,109 @@
+graph validated: 934 ops, model gemma4-26b-a4b
+hardware: Apple M1 Max, max threads/threadgroup 1024, exec width 32, working set 26800603136 bytes
+engine digest: 988efa10ae6d287bf3d5dd285ea39911afedf5feaca0867cdba1c32c14fd31cf
+  candidate batching=0 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=0: correct 1, wall 1016205 us/token, gpu 641517 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 1016205 us, gpu 641517 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=0: correct 1, wall 462053 us/token, gpu 413772 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 462053 us, gpu 413772 us, 1799 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=1 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=0: correct 1, wall 932972 us/token, gpu 507970 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 932972 us, gpu 507970 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=0: correct 1, wall 316958 us/token, gpu 264613 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 316958 us, gpu 264613 us, 1799 kernels, 127 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=1 rmsTiled=0 f32Tiled=0 vecLoads=0: correct 1, wall 401665 us/token, gpu 269608 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 401665 us, gpu 269608 us, 1799 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=1 tiledQ6=1 rmsTiled=0 f32Tiled=0 vecLoads=0: correct 1, wall 951204 us/token, gpu 534421 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 951204 us, gpu 534421 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=1 f32Tiled=0 vecLoads=0: correct 1, wall 122980 us/token, gpu 85108 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 2.5e-05; 3 timed tokens; wall 122980 us, gpu 85108 us, 1799 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=1 vecLoads=0: correct 1, wall 762279 us/token, gpu 415397 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 1.8e-05; 3 timed tokens; wall 762279 us, gpu 415397 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=1 f32Tiled=1 vecLoads=0: correct 0, wall -/token, gpu -/token, - kernels/token, - buffers/token — decode step 2 outside 1e-4 of reference (worst 1.066e-04)
+  candidate batching=0 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 785596 us/token, gpu 359090 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 785596 us, gpu 359090 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 317388 us/token, gpu 275588 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 317388 us, gpu 275588 us, 1799 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=0 tiledQ6=1 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 616002 us/token, gpu 292311 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 5.7e-06; 3 timed tokens; wall 616002 us, gpu 292311 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=1 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 326671 us/token, gpu 284484 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 5.7e-06; 3 timed tokens; wall 326671 us, gpu 284484 us, 1799 kernels, 127 buffers/token
+selected: batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=1 f32Tiled=0 vecLoads=0 (tile widths q4=64 q6=64 rms=64 f32=64), wall 122980 us/token, gpu 85108 us/token
+plan saved: /tmp/leviathan-forge2-tooling/gemma-plan-q6vl.json, digest 2e9a4828c69a1942addfd06d0d36e39daa4cfa809306915548c3759ef1f4c7a1
+  step 1: token 236772, wall 116864 us, gpu 80984 us, 1799 kernels, 127 buffers
+  step 2: token 1437, wall 124438 us, gpu 88091 us, 1799 kernels, 127 buffers
+  step 3: token 236772, wall 126152 us, gpu 91405 us, 1799 kernels, 127 buffers
+  step 4: token 236751, wall 168527 us, gpu 96797 us, 1799 kernels, 127 buffers
+  step 5: token 2964, wall 175063 us, gpu 134169 us, 1799 kernels, 127 buffers
+  step 6: token 236772, wall 172461 us, gpu 117878 us, 1799 kernels, 127 buffers
+  step 7: token 1340, wall 165546 us, gpu 110438 us, 1799 kernels, 127 buffers
+  step 8: token 236772, wall 166112 us, gpu 114179 us, 1799 kernels, 127 buffers
+  step 9: token 2289, wall 163838 us, gpu 113941 us, 1799 kernels, 127 buffers
+  step 10: token 236772, wall 156651 us, gpu 119108 us, 1799 kernels, 127 buffers
+  step 11: token 1340, wall 165117 us, gpu 130408 us, 1799 kernels, 127 buffers
+  step 12: token 236772, wall 169177 us, gpu 127823 us, 1799 kernels, 127 buffers
+  step 13: token 1437, wall 178252 us, gpu 130745 us, 1799 kernels, 127 buffers
+  step 14: token 236772, wall 189324 us, gpu 140911 us, 1799 kernels, 127 buffers
+  step 15: token 236751, wall 174161 us, gpu 132931 us, 1799 kernels, 127 buffers
+  step 16: token 2964, wall 179740 us, gpu 140509 us, 1799 kernels, 127 buffers
+  step 17: token 236772, wall 182375 us, gpu 143830 us, 1799 kernels, 127 buffers
+  step 18: token 1340, wall 193837 us, gpu 152210 us, 1799 kernels, 127 buffers
+  step 19: token 236772, wall 200663 us, gpu 152552 us, 1799 kernels, 127 buffers
+  step 20: token 236751, wall 197999 us, gpu 154164 us, 1799 kernels, 127 buffers
+  step 21: token 2964, wall 205189 us, gpu 150153 us, 1799 kernels, 127 buffers
+  step 22: token 236772, wall 209433 us, gpu 167754 us, 1799 kernels, 127 buffers
+  step 23: token 1340, wall 205687 us, gpu 168573 us, 1799 kernels, 127 buffers
+  step 24: token 236772, wall 199998 us, gpu 163750 us, 1799 kernels, 127 buffers
+candidate GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: true, matvecTiledQ6: false, rmsnormTiled: true, matvecTiledF32: false, vectorizedLoads: false) REJECTED by full 32-token gate: step 25 worst rel 1.171e-04 >= 1e-4
+  step 1: token 236772, wall 292246 us, gpu 244750 us, 1799 kernels, 127 buffers
+  step 2: token 1437, wall 298135 us, gpu 250498 us, 1799 kernels, 127 buffers
+  step 3: token 236772, wall 306036 us, gpu 256069 us, 1799 kernels, 127 buffers
+  step 4: token 236751, wall 300544 us, gpu 255875 us, 1799 kernels, 127 buffers
+  step 5: token 2964, wall 306070 us, gpu 259331 us, 1799 kernels, 127 buffers
+  step 6: token 236772, wall 312940 us, gpu 269288 us, 1799 kernels, 127 buffers
+  step 7: token 1340, wall 306874 us, gpu 263229 us, 1799 kernels, 127 buffers
+  step 8: token 236772, wall 411820 us, gpu 297822 us, 1799 kernels, 127 buffers
+  step 9: token 2289, wall 318061 us, gpu 277011 us, 1799 kernels, 127 buffers
+  step 10: token 236772, wall 317554 us, gpu 276388 us, 1799 kernels, 127 buffers
+  step 11: token 1340, wall 329006 us, gpu 282294 us, 1799 kernels, 127 buffers
+  step 12: token 236772, wall 323572 us, gpu 284334 us, 1799 kernels, 127 buffers
+  step 13: token 1437, wall 336444 us, gpu 290123 us, 1799 kernels, 127 buffers
+  step 14: token 236772, wall 344485 us, gpu 295021 us, 1799 kernels, 127 buffers
+  step 15: token 236751, wall 343908 us, gpu 293374 us, 1799 kernels, 127 buffers
+  step 16: token 2964, wall 332611 us, gpu 295124 us, 1799 kernels, 127 buffers
+  step 17: token 236772, wall 340046 us, gpu 301097 us, 1799 kernels, 127 buffers
+  step 18: token 1340, wall 388817 us, gpu 306846 us, 1799 kernels, 127 buffers
+  step 19: token 236772, wall 354974 us, gpu 312284 us, 1799 kernels, 127 buffers
+  step 20: token 236751, wall 358672 us, gpu 314373 us, 1799 kernels, 127 buffers
+  step 21: token 2964, wall 360834 us, gpu 314255 us, 1799 kernels, 127 buffers
+  step 22: token 236772, wall 368180 us, gpu 325582 us, 1799 kernels, 127 buffers
+  step 23: token 1340, wall 390205 us, gpu 337484 us, 1799 kernels, 127 buffers
+  step 24: token 236772, wall 374649 us, gpu 325936 us, 1799 kernels, 127 buffers
+  step 25: token 1437, wall 490361 us, gpu 360141 us, 1799 kernels, 127 buffers
+  step 26: token 236772, wall 489367 us, gpu 360571 us, 1799 kernels, 127 buffers
+  step 27: token 236751, wall 379278 us, gpu 335241 us, 1799 kernels, 127 buffers
+candidate GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: true, matvecTiledQ6: false, rmsnormTiled: false, matvecTiledF32: false, vectorizedLoads: false) REJECTED by full 32-token gate: step 28 worst rel 1.032e-04 >= 1e-4
+  step 1: token 236772, wall 316538 us, gpu 273740 us, 1799 kernels, 127 buffers
+  step 2: token 1437, wall 315966 us, gpu 275066 us, 1799 kernels, 127 buffers
+  step 3: token 236772, wall 330805 us, gpu 285431 us, 1799 kernels, 127 buffers
+  step 4: token 236751, wall 320810 us, gpu 279707 us, 1799 kernels, 127 buffers
+  step 5: token 2964, wall 329583 us, gpu 287964 us, 1799 kernels, 127 buffers
+  step 6: token 236772, wall 333459 us, gpu 287055 us, 1799 kernels, 127 buffers
+  step 7: token 1340, wall 337469 us, gpu 291488 us, 1799 kernels, 127 buffers
+  step 8: token 236772, wall 369096 us, gpu 303555 us, 1799 kernels, 127 buffers
+  step 9: token 2289, wall 402109 us, gpu 311865 us, 1799 kernels, 127 buffers
+  step 10: token 236772, wall 345450 us, gpu 301911 us, 1799 kernels, 127 buffers
+  step 11: token 1340, wall 346242 us, gpu 305800 us, 1799 kernels, 127 buffers
+  step 12: token 236772, wall 351986 us, gpu 308417 us, 1799 kernels, 127 buffers
+  step 13: token 1437, wall 350785 us, gpu 312181 us, 1799 kernels, 127 buffers
+  step 14: token 236772, wall 359479 us, gpu 321028 us, 1799 kernels, 127 buffers
+  step 15: token 236751, wall 360402 us, gpu 318575 us, 1799 kernels, 127 buffers
+  step 16: token 2964, wall 515329 us, gpu 352271 us, 1799 kernels, 127 buffers
+  step 17: token 236772, wall 366572 us, gpu 325644 us, 1799 kernels, 127 buffers
+  step 18: token 1340, wall 369230 us, gpu 330002 us, 1799 kernels, 127 buffers
+  step 19: token 236772, wall 371044 us, gpu 333294 us, 1799 kernels, 127 buffers
+  step 20: token 236751, wall 383150 us, gpu 337754 us, 1799 kernels, 127 buffers
+  step 21: token 2964, wall 390230 us, gpu 347855 us, 1799 kernels, 127 buffers
+  step 22: token 236772, wall 386456 us, gpu 344334 us, 1799 kernels, 127 buffers
+  step 23: token 1340, wall 392262 us, gpu 348243 us, 1799 kernels, 127 buffers
+  step 24: token 236772, wall 396844 us, gpu 352426 us, 1799 kernels, 127 buffers
+  step 25: token 1437, wall 396223 us, gpu 355157 us, 1799 kernels, 127 buffers
+  step 26: token 236772, wall 406425 us, gpu 358537 us, 1799 kernels, 127 buffers
+  step 27: token 236751, wall 411280 us, gpu 362475 us, 1799 kernels, 127 buffers
+  step 28: token 2964, wall 414689 us, gpu 367733 us, 1799 kernels, 127 buffers
+  step 29: token 236772, wall 412034 us, gpu 370273 us, 1799 kernels, 127 buffers
+  step 30: token 1340, wall 414530 us, gpu 373463 us, 1799 kernels, 127 buffers
+  step 31: token 236772, wall 422812 us, gpu 379174 us, 1799 kernels, 127 buffers
+full-workload fallback: reselecting from GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: true, matvecTiledQ6: false, rmsnormTiled: true, matvecTiledF32: false, vectorizedLoads: false) (failed the 32-token gate) to GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: false, matvecTiledQ6: false, rmsnormTiled: false, matvecTiledF32: false, vectorizedLoads: true)
+plan saved with full-gate record: /tmp/leviathan-forge2-tooling/gemma-plan-q6vl.json, digest 57a2d5d9b942df0e51db39287be0616a59f404f40d1669ee3b6ea92711f70686
+prompt ids: 2 9259
+greedy ids (reference == graph): 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+verified generation: 31 steps, median wall 369230 us/token, gpu total 10628.4 ms
+FORGE_PASS

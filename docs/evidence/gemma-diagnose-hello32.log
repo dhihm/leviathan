@@ -1,0 +1,30 @@
+prompt ids: 2 9259
+reference greedy ids (32): 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+axis segment_only: max post_layer rel 0.000e+00 at position 0 (output step -1) layer -1; max post_attn rel 0.000e+00; pure logits worst rel 0.000e+00 at output step 0; argmax mismatch steps 0/32
+axis segment_only: logits BIT-IDENTICAL to reference: true; layer snapshots bit-identical: true
+axis q4_tiled: max post_layer rel 1.585e-04 at position 29 (output step 28) layer 16; max post_attn rel 1.636e-04; pure logits worst rel 1.032e-04 at output step 28; argmax mismatch steps 0/32
+  step 28: worstRel 1.032e-04 | argmax match yes | ref margin(top1-top2) 2.5625 | KL 1.151e-10 | relL2 8.883e-06
+  per-step pure worstRel: 0:1.6e-05 1:5.2e-05 2:3.3e-05 3:3.5e-05 4:4.5e-05 5:3.5e-05 6:3.5e-05 7:3.9e-05 8:2.1e-05 9:6.4e-05 10:4.2e-05 11:4.1e-05 12:2.8e-05 13:5.3e-05 14:2.7e-05 15:3.0e-05 16:2.3e-05 17:3.2e-05 18:2.8e-05 19:2.7e-05 20:3.9e-05 21:2.2e-05 22:3.3e-05 23:3.1e-05 24:2.4e-05 25:3.3e-05 26:2.9e-05 27:2.8e-05 28:1.0e-04 29:4.8e-05 30:4.2e-05 31:2.2e-05
+  per-layer post_attn rel at position 29: 2.7e-05 8.6e-06 1.4e-05 1.1e-05 1.5e-05 8.3e-06 1.3e-05 9.8e-06 1.3e-05 3.0e-05 4.6e-05 3.7e-05 5.3e-05 6.0e-05 5.9e-05 1.5e-04 9.5e-05 1.6e-04 1.5e-04 9.2e-05 1.3e-04 9.1e-05 9.2e-05 9.1e-05 1.0e-04 1.3e-04 1.5e-04 1.3e-04 8.7e-05 7.4e-05
+  per-layer post_layer rel at position 29: 9.2e-06 7.1e-06 1.5e-05 9.1e-06 2.4e-05 2.0e-05 1.2e-05 1.5e-05 2.4e-05 4.3e-05 4.1e-05 5.2e-05 5.4e-05 6.0e-05 8.4e-05 7.1e-05 1.6e-04 1.4e-04 8.4e-05 1.3e-04 7.8e-05 9.1e-05 8.9e-05 8.0e-05 1.3e-04 1.5e-04 1.2e-04 1.0e-04 8.2e-05 2.5e-05
+  first nonzero post_layer layer: 0
+axis q6_tiled: max post_layer rel 0.000e+00 at position 0 (output step -1) layer -1; max post_attn rel 0.000e+00; pure logits worst rel 9.332e-06 at output step 22; argmax mismatch steps 0/32
+  step 22: worstRel 9.332e-06 | argmax match yes | ref margin(top1-top2) 4.5383 | KL 1.887e-13 | relL2 4.436e-07
+axis rms_tiled: max post_layer rel 2.719e-04 at position 29 (output step 28) layer 25; max post_attn rel 4.344e-04; pure logits worst rel 2.882e-04 at output step 28; argmax mismatch steps 0/32
+  step 28: worstRel 2.882e-04 | argmax match yes | ref margin(top1-top2) 2.5625 | KL 7.669e-10 | relL2 3.024e-05
+axis f32_tiled: max post_layer rel 2.203e-04 at position 29 (output step 28) layer 25; max post_attn rel 2.289e-04; pure logits worst rel 1.347e-04 at output step 28; argmax mismatch steps 0/32
+  step 28: worstRel 1.347e-04 | argmax match yes | ref margin(top1-top2) 2.5625 | KL 1.692e-10 | relL2 1.162e-05
+axis tiled_all+segment: max post_layer rel 1.661e-04 at position 29 (output step 28) layer 17; max post_attn rel 3.090e-04; pure logits worst rel 2.013e-04 at output step 28; argmax mismatch steps 0/32
+  step 28: worstRel 2.013e-04 | argmax match yes | ref margin(top1-top2) 2.5625 | KL 4.319e-10 | relL2 2.072e-05
+  per-step pure worstRel: 0:2.1e-05 1:6.5e-05 2:7.4e-05 3:5.5e-05 4:1.1e-04 5:5.3e-05 6:5.9e-05 7:5.3e-05 8:2.1e-05 9:7.9e-05 10:7.0e-05 11:7.9e-05 12:3.5e-05 13:1.3e-04 14:4.8e-05 15:6.2e-05 16:4.9e-05 17:6.8e-05 18:5.7e-05 19:3.3e-05 20:4.7e-05 21:5.4e-05 22:7.5e-05 23:7.3e-05 24:4.1e-05 25:1.1e-04 26:6.0e-05 27:9.6e-05 28:2.0e-04 29:1.1e-04 30:6.9e-05 31:4.6e-05
+  per-layer post_attn rel at position 29: 3.4e-05 2.1e-05 1.5e-05 4.0e-05 3.1e-05 3.9e-05 1.6e-05 3.4e-05 3.9e-05 9.4e-05 7.4e-05 1.3e-04 1.2e-04 1.1e-04 1.8e-04 1.9e-04 1.3e-04 1.7e-04 1.7e-04 1.2e-04 1.0e-04 1.0e-04 1.0e-04 8.8e-05 8.8e-05 1.0e-04 1.3e-04 2.2e-04 1.5e-04 1.6e-04
+  per-layer post_layer rel at position 29: 1.7e-05 1.4e-05 1.2e-05 2.1e-05 1.7e-05 1.6e-05 2.4e-05 3.6e-05 6.7e-05 1.5e-04 8.8e-05 7.4e-05 9.6e-05 1.6e-04 1.2e-04 1.0e-04 1.6e-04 1.7e-04 1.3e-04 9.6e-05 9.1e-05 1.1e-04 9.1e-05 9.2e-05 1.1e-04 1.2e-04 1.3e-04 1.6e-04 1.0e-04 3.8e-05
+  first nonzero post_layer layer: 0
+axis vl+segment: max post_layer rel 0.000e+00 at position 0 (output step -1) layer -1; max post_attn rel 0.000e+00; pure logits worst rel 0.000e+00 at output step 0; argmax mismatch steps 0/32
+axis ssa batch+q4+rms (rejected step25 1.171e-04): logits worst rel 1.892e-04 at output step 28 | argmax mismatch steps 0/32
+axis ssa batch+q4 (rejected step28 1.032e-04): logits worst rel 1.032e-04 at output step 28 | argmax mismatch steps 0/32
+axis ssa batch+q4+q6 (rejected step28 1.041e-04): logits worst rel 1.041e-04 at output step 28 | argmax mismatch steps 0/32
+axis ssa batch+rmsVL (selected): logits worst rel 0.000e+00 at output step 0 | argmax mismatch steps 0/32
+axis ssa tiled_all+segment (EXTREME extra, not a pass-7 candidate): logits worst rel 2.013e-04 at output step 28 | argmax mismatch steps 0/32
+fp64 attribution at position 29 (output step 28) layer 17 (blk.17.attn_q.weight, 256 rows): rel-to-FP64 worst plain 1.300e-06 | tiled 4.734e-07
+DIAGNOSIS_COMPLETED
