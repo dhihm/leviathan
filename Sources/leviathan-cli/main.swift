@@ -203,18 +203,43 @@ case "check":
         fail("check failed: \(error)")
     }
 
-case "gguf-inspect":
-    // Metadata-only inspection of a GGUF file: the file is memory-mapped
-    // read-only and never copied; no weights are loaded or executed.
-    let path = requireValue("--file", args)
-    let url = URL(fileURLWithPath: path)
-    do {
-        let file = try GGUFReader.read(url)
+    case "gguf-inspect":
+        // Metadata-only inspection of a GGUF file: the file is memory-mapped
+        // read-only and never copied; no weights are loaded or executed.
+        let path = requireValue("--file", args)
+        let url = URL(fileURLWithPath: path)
+        // Optional full tensor-directory dump (name, dims, type, bytes,
+        // file offset) for pinning the exact tensor contract of a model.
+        let tensorsOutPath = args.firstIndex(of: "--tensors-out").map { _ in
+            requireValue("--tensors-out", args)
+        }
+        do {
+            let file = try GGUFReader.read(url)
+            if let tensorsOutPath {
+                var lines = [String]()
+                lines.append("# name\tdims\ttype\tbytes\tfileOffset")
+                for info in file.tensors {
+                    let byteCount = try file.tensorRange(info).count
+                    lines.append("\(info.name)\t\(info.dims)\t\(info.ggmlType)\t\(byteCount)\t\(try file.tensorRange(info).lowerBound)")
+                }
+                try lines.joined(separator: "\n").appending("\n")
+                    .write(toFile: tensorsOutPath, atomically: true, encoding: .utf8)
+                print("tensor directory (\(file.tensors.count) tensors) written to \(tensorsOutPath)")
+            }
         print("path: \(path)")
         print("version: \(file.version)")
         print("file bytes: \(file.byteCount)")
         print("data offset: \(file.dataOffset) (alignment \(file.alignment))")
         print("metadata entries: \(file.metadata.count)")
+        if args.contains("--metadata-all") {
+            for (key, value) in file.metadata.sorted(by: { $0.key < $1.key }) {
+                if case let .array(_, count, _, _, _, _, _) = value {
+                    print("  \(key): <array of \(count)>")
+                } else {
+                    print("  \(key): \(value)")
+                }
+            }
+        }
         let interesting = ["general.architecture", "general.name", "general.license",
                            "gemma4.context_length", "gemma4.block_count",
                            "gemma4.embedding_length", "gemma4.attention.head_count",
@@ -421,6 +446,88 @@ case "forge":
         fail("forge failed: \(error)")
     }
 
-default:
-    usage()
+    case "gemma-forward":
+        // Full-model forward on the real Gemma 4 26B-A4B QAT Q4_0 GGUF:
+        // quantized weights stay quantized (mmap'd, zero-copy GPU buffer);
+        // returns the greedy argmax token plus GPU evidence. Token IDs in,
+        // token ID out — tokenizer wiring is a separate milestone.
+        let path = requireValue("--file", args)
+        let tokensArg = requireValue("--tokens", args)
+        let tokenIds = tokensArg.split(separator: ",").map {
+            guard let id = Int($0.trimmingCharacters(in: .whitespaces)), id >= 0 else {
+                fail("invalid token id '\($0)'")
+            }
+            return id
+        }
+        guard !tokenIds.isEmpty, tokenIds.count <= 4096 else {
+            fail("--tokens must contain 1...4096 ids")
+        }
+        do {
+            let runner = try Gemma4Runner(fileAt: URL(fileURLWithPath: path))
+            runner.traceLayers = args.contains("--trace")
+            // Kernel-level parity gate before any correctness claim: the GPU
+            // embedding-row decoder against the independent scalar Q6_K oracle.
+            let embedWorst = try runner.verifyEmbeddingRow(token: tokenIds[0])
+            guard embedWorst < 1e-4 else {
+                fail(String(format: "embedding parity failed: worst rel diff %.3e", embedWorst))
+            }
+            print(String(format: "embedding parity (GPU vs scalar Q6_K oracle, %d values): worst rel diff %.3e",
+                         2816, embedWorst))
+            let start = ContinuousClock.now
+            let evidence = try runner.forward(tokenIds: tokenIds)
+            let elapsed = ContinuousClock.now - start
+            print("device: \(evidence.deviceName)")
+            print("maxBufferLength: \(evidence.deviceMaxBufferLength) bytes, " +
+                  "recommendedWorkingSet: \(evidence.recommendedMaxWorkingSetSize) bytes")
+            print("weights mapped (zero-copy, quantized): \(evidence.weightsMappedBytes) bytes")
+            print("metal currentAllocatedSize (includes mapped weights): " +
+                  "\(evidence.metalAllocatedBytes) bytes")
+            print("max sampled process footprint: \(evidence.peakFootprintBytes) bytes")
+            print("tokens: \(evidence.tokensProcessed), kernels dispatched: \(evidence.dispatchedKernels)")
+            print(String(format: "gpu time: %.1f ms, wall: %.1f ms",
+                         evidence.gpuMicros / 1000,
+                         Double(elapsed.components.attoseconds) / 1e15
+                             + Double(elapsed.components.seconds) * 1e3))
+            print("greedy next token: \(evidence.argmaxToken)")
+            for t in evidence.topLogits {
+                print(String(format: "  token %6d  logit %+.6f", t.token, t.logit))
+            }
+            print("FORWARD_COMPLETED (model correctness vs external baseline not yet claimed)")
+        } catch {
+            fail("gemma-forward failed: \(error)")
+        }
+
+    case "gemma-token-lookup":
+        // Exact token-piece lookup in the GGUF vocab (tokenizer.ggml.tokens
+        // + token_type). Diagnostic for pinning exact token IDs; NOT a
+        // general tokenizer implementation.
+        let path = requireValue("--file", args)
+        do {
+            let file = try GGUFReader.read(URL(fileURLWithPath: path))
+            if let idArg = args.firstIndex(of: "--id").map({ _ in requireValue("--id", args) }),
+               let id = Int(idArg), id >= 0 {
+                guard case let .array(_, count, _, _, _, strings, _)? = file.metadata["tokenizer.ggml.tokens"],
+                      id < count else { fail("id \(id) out of range") }
+                print("token id \(id): '\(strings[id])'")
+                exit(0)
+            }
+            let piece = requireValue("--piece", args)
+            guard case let .array(_, count, _, _, _, strings, _)? = file.metadata["tokenizer.ggml.tokens"],
+                  case let .array(_, tcount, _, _, _, _, _)? = file.metadata["tokenizer.ggml.token_type"],
+                  count == tcount else {
+                fail("missing tokenizer.ggml.tokens/token_type arrays")
+            }
+            var hits = 0
+            for (i, t) in strings.enumerated() where t == piece {
+                print("token id \(i): exact match")
+                hits += 1
+                if hits >= 8 { break }
+            }
+            if hits == 0 { print("no exact match for piece '\(piece)'") }
+        } catch {
+            fail("gemma-token-lookup failed: \(error)")
+        }
+
+    default:
+        usage()
 }

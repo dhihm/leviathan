@@ -40,6 +40,24 @@ func checkThrows<E: Error & Equatable>(_ name: String, _ expected: E,
     }
 }
 
+/// Error-category check: passes when the thrown error is the given case,
+/// regardless of its associated message text.
+@MainActor
+func checkThrowsCase(_ name: String, _ expectedCase: String,
+                     _ body: () throws -> Void) {
+    do {
+        try body()
+        failed += 1; print("FAIL: \(name) — expected \(expectedCase), got no error")
+    } catch {
+        let actual = String(describing: error)
+        if actual.hasPrefix(expectedCase + "(\"") || actual == expectedCase {
+            passed += 1
+        } else {
+            failed += 1; print("FAIL: \(name) — expected case \(expectedCase), got \(actual)")
+        }
+    }
+}
+
 let demoGraph = GraphIR(inputDim: 16, ops: [
     .dense(outDim: 32), .relu, .dense(outDim: 32), .relu, .dense(outDim: 8),
 ])
@@ -1166,6 +1184,203 @@ do {
     }
 } catch {
     failed += 1; print("FAIL: torch exporter e2e — threw \(error)")
+}
+
+// MARK: - Gemma 4 math primitives (stable tanh on GPU vs scalar)
+
+do {
+    // Cover the exact region where Metal's built-in tanh returns NaN on
+    // the tested driver (|x| > ~49), plus zero and negative arguments.
+    var args: [Float] = [0, 1e-8, -1e-8, 0.5, -0.5, 1, -1, 5, -5, 10, -10,
+                         30, -30, 49, -49, 49.7, -49.7, 100, -100, 500, -500,
+                         1e4, -1e4, 1e6, -1e6, 30.5, 30.25]
+    args.append(contentsOf: (0..<32).map { Float($0) * 3.7 - 60 })
+    let gpu = try Gemma4Math.stableTanhGPU(args)
+    checkEqual("stable tanh GPU result count", gpu.count, args.count)
+    var worst = 0.0
+    var allFinite = true
+    for i in args.indices {
+        allFinite = allFinite && gpu[i].isFinite
+        let want = tanh(Double(args[i]))
+        worst = max(worst, abs(Double(gpu[i]) - want))
+    }
+    check("stable tanh GPU all finite (built-in tanh NaNs >~49)", allFinite)
+    check(String(format: "stable tanh GPU vs scalar fp64 (worst %.2e)", worst), worst < 1e-6)
+}
+
+// MARK: - Gemma 4 tensor contract (adversarial synthetic GGUFs)
+
+/// Minimal original GGUF byte builder for contract tests: only the
+/// metadata Gemma4Config reads, plus an explicit tensor directory.
+struct GGUFTestBuilder {
+    var bytes = [UInt8]()
+
+    init() {
+        bytes.append(contentsOf: Array("GGUF".utf8))
+        appendU32(3)          // version
+        appendU64(0)          // tensor count (patched by finish)
+        appendU64(0)          // kv count (patched by finish)
+    }
+    var kvCount = 0
+    var tensorCount = 0
+
+    mutating func appendU32(_ v: UInt32) {
+        bytes.append(UInt8(v & 0xFF)); bytes.append(UInt8((v >> 8) & 0xFF))
+        bytes.append(UInt8((v >> 16) & 0xFF)); bytes.append(UInt8((v >> 24) & 0xFF))
+    }
+    mutating func appendU64(_ v: UInt64) {
+        for i in 0..<8 { bytes.append(UInt8((v >> (8 * UInt64(i))) & 0xFF)) }
+    }
+    mutating func appendString(_ s: String) {
+        appendU64(UInt64(s.utf8.count))
+        bytes.append(contentsOf: Array(s.utf8))
+    }
+    mutating func kvString(_ key: String, _ value: String) {
+        appendString(key); appendU32(8); appendString(value); kvCount += 1
+    }
+    mutating func kvU32(_ key: String, _ value: UInt32) {
+        appendString(key); appendU32(4); appendU32(value); kvCount += 1
+    }
+    mutating func kvF32(_ key: String, _ value: Float) {
+        appendString(key); appendU32(6); appendU32(value.bitPattern); kvCount += 1
+    }
+    mutating func kvInt32Array(_ key: String, _ values: [Int32]) {
+        appendString(key); appendU32(9); appendU32(5); appendU64(UInt64(values.count))
+        for v in values { appendU32(UInt32(bitPattern: v)) }
+        kvCount += 1
+    }
+    mutating func tensor(_ name: String, dims: [Int], type: UInt32, offset: Int) {
+        appendString(name)
+        appendU32(UInt32(dims.count))
+        for d in dims { appendU64(UInt64(d)) }
+        appendU32(type)
+        appendU64(UInt64(offset))
+        tensorCount += 1
+    }
+    /// Pads the header to 32-byte alignment and appends a tiny data region.
+    mutating func finish(totalBytes: Int = 64) -> Data {
+        while bytes.count % 32 != 0 { bytes.append(0) }
+        // tensor count / kv count were written at offsets 8 and 16.
+        func patch64(_ index: Int, _ v: UInt64, into b: inout [UInt8]) {
+            for i in 0..<8 { b[index + i] = UInt8((v >> (8 * UInt64(i))) & 0xFF) }
+        }
+        patch64(8, UInt64(tensorCount), into: &bytes)
+        patch64(16, UInt64(kvCount), into: &bytes)
+        var out = bytes
+        out.append(contentsOf: [UInt8](repeating: 0xAA, count: totalBytes))
+        return Data(out)
+    }
+
+    /// The full valid metadata set for the 26B-A4B layout.
+    mutating func appendGemma4Metadata(blockCount: UInt32 = 30,
+                                       kvHeadsOverride: [Int32]? = nil) {
+        kvString("general.architecture", "gemma4")
+        kvU32("gemma4.block_count", blockCount)
+        kvU32("gemma4.embedding_length", 2816)
+        kvU32("gemma4.expert_count", 128)
+        kvU32("gemma4.expert_used_count", 8)
+        kvU32("gemma4.expert_feed_forward_length", 704)
+        kvU32("gemma4.feed_forward_length", 2112)
+        kvF32("gemma4.final_logit_softcapping", 30)
+        kvU32("gemma4.context_length", 262144)
+        var kvHeads: [Int32] = []
+        for layer in 0..<30 { kvHeads.append(layer % 6 == 5 ? 2 : 8) }
+        kvInt32Array("gemma4.attention.head_count_kv", kvHeadsOverride ?? kvHeads)
+    }
+}
+
+do {
+    // Valid metadata, but an empty tensor directory: the config parses and
+    // the full-contract validator must reject the missing tensor set.
+    var b = GGUFTestBuilder()
+    b.appendGemma4Metadata()
+    let data = b.finish()
+    let file = try GGUFReader.parse(data)
+    let config = try Gemma4Config(file: file)
+    checkEqual("synthetic config global layers", config.globalLayers, [5, 11, 17, 23, 29])
+    checkThrowsCase("empty tensor directory rejected by full contract",
+                    "incompatibleModel") {
+        try Gemma4TensorContract.validate(file: file, config: config)
+    }
+    // The expectations table itself carries the exact geometry contract.
+    let table = Gemma4TensorContract.expectations(config: config)
+    checkEqual("contract table size", table.count, 658)
+    func entry(_ name: String) -> Gemma4TensorContract.ExpectedTensor {
+        table.first { $0.name == name }!
+    }
+    checkEqual("contract blk.0.attn_q (local)",
+               entry("blk.0.attn_q.weight").dims, [2816, 4096])
+    checkEqual("contract blk.0.attn_q type", entry("blk.0.attn_q.weight").type, .q4_0)
+    checkEqual("contract blk.0.attn_v present (local k/v separate)",
+               entry("blk.0.attn_v.weight").dims, [2816, 2048])
+    checkEqual("contract blk.5.attn_q (global)",
+               entry("blk.5.attn_q.weight").dims, [2816, 8192])
+    checkEqual("contract blk.5.attn_k (global 2x512)",
+               entry("blk.5.attn_k.weight").dims, [2816, 1024])
+    check("contract has no blk.5.attn_v (k_eq_v)",
+          !table.contains { $0.name == "blk.5.attn_v.weight" })
+    checkEqual("contract token_embd", entry("token_embd.weight").dims, [2816, 262144])
+    checkEqual("contract token_embd type", entry("token_embd.weight").type, .q6_K)
+    checkEqual("contract experts",
+               entry("blk.0.ffn_gate_up_exps.weight").dims, [2816, 1408, 128])
+    checkEqual("contract expert down",
+               entry("blk.0.ffn_down_exps.weight").dims, [704, 2816, 128])
+} catch {
+    failed += 1; print("FAIL: synthetic contract test — threw \(error)")
+}
+
+do {
+    // Wrong metadata (block_count 29): rejected before any tensor work.
+    var b = GGUFTestBuilder()
+    b.appendGemma4Metadata(blockCount: 29)
+    let file = try GGUFReader.parse(b.finish())
+    checkThrowsCase("wrong block_count rejected", "badMetadata") {
+        _ = try Gemma4Config(file: file)
+    }
+} catch {
+    failed += 1; print("FAIL: wrong block_count test — threw \(error)")
+}
+
+do {
+    // A crafted GGUF with an out-of-contract kv-head pattern (3 heads on a
+    // local layer) is rejected at config parse.
+    var b = GGUFTestBuilder()
+    b.appendGemma4Metadata(kvHeadsOverride: (0..<30).map { _ in Int32(8) })
+    let file = try GGUFReader.parse(b.finish())
+    checkThrowsCase("kv-head pattern without global layers rejected",
+                    "incompatibleModel") {
+        _ = try Gemma4Config(file: file)
+    }
+} catch {
+    failed += 1; print("FAIL: kv-head pattern test — threw \(error)")
+}
+
+// MARK: - Gemma 4 real-model gates (opt-in via LEVIATHAN_GEMMA_GGUF)
+
+// These load the full 14.44 GB checkpoint onto the GPU (~seconds, ~2 GB
+// resident). Opt-in keeps the default suite small and machine-independent.
+let gemmaPath = ProcessInfo.processInfo.environment["LEVIATHAN_GEMMA_GGUF"]
+if let gemmaPath, !gemmaPath.isEmpty, FileManager.default.fileExists(atPath: gemmaPath) {
+    do {
+        let runner = try Gemma4Runner(fileAt: URL(fileURLWithPath: gemmaPath))
+        // GPU embedding-row decoder vs the independent scalar Q6_K oracle.
+        let worst = try runner.verifyEmbeddingRow(token: 2)
+        check(String(format: "real GGUF embedding parity (worst rel %.2e)", worst),
+              worst < 1e-4)
+        // Greedy agreement with the same-GGUF Ollama 0.23.0 baseline
+        // (raw "Hello", temp 0, num_predict 2): the baseline generated the
+        // pieces " upon" then "-". The prompt IDs [BOS=2, 9259] are INFERRED
+        // from vocab lookups + prompt_eval_count=2 (Ollama exposes no token
+        // IDs); this is greedy token agreement, not full logit parity.
+        let e1 = try runner.forward(tokenIds: [2, 9259])
+        checkEqual("real GGUF greedy token 1 vs Ollama baseline", e1.argmaxToken, 3324)
+        let e2 = try runner.forward(tokenIds: [3324])
+        checkEqual("real GGUF greedy token 2 vs Ollama baseline", e2.argmaxToken, 236772)
+    } catch {
+        failed += 1; print("FAIL: real-model Gemma gates — threw \(error)")
+    }
+} else {
+    print("SKIP: real-model Gemma gates (set LEVIATHAN_GEMMA_GGUF to opt in)")
 }
 
 // MARK: - Summary

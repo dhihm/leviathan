@@ -159,10 +159,13 @@ the GPU path before any device memory is touched:
 1. **First real model** — original Swift GGUF reader and Q4_0 dequantizing
    Metal kernels for [Gemma 4 26B-A4B](docs/MODEL_TARGET.md): exact hybrid
    local/global attention with unified KV and p-RoPE, RMSNorm, MoE routing
-   (top-8 of 128) plus shared expert, weights kept quantized on the GPU;
-   first a single verified token ID against the same-GGUF baseline, then
-   generation, tokenizer, and text. No full-model execution is claimed
-   until it runs and is verified.
+   (top-8 of 128) plus shared expert, weights kept quantized on the GPU.
+   **Status 2026-10-02: the full 30-layer forward runs on the M1 Max GPU
+   from the quantized checkpoint (zero-copy mmap), and the greedy
+   next-token matches the same-GGUF Ollama 0.23.0 baseline on two
+   consecutive generated tokens** — bring-up evidence and exact scope in
+   [docs/GEMMA_PROGRESS.md](docs/GEMMA_PROGRESS.md). Tokenizer, text
+   generation, and logit-level parity remain open.
 2. **One measured automatic optimization decision** — a bounded candidate
    set (e.g. threadgroup widths 32/64/128) gated by correctness, then
    selected by median measured device time under a finite tuning budget.
