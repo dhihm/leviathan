@@ -1,0 +1,10 @@
+{
+  "inputDim" : 16,
+  "ops" : [
+    { "dense" : { "outDim" : 32 } },
+    "relu",
+    { "dense" : { "outDim" : 32 } },
+    "relu",
+    { "dense" : { "outDim" : 8 } }
+  ]
+}
