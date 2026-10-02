@@ -514,7 +514,7 @@ public final class Gemma4Runner {
         // ---- shaders + pipelines (compiled once).
         do { library = try device.makeLibrary(source: Self.shaderSource, options: nil) }
         catch { throw Gemma4Error.shaderCompileFailed("\(error)") }
-        for name in ["g4_q4_matvec", "g4_q4_matvec_tiled", "g4_q6_matvec", "g4_f32_matvec", "g4_q6_embed_row",
+        for name in ["g4_q4_matvec", "g4_q4_matvec_tiled", "g4_q6_matvec", "g4_q6_matvec_tiled", "g4_f32_matvec", "g4_q6_embed_row",
                      "g4_rmsnorm", "g4_gelu_up", "g4_rope", "g4_attn",
                      "g4_axpy", "g4_add", "g4_scale", "g4_softcap"] {
             guard let fn = library.makeFunction(name: name),
@@ -523,17 +523,24 @@ public final class Gemma4Runner {
             }
             pipelines[name] = p
         }
-        // Hardware-derived tile width for the tiled Q4_0 candidate: the
-        // largest legal power of two (tree reduction, kernel partials cap
-        // 128) that is at most 2× the pipeline's execution width and the
-        // device maximum; 32 minimum.
-        if let tiled = pipelines["g4_q4_matvec_tiled"] {
+        // Hardware-derived tile widths: the largest legal power of two
+        // (tree reduction, kernel partials cap 128) that is at most 2× the
+        // pipeline's execution width and the device maximum. A missing
+        // pipeline or a ceiling below 32 is a hard error — no silent
+        // fallback width.
+        func derivedTileWidth(_ name: String) throws -> Int {
+            guard let tiled = pipelines[name],
+                  tiled.maxTotalThreadsPerThreadgroup >= 32 else {
+                throw Gemma4Error.metalUnavailable
+            }
             let ceiling = min(128, tiled.maxTotalThreadsPerThreadgroup,
                               max(32, 2 * tiled.threadExecutionWidth))
             var w = 128
             while w > ceiling { w /= 2 }
-            q4TileWidth = max(32, w)
+            return w
         }
+        q4TileWidth = try derivedTileWidth("g4_q4_matvec_tiled")
+        q6TileWidth = try derivedTileWidth("g4_q6_matvec_tiled")
 
         // ---- activation buffers. Widths are preflighted for every use:
         // bufT1/bufT3 hold qHeads*globalHeadDim (8192); bufT2 must hold
@@ -621,6 +628,10 @@ public final class Gemma4Runner {
     /// (a Forge candidate — gated against the FP64 oracle and measured
     /// on real hardware before selection).
     internal var q4TiledKernel = false
+    /// Same for Q6_K matvecs (tied embedding / LM head).
+    internal var q6TiledKernel = false
+    /// Q6_K tiled width, derived from the Q6 pipeline's OWN limits.
+    internal var q6TileWidth = 64
     /// Hardware-derived tile width (set at init from the compiled
     /// pipeline): 2× execution width, clamped to the device maximum and
     /// the kernel's 128-slot partials array.
@@ -825,6 +836,9 @@ public final class Gemma4Runner {
             // explicit hardware-derived width.
             try dispatchExplicit("g4_q4_matvec_tiled", groups: outRows,
                                  threads: q4TileWidth, bind)
+        } else if r.type == .q6_K && q6TiledKernel {
+            try dispatchExplicit("g4_q6_matvec_tiled", groups: outRows,
+                                 threads: q6TileWidth, bind)
         } else {
             try dispatch(kernel, grid: outRows, bind)
         }
@@ -964,6 +978,11 @@ public final class Gemma4Runner {
     /// Current context length (tokens whose KV is populated).
     internal func contextPosition() -> Int { consumedPosition }
 
+    /// Read-only tile-width metadata for reporting/identity (the
+    /// mutable internal flags stay internal — candidates set them only
+    /// through the gated executor).
+    public var tileWidths: (q4: Int, q6: Int) { (q4TileWidth, q6TileWidth) }
+
     /// Public bounded accessor for the final logits vector (flushes any
     /// open deferred segment first).
     public func currentLogits() throws -> [Float] {
@@ -1008,13 +1027,15 @@ public final class Gemma4Runner {
     public func engineIdentity() throws -> String {
         let msl = SHA256.hex(SHA256.hash(Array(Self.shaderSource.utf8)))
         let candidates = GemmaForge.candidates()
-            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)" }.sorted().joined(separator: ",")
+            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)" }
+            .sorted().joined(separator: ",")
         return "gemma-graph-executor-v1|exe=" + (try Self.executableDigest())
             + "|msl=" + msl
             + "|pipelines=" + pipelines.keys.sorted().joined(separator: ",")
             + "|ssaSchema=\(GemmaSSA.schemaVersion)"
             + "|candidates=" + candidates
             + "|q4TileWidth=\(q4TileWidth)"
+            + "|q6TileWidth=\(q6TileWidth)"
             + "|mslOptions=default"
     }
 
@@ -1473,6 +1494,60 @@ public final class Gemma4Runner {
             }
         }
         y[row] = sum;
+    }
+
+    // Tiled cooperative Q6_K variant: same reduction caveat as the Q4_0
+    // tiled kernel (reassociated addition — NOT bit-identical; gated
+    // against the FP64 oracle and by full-logit/greedy Forge gates).
+    kernel void g4_q6_matvec_tiled(constant const uint2& p [[buffer(0)]],
+                                   constant const ulong& wOff [[buffer(1)]],
+                                   device const uchar* wbase [[buffer(2)]],
+                                   device const float* x [[buffer(3)]],
+                                   device float* y [[buffer(4)]],
+                                   uint lid [[thread_position_in_threadgroup]],
+                                   uint lsizeUInt [[threads_per_threadgroup]],
+                                   uint wid [[threadgroup_position_in_grid]]) {
+        uint row = wid;
+        uint lsize = lsizeUInt;
+        if (row >= p.y) { return; }
+        uint blocksPerRow = p.x / 256u;
+        device const uchar* rowBytes = wbase + wOff + (ulong)row * blocksPerRow * 210u;
+        float sum = 0.0f;
+        for (uint b = lid; b < blocksPerRow; b += lsize) {
+            device const uchar* blk = rowBytes + b * 210u;
+            ushort dbits = ushort(blk[208]) | (ushort(blk[209]) << 8u);
+            float d = float(as_type<half>(dbits));
+            for (uint c = 0; c < 2u; c++) {
+                uint ql = c * 64u;
+                uint qh = 128u + c * 32u;
+                uint sc = c * 8u;
+                uint xbase = b * 256u + c * 128u;
+                for (uint l = 0; l < 32u; l++) {
+                    uint isub = l / 16u;
+                    uchar h = blk[qh + l];
+                    float s0 = float((char)blk[192u + sc + isub]);
+                    float s1 = float((char)blk[192u + sc + isub + 2u]);
+                    float s2 = float((char)blk[192u + sc + isub + 4u]);
+                    float s3 = float((char)blk[192u + sc + isub + 6u]);
+                    float q1 = float((int)((blk[ql + l] & 0x0Fu) | ((h & 3u) << 4u)) - 32);
+                    float q2 = float((int)((blk[ql + 32u + l] & 0x0Fu) | (((h >> 2u) & 3u) << 4u)) - 32);
+                    float q3 = float((int)((blk[ql + l] >> 4u) | (((h >> 4u) & 3u) << 4u)) - 32);
+                    float q4 = float((int)((blk[ql + 32u + l] >> 4u) | (((h >> 6u) & 3u) << 4u)) - 32);
+                    sum += d * s0 * q1 * x[xbase + l];
+                    sum += d * s1 * q2 * x[xbase + 32u + l];
+                    sum += d * s2 * q3 * x[xbase + 64u + l];
+                    sum += d * s3 * q4 * x[xbase + 96u + l];
+                }
+            }
+        }
+        threadgroup float partials[128];
+        partials[lid] = sum;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint s = lsize / 2u; s > 0u; s >>= 1u) {
+            if (lid < s) { partials[lid] += partials[lid + s]; }
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }
+        if (lid == 0u) { y[row] = partials[0]; }
     }
 
     kernel void g4_f32_matvec(constant const uint2& p [[buffer(0)]],

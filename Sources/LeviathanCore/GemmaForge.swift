@@ -40,12 +40,16 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
     /// reassociates the addition order — correctness is gated against the
     /// FP64 oracle and full-logit/greedy equality before selection.
     public let matvecTiledQ4: Bool
+    /// Tiled cooperative Q6_K matvec (tied embedding / LM head). Same
+    /// non-bit-identical caveat and gates as matvecTiledQ4.
+    public let matvecTiledQ6: Bool
 
     public init(segmentBatching: Bool, top5Diagnostic: Bool,
-                matvecTiledQ4: Bool = false) {
+                matvecTiledQ4: Bool = false, matvecTiledQ6: Bool = false) {
         self.segmentBatching = segmentBatching
         self.top5Diagnostic = top5Diagnostic
         self.matvecTiledQ4 = matvecTiledQ4
+        self.matvecTiledQ6 = matvecTiledQ6
     }
 }
 
@@ -157,6 +161,12 @@ public enum GemmaForge {
                                 matvecTiledQ4: true),
             GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
                                 matvecTiledQ4: true),
+            // Q6_K tiling (tied embedding / LM head) stacked on the
+            // measured winners so far.
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                matvecTiledQ4: true, matvecTiledQ6: true),
+            GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false,
+                                matvecTiledQ4: true, matvecTiledQ6: true),
         ]
     }
 
@@ -328,9 +338,11 @@ public enum GemmaForge {
         // is identical in both modes.
         runner.autoSegment = candidate.segmentBatching
         runner.q4TiledKernel = candidate.matvecTiledQ4
+        runner.q6TiledKernel = candidate.matvecTiledQ6
         defer {
             runner.autoSegment = false
             runner.q4TiledKernel = false
+            runner.q6TiledKernel = false
         }
         var routerState = [Int: (topIdx: [Int], weights: [Float])]()
 

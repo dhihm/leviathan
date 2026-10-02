@@ -1,0 +1,24 @@
+graph validated: 934 ops, model gemma4-26b-a4b
+hardware: Apple M1 Max, max threads/threadgroup 1024, exec width 32, working set 26800603136 bytes
+engine digest: cb0337409b21e1f2e7a2cf727ac24feb96ee713cba554874b3f465ad71f82161
+  candidate batching=0 tiledQ4=0 tiledQ6=0: correct 1, wall 784174 us/token, gpu 457774 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 784174 us, gpu 457774 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0: correct 1, wall 478923 us/token, gpu 440844 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 478923 us, gpu 440844 us, 1799 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=1 tiledQ6=0: correct 1, wall 773724 us/token, gpu 441539 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 3.9e-05; 3 timed tokens; wall 773724 us, gpu 441539 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=0: correct 1, wall 328905 us/token, gpu 291309 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 3.9e-05; 3 timed tokens; wall 328905 us, gpu 291309 us, 1799 kernels, 127 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=1: correct 1, wall 345987 us/token, gpu 303599 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 4.0e-05; 3 timed tokens; wall 345987 us, gpu 303599 us, 1799 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=1 tiledQ6=1: correct 1, wall 688061 us/token, gpu 362068 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 4.0e-05; 3 timed tokens; wall 688061 us, gpu 362068 us, 1799 kernels, 1799 buffers/token
+selected: batching=1 tiledQ4=1 tiledQ6=0 (tile widths q4=64 q6=64), wall 328905 us/token, gpu 291309 us/token
+plan saved: /tmp/leviathan-forge2-tooling/gemma-plan-enchat.json, digest 90e4567d01556eb4aa5abb32d1d9e4582a7880a900060af6b20265855468bedb
+  step 1: token 236888, wall 328016 us, gpu 291508 us, 1799 kernels, 127 buffers
+  step 2: token 2088, wall 335224 us, gpu 296376 us, 1799 kernels, 127 buffers
+  step 3: token 740, wall 333606 us, gpu 297841 us, 1799 kernels, 127 buffers
+  step 4: token 564, wall 343856 us, gpu 309037 us, 1799 kernels, 127 buffers
+  step 5: token 1601, wall 342970 us, gpu 308235 us, 1799 kernels, 127 buffers
+  step 6: token 611, wall 342120 us, gpu 309039 us, 1799 kernels, 127 buffers
+  step 7: token 3124, wall 354395 us, gpu 318995 us, 1799 kernels, 127 buffers
+prompt ids: 2 105 2364 107 9259 106 107 105 4368 107 100 45518 107 101
+greedy ids (reference == graph): 9259 236888 2088 740 564 1601 611 3124
+text: Hello! How can I help you today
+verified generation: 7 steps, median wall 342120 us/token, gpu total 5744.9 ms
+FORGE_PASS
+exit=0

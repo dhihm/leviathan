@@ -1916,6 +1916,106 @@ do {
     failed += 1; print("FAIL: q4 tiled gate — threw \(error)")
 }
 
+// MARK: - Tiled cooperative Q6_K matvec vs FP64 oracle (ACTUAL runtime shader)
+
+do {
+    // Compiles Gemma4Runner.shaderSource itself and dispatches
+    // g4_q6_matvec_tiled over synthetic Q6_K blocks (mixed-sign FP16
+    // scales, saturated nibbles, cancellation-prone inputs) at real
+    // dimensions 256/512/2816, gated against Q6_K.matvecReferenceF64
+    // (the independent FP64 oracle already gating the plain kernel),
+    // plus the exact hand-computed -315 known block at inDim 256.
+    guard let device = MTLCreateSystemDefaultDevice(),
+          let queue = device.makeCommandQueue() else {
+        throw Q4TiledTestError("Metal unavailable")
+    }
+    let library = try device.makeLibrary(source: Gemma4Runner.shaderSource, options: nil)
+    guard let fn = library.makeFunction(name: "g4_q6_matvec_tiled"),
+          let tiled = try? device.makeComputePipelineState(function: fn) else {
+        throw Q4TiledTestError("g4_q6_matvec_tiled pipeline missing")
+    }
+    func runTiled(blocks: [UInt8], outDim: Int, inDim: Int, x: [Float],
+                  width: Int) throws -> [Float] {
+        guard Gemma4Runner.legalCooperativeWidth(
+            width, pipelineMax: tiled.maxTotalThreadsPerThreadgroup) else {
+            throw Q4TiledTestError("illegal tile width \(width)")
+        }
+        let wb = device.makeBuffer(bytes: blocks, length: blocks.count,
+                                   options: .storageModeShared)!
+        let xb = device.makeBuffer(bytes: x, length: x.count * 4,
+                                   options: .storageModeShared)!
+        let yb = device.makeBuffer(length: outDim * 4, options: .storageModeShared)!
+        var param = SIMD2<UInt32>(UInt32(inDim), UInt32(outDim))
+        var off = UInt64(0)
+        let cmd = queue.makeCommandBuffer()!
+        let enc = cmd.makeComputeCommandEncoder()!
+        enc.setComputePipelineState(tiled)
+        enc.setBytes(&param, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
+        enc.setBytes(&off, length: MemoryLayout<UInt64>.stride, index: 1)
+        enc.setBuffer(wb, offset: 0, index: 2)
+        enc.setBuffer(xb, offset: 0, index: 3)
+        enc.setBuffer(yb, offset: 0, index: 4)
+        enc.dispatchThreadgroups(MTLSize(width: outDim, height: 1, depth: 1),
+                                 threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+        enc.endEncoding()
+        cmd.commit()
+        cmd.waitUntilCompleted()
+        guard cmd.status == .completed, cmd.error == nil else {
+            throw Q4TiledTestError("kernel failed: \(String(describing: cmd.error))")
+        }
+        return [Float](UnsafeBufferPointer(
+            start: yb.contents().assumingMemoryBound(to: Float.self), count: outDim))
+    }
+    var rng = SplitMix64(seed: 777)
+    for inDim in [256, 512, 2816] {
+        let outDim = 16
+        let blocksPerRow = inDim / Q6_K.valuesPerBlock
+        var blocks = [UInt8]()
+        blocks.reserveCapacity(outDim * blocksPerRow * Q6_K.bytesPerBlock)
+        for _ in 0..<(outDim * blocksPerRow) {
+            for _ in 0..<208 { blocks.append(UInt8(rng.next() & 0xFF)) }
+            let scale = Float16(rng.nextUniform() * 2 - 1)
+            blocks += [UInt8(scale.bitPattern & 0xFF), UInt8(scale.bitPattern >> 8)]
+        }
+        var x = [Float](repeating: 0, count: inDim)
+        for i in 0..<inDim {
+            x[i] = (i % 2 == 0 ? 1 : -1) * Float(rng.nextUniform() * 10 - 5)
+        }
+        let ref64 = try Q6_K.matvecReferenceF64(blocks: blocks, outDim: outDim,
+                                                inDim: inDim, x: x)
+        for width in [32, 64, 128] {
+            guard width <= tiled.maxTotalThreadsPerThreadgroup else { continue }
+            let out = try runTiled(blocks: blocks, outDim: outDim, inDim: inDim,
+                                   x: x, width: width)
+            var worst = 0.0
+            for i in 0..<outDim {
+                worst = max(worst, abs(Double(out[i]) - ref64[i])
+                            / max(1.0, abs(ref64[i])))
+            }
+            check(String(format: "q6 tiled width %d vs fp64 oracle (inDim %d, worst %.2e)",
+                         width, inDim, worst), worst < 1e-4)
+        }
+        // The exact hand-computed -315 known block (inDim 256 only).
+        if inDim == 256 {
+            var block = [UInt8](repeating: 0, count: Q6_K.bytesPerBlock)
+            block[208] = 0x00; block[209] = 0x3C
+            block[192] = 3; block[193] = 0xFD; block[196] = 2
+            block[200] = 3; block[204] = 2
+            block[0] = 0x21; block[128] = 0x03
+            block[64] = 0x21; block[160] = 0x01
+            var kx = [Float](repeating: 0, count: 256)
+            kx[0] = 1; kx[16] = -1; kx[64] = 2; kx[128] = -2; kx[192] = 4
+            let out = try runTiled(blocks: block, outDim: 1, inDim: 256,
+                                   x: kx, width: 64)
+            check("q6 tiled known block matches hand computation (-315)",
+                  out[0] == -315)
+        }
+    }
+    print("q6 tiled numerical gates completed")
+} catch {
+    failed += 1; print("FAIL: q6 tiled gate — threw \(error)")
+}
+
 // MARK: - Gemma 4 real-model gates (opt-in via LEVIATHAN_GEMMA_GGUF)
 
 // These load the full 14.44 GB checkpoint onto the GPU (~seconds, ~2 GB

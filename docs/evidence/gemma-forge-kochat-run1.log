@@ -1,0 +1,26 @@
+graph validated: 934 ops, model gemma4-26b-a4b
+hardware: Apple M1 Max, max threads/threadgroup 1024, exec width 32, working set 26800603136 bytes
+engine digest: cb0337409b21e1f2e7a2cf727ac24feb96ee713cba554874b3f465ad71f82161
+  candidate batching=0 tiledQ4=0 tiledQ6=0: correct 1, wall 856081 us/token, gpu 507942 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 856081 us, gpu 507942 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0: correct 1, wall 517326 us/token, gpu 475350 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 517326 us, gpu 475350 us, 1799 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=1 tiledQ6=0: correct 1, wall 658737 us/token, gpu 333934 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 2.5e-05; 3 timed tokens; wall 658737 us, gpu 333934 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=0: correct 1, wall 359564 us/token, gpu 323676 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 2.5e-05; 3 timed tokens; wall 359564 us, gpu 323676 us, 1799 kernels, 127 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=1: correct 1, wall 369508 us/token, gpu 332506 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 2.5e-05; 3 timed tokens; wall 369508 us, gpu 332506 us, 1799 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=1 tiledQ6=1: correct 1, wall 653254 us/token, gpu 339864 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 2.5e-05; 3 timed tokens; wall 653254 us, gpu 339864 us, 1799 kernels, 1799 buffers/token
+selected: batching=1 tiledQ4=1 tiledQ6=0 (tile widths q4=64 q6=64), wall 359564 us/token, gpu 323676 us/token
+plan saved: /tmp/leviathan-forge2-tooling/gemma-plan-kochat.json, digest 3b14f32049b9a0c59d7f4be1ac06dfc09fe89632995d3c36f78683e6d4e2689e
+  step 1: token 236888, wall 363063 us, gpu 322844 us, 1799 kernels, 127 buffers
+  step 2: token 113648, wall 365226 us, gpu 328541 us, 1799 kernels, 127 buffers
+  step 3: token 22478, wall 371625 us, gpu 330634 us, 1799 kernels, 127 buffers
+  step 4: token 63949, wall 377427 us, gpu 336361 us, 1799 kernels, 127 buffers
+  step 5: token 9554, wall 376966 us, gpu 334015 us, 1799 kernels, 127 buffers
+  step 6: token 237774, wall 374342 us, gpu 338827 us, 1799 kernels, 127 buffers
+  step 7: token 61487, wall 373041 us, gpu 338218 us, 1799 kernels, 127 buffers
+  step 8: token 86595, wall 394089 us, gpu 348402 us, 1799 kernels, 127 buffers
+  step 9: token 237223, wall 394161 us, gpu 347922 us, 1799 kernels, 127 buffers
+prompt ids: 2 105 2364 107 61659 236764 31694 57517 240482 237272 10443 238455 237586 236881 106 107 105 4368 107 100 45518 107 101
+greedy ids (reference == graph): 61659 236888 113648 22478 63949 9554 237774 61487 86595 237223
+text: 안녕하세요! 저는 실시간 기상 정보 시스템에
+verified generation: 9 steps, median wall 374342 us/token, gpu total 9343.9 ms
+FORGE_PASS
+exit=0

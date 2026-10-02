@@ -750,6 +750,20 @@ case "forge":
             Int(requireValue("--gen-tokens", args)) ?? 0 } ?? 8
         guard genTokens >= 2, genTokens <= 64 else { fail("--gen-tokens must be 2...64") }
         do {
+            // Optional chat/text workload: prompt IDs from the ORIGINAL
+            // GGUF-backed tokenizer with the canonical chat template —
+            // the exact same encode path as gemma-generate.
+            var chatPromptIDs: [Int]? = nil
+            if args.contains("--text") {
+                let fileURL0 = URL(fileURLWithPath: path)
+                let text = requireValue("--text", args)
+                let input = args.contains("--chat")
+                    ? "<|turn>user\n" + text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+                    : text
+                chatPromptIDs = try GemmaTokenizer(
+                    gguf: GGUFReader.read(fileURL0)).encode(input)
+            }
             let fileURL = URL(fileURLWithPath: path)
             // Bounded graph read (never a full-file allocation first).
             let graphHandle = try FileHandle(forReadingFrom: URL(fileURLWithPath: graphPath))
@@ -769,12 +783,17 @@ case "forge":
             // allocated.
             let preFile = try GGUFReader.read(fileURL)
             let preConfig = try Gemma4Config(file: preFile)
-            let prompt = promptArg.split(separator: ",").map {
-                guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
-                      id >= 0, id < preConfig.vocabSize else {
-                    fail("invalid prompt id '\($0)'"); return 0
+            let prompt: [Int]
+            if let chat = chatPromptIDs {
+                prompt = chat
+            } else {
+                prompt = promptArg.split(separator: ",").map {
+                    guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+                          id >= 0, id < preConfig.vocabSize else {
+                        fail("invalid prompt id '\($0)'"); return 0
+                    }
+                    return id
                 }
-                return id
             }
             let decodeTokens = GemmaForge.warmupTokens + GemmaForge.timedTokens
             guard !prompt.isEmpty,
@@ -841,16 +860,22 @@ case "forge":
                 try GemmaForge.savePlan(plan, to: planURL)
             }
             for r in plan.results {
-                print(String(format: "  candidate segmentBatching=%d: correct %d, wall %@/token, gpu %@/token, %@ kernels/token, %@ buffers/token — %@",
-                             r.candidate.segmentBatching ? 1 : 0, r.correct ? 1 : 0,
+                print(String(format: "  candidate batching=%d tiledQ4=%d tiledQ6=%d: correct %d, wall %@/token, gpu %@/token, %@ kernels/token, %@ buffers/token — %@",
+                             r.candidate.segmentBatching ? 1 : 0,
+                             r.candidate.matvecTiledQ4 ? 1 : 0,
+                             r.candidate.matvecTiledQ6 ? 1 : 0,
+                             r.correct ? 1 : 0,
                              r.medianWallMicrosPerToken.map { String(format: "%.0f us", $0) } ?? "-",
                              r.medianGpuMicrosPerToken.map { String(format: "%.0f us", $0) } ?? "-",
                              r.kernelsPerToken.map { String(format: "%.0f", $0) } ?? "-",
                              r.buffersPerToken.map { String(format: "%.0f", $0) } ?? "-",
                              r.note))
             }
-            print(String(format: "selected: segmentBatching=%d, wall %.0f us/token, gpu %.0f us/token",
+            print(String(format: "selected: batching=%d tiledQ4=%d tiledQ6=%d (tile widths q4=%d q6=%d), wall %.0f us/token, gpu %.0f us/token",
                          plan.selected.segmentBatching ? 1 : 0,
+                         plan.selected.matvecTiledQ4 ? 1 : 0,
+                         plan.selected.matvecTiledQ6 ? 1 : 0,
+                         runner.tileWidths.q4, runner.tileWidths.q6,
                          plan.selectedMedianWallMicrosPerToken,
                          plan.selectedMedianGpuMicrosPerToken))
             if forgedFresh {
@@ -926,6 +951,7 @@ case "forge":
             let mid = sortedWall.count / 2
             let medianWall = sortedWall.count % 2 == 1
                 ? sortedWall[mid] : (sortedWall[mid - 1] + sortedWall[mid]) / 2
+            print("prompt ids: \(prompt.map(String.init).joined(separator: " "))")
             print("greedy ids (reference == graph): \(refSeq.map(String.init).joined(separator: " "))")
             print("text: \(try tokenizer.decode(refSeq))")
             print(String(format: "verified generation: %d steps, median wall %.0f us/token, gpu total %.1f ms",

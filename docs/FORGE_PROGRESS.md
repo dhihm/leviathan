@@ -346,3 +346,36 @@ predates a diagnostic-hardening patch, run content identical):
 - Leviathan at the same checkpoint: ~3.4 decode tokens/s wall (gated
   measured run above) — the gap to the baseline remains large and is
   the active work item.
+
+## Measured optimization pass 2 (Q6_K tiling NOT selected) + chat workloads (same date)
+
+- `g4_q6_matvec_tiled` (tied-embedding/LM-head) was implemented with
+  its own FP64 gates (runtime MSL vs `Q6_K.matvecReferenceF64` at
+  inDim 256/512/2816, widths 32/64/128, mixed-sign scales, saturated
+  nibbles, cancellation inputs, plus the exact hand-computed -315
+  known block; per-pipeline tile width derived from the Q6 pipeline's
+  OWN limits — suite 250 passed / 0 failed, exit 0).
+- Full-model gated selection with the Q6 candidates (six candidates,
+  real GGUF, docs/evidence/gemma-forge-q6tiled-run1.log): batching+
+  tiledQ4 285,045 µs vs batching+tiledQ4+tiledQ6 293,341 µs wall — the
+  Q6 tiling measured SLIGHTLY WORSE and was NOT selected (no forced
+  winner; the fallback/selection discipline kept the measured best).
+  Raw-Hello-8 remains the scope of the Ollama text/count proof.
+- NEW bounded workloads through the SAME SSA artifact path with exact
+  tokenizer chat-template prompts and multi-token prefill/KV/rope/
+  router coverage (each with per-step full-logit + exact greedy gates
+  vs runner.forward; separate plans keyed by the prompt workload
+  digest): EN chat (14 prompt IDs, 8 tokens) → "Hello! How can I help
+  you today", median wall 342,120 µs/token; KO chat (23 prompt IDs, 10
+  tokens) → "안녕하세요! 저는 실시간 기상 정보 시스템에", median wall
+  374,342 µs/token (tiledQ4 logits rel 2.5e-05, greedy identical).
+  Both FORGE_PASS exit 0 (docs/evidence/gemma-forge-{enchat,kochat}-run1.log).
+- Next active items (not done): measured non-matvec kernel-family
+  profile and one legal gated fusion pass; an EXPLICIT bounded SSD
+  expert cache (separate bounded expert-slice buffers — OS paging of
+  the whole-GGUF mmap is NOT an SSD engine; in-flight pinning/flush
+  accounting in the budget; forced eviction/miss/hit/parity gates
+  through the actual SSA path vs resident; bytes/hits/evictions/
+  peak-allocated reported separately; no cold-SSD speed claim without
+  measurement; no sudo/purge); then a bounded localhost server driving
+  the compiled artifact.
