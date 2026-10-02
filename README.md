@@ -13,12 +13,20 @@ Serving itself is not implemented yet; it is planned as localhost-only.
 ![Leviathan hero illustration: an original drawing of a giant whale devouring a kraken, symbolizing the Leviathan engine swallowing workloads](docs/assets/leviathan-hero.png)
 
 **What runs today** is the verified foundation of that goal, honestly
-scoped: a small inference compiler for synthetic `dense`/`relu` graphs with
-real Metal GPU execution, integrity-checked compiled artifacts, and two
-independent CPU reference implementations. Real LLM model import and
-serving are the next milestone (see
-[docs/MODEL_TARGET.md](docs/MODEL_TARGET.md)); no full-model execution is
-claimed yet.
+scoped: a small inference compiler for `dense`/`relu` graphs with real
+Metal GPU execution, integrity-checked compiled artifacts, and two
+independent CPU reference implementations. LeviathanForge additionally
+imports a restricted PyTorch export (`nn.Sequential` of `nn.Linear`/`nn.ReLU`)
+with **real parameter weights** — validated, hashed, parity-checked
+against PyTorch (measured 2.2e-08) — and automatically generates, gates,
+and selects GPU pass candidates with a reusable measured plan cache; see
+[docs/FORGE.md](docs/FORGE.md). The example weights are random
+initializations, not a trained model. Real LLM model import and
+serving are the next milestone; the target model is
+Gemma 4 26B-A4B (MoE, QAT Q4_0) — see
+[docs/MODEL_CANDIDATES.md](docs/MODEL_CANDIDATES.md) and
+[docs/MODEL_TARGET.md](docs/MODEL_TARGET.md) (SmolLM2 superseded); no
+full-model execution is claimed yet.
 
 ## Features
 
@@ -36,8 +44,13 @@ claimed yet.
   backend; the `check` and test commands compare Metal outputs against both
   within 1e-4.
 - **CLI** — `compile`, `run` (default backend `metal`; explicit
-  `cpu-accelerate` / `cpu-scalar` for reference), and `check` for the
-  multi-batch correctness gate.
+  `cpu-accelerate` / `cpu-scalar` for reference), `check` for the
+  multi-batch correctness gate, `gguf-inspect` for memory-mapped GGUF
+  metadata inspection, and `forge` — the LeviathanForge automatic
+  pass-generation pipeline (restricted PyTorch export or graph JSON in;
+  measured hardware profile, bounded legal candidates, correctness
+  gates, GPU-time selection, validated plan cache reuse; see
+  [docs/FORGE.md](docs/FORGE.md)).
 
 ## Installation
 
@@ -143,12 +156,13 @@ the GPU path before any device memory is touched:
 
 ## Roadmap
 
-1. **First real model** — original Swift/safetensors BF16 loader and a
-   validated Llama-architecture graph for
-   [SmolLM2-135M](docs/MODEL_TARGET.md): Metal embedding, RMSNorm, RoPE,
-   GQA causal attention, SwiGLU, LM head; greedy token-ID generation, then
-   exact tokenizer, then text. No full-model execution is claimed until it
-   runs and is verified.
+1. **First real model** — original Swift GGUF reader and Q4_0 dequantizing
+   Metal kernels for [Gemma 4 26B-A4B](docs/MODEL_TARGET.md): exact hybrid
+   local/global attention with unified KV and p-RoPE, RMSNorm, MoE routing
+   (top-8 of 128) plus shared expert, weights kept quantized on the GPU;
+   first a single verified token ID against the same-GGUF baseline, then
+   generation, tokenizer, and text. No full-model execution is claimed
+   until it runs and is verified.
 2. **One measured automatic optimization decision** — a bounded candidate
    set (e.g. threadgroup widths 32/64/128) gated by correctness, then
    selected by median measured device time under a finite tuning budget.

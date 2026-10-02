@@ -203,6 +203,224 @@ case "check":
         fail("check failed: \(error)")
     }
 
+case "gguf-inspect":
+    // Metadata-only inspection of a GGUF file: the file is memory-mapped
+    // read-only and never copied; no weights are loaded or executed.
+    let path = requireValue("--file", args)
+    let url = URL(fileURLWithPath: path)
+    do {
+        let file = try GGUFReader.read(url)
+        print("path: \(path)")
+        print("version: \(file.version)")
+        print("file bytes: \(file.byteCount)")
+        print("data offset: \(file.dataOffset) (alignment \(file.alignment))")
+        print("metadata entries: \(file.metadata.count)")
+        let interesting = ["general.architecture", "general.name", "general.license",
+                           "gemma4.context_length", "gemma4.block_count",
+                           "gemma4.embedding_length", "gemma4.attention.head_count",
+                           "gemma4.expert_count", "gemma4.expert_used_count",
+                           "gemma4.expert_feed_forward_length",
+                           "gemma4.feed_forward_length",
+                           "gemma4.attention.key_length",
+                           "gemma4.attention.value_length",
+                           "gemma4.attention.sliding_window",
+                           "tokenizer.ggml.model"]
+        for key in interesting {
+            if let value = file.metadata[key] {
+                if case let .array(_, count, _, _, _, _, _) = value {
+                    print("  \(key): <array of \(count)>")
+                } else {
+                    print("  \(key): \(value)")
+                }
+            }
+        }
+        print("tensors: \(file.tensors.count)")
+        var typeCounts: [UInt32: (tensors: Int, bytes: Int)] = [:]
+        for info in file.tensors {
+            // Unknown types are reported explicitly with byte size -1 —
+            // never silently folded into a 0-byte total.
+            let byteCount: Int
+            do { byteCount = try file.tensorRange(info).count }
+            catch GGUFError.unsupportedTensorType { byteCount = -1 }
+            let entry = typeCounts[info.ggmlType] ?? (tensors: 0, bytes: 0)
+            typeCounts[info.ggmlType] = (tensors: entry.tensors + 1,
+                                         bytes: entry.bytes + byteCount)
+        }
+        for (type, entry) in typeCounts.sorted(by: { $0.key < $1.key }) {
+            let name = GGMLTensorType(rawValue: type).map { "\($0)" }
+                ?? "unsupported(\(type))"
+            print("  type \(type) (\(name)): \(entry.tensors) tensors, \(entry.bytes) bytes")
+        }
+        for info in file.tensors.prefix(12) {
+            let byteCount: Int
+            do { byteCount = try file.tensorRange(info).count }
+            catch GGUFError.unsupportedTensorType { byteCount = -1 }
+            print("  \(info.name): dims \(info.dims) type \(info.ggmlType) bytes \(byteCount)\(byteCount == -1 ? " (UNSUPPORTED TYPE)" : "")")
+        }
+        if file.tensors.count > 12 { print("  … \(file.tensors.count - 12) more") }
+    } catch {
+        fail("gguf-inspect failed: \(error)")
+    }
+
+case "forge":
+    // Automatic bounded pass generation: measured hardware profile,
+    // candidate generation, correctness gates, measured GPU-time
+    // selection, and a reusable plan artifact. No agent or LLM at
+    // runtime. Supported ops: dense, relu — anything else is rejected at
+    // graph validation. Input is either a graph JSON (--graph) or a
+    // validated PyTorch export prefix (--export-prefix, which supplies
+    // BOTH the architecture and the real parameter weights plus a
+    // PyTorch reference for parity checking).
+    let exportPrefixIndex = args.firstIndex(of: "--export-prefix")
+    let exportPrefix = exportPrefixIndex.map { _ in requireValue("--export-prefix", args) }
+    let graphPath: String
+    if let exportPrefix {
+        if args.contains("--graph") { fail("--graph and --export-prefix are mutually exclusive") }
+        graphPath = exportPrefix + ".graph.json"
+    } else {
+        graphPath = requireValue("--graph", args)
+    }
+    let batch = optionalNonNegativeInt("--batch", args, default: 4)
+    let seed = toUInt64(optionalNonNegativeInt("--seed", args, default: 42), "--seed")
+    let planURL = URL(fileURLWithPath: requireValue("--plan", args))
+    // One validated export loaded ONCE: architecture, real weights, and
+    // the PyTorch reference always come from the same validated triple —
+    // no re-load that could race with a rewritten file.
+    let weightExport: WeightExport?
+    do {
+        if let exportPrefix {
+            weightExport = try WeightExport.load(prefix: exportPrefix)
+        } else {
+            weightExport = nil
+        }
+    } catch {
+        fail("cannot load export '\(exportPrefix ?? "")': \(error)")
+    }
+    let graph: GraphIR
+    let weights: [Float]?
+    let reference: [Float]?   // PyTorch refOutput, only with --export-prefix
+    do {
+        if let weightExport {
+            graph = weightExport.graph
+            weights = weightExport.weights
+            reference = weightExport.refOutput
+        } else {
+            weights = nil
+            reference = nil
+            let graphURL = URL(fileURLWithPath: graphPath)
+            let attributes = try FileManager.default.attributesOfItem(atPath: graphURL.path)
+            let fileSize = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+            guard fileSize >= 0, fileSize <= Int64(Limits.maxGraphJSONBytes) else {
+                fail("graph file '\(graphPath)' exceeds \(Limits.maxGraphJSONBytes) bytes")
+            }
+            let graphData = try Data(contentsOf: graphURL)
+            guard graphData.count <= Limits.maxGraphJSONBytes else {
+                fail("graph file '\(graphPath)' exceeds \(Limits.maxGraphJSONBytes) bytes")
+            }
+            graph = try JSONDecoder().decode(GraphIR.self, from: graphData)
+        }
+    } catch {
+        fail("cannot read model '\(graphPath)': \(error)")
+    }
+    // Batch bounds are validated before ANY allocation, in both the
+    // cache-reuse path and the fresh-forge path.
+    guard batch > 0, batch <= Limits.maxBatch else {
+        fail("batch \(batch) outside 1...\(Limits.maxBatch)")
+    }
+    // Helper: the program with whichever weights this run uses.
+    func makeProgram() throws -> LoweredProgram {
+        let base = try CompiledArtifact(graph: graph, seed: seed).program
+        guard let weights else { return base }
+        return LoweredProgram(inputDim: base.inputDim, outputDim: base.outputDim,
+                              bufferCount: base.bufferCount, steps: base.steps,
+                              weights: weights)
+    }
+    // Shared PyTorch parity gate: the selected candidate, the REAL
+    // weights, and the manifest's deterministic input — identical logic
+    // for fresh forges and cache reuses.
+    func runParity(_ plan: ForgePlan, _ label: String) throws {
+        guard let weightExport else { return }
+        let program = try makeProgram()
+        let prepared = try MetalBackend.Prepared(
+            program: program, batch: 1, input: weightExport.refInput)
+        let (output, _) = try prepared.run(
+            threadgroupWidth: plan.selected.threadgroupWidth,
+            fuseDenseRelu: plan.selected.fuseDenseRelu)
+        guard output.count == weightExport.refOutput.count,
+              output.allSatisfy({ $0.isFinite }) else {
+            fail("\(label): parity vector wrong size or non-finite")
+        }
+        var worst: Float = 0
+        for i in 0..<output.count {
+            worst = max(worst, abs(output[i] - weightExport.refOutput[i])
+                        / max(1, abs(weightExport.refOutput[i])))
+        }
+        print(String(format: "pytorch parity (%@): worst rel diff %.3e", label, worst))
+        guard worst < 1e-4 else { fail("\(label): GPU output disagrees with PyTorch reference") }
+    }
+    do {
+        // Cache reuse: if a plan for this exact graph/weights/seed/batch/
+        // hardware/toolchain exists, validate it and run its selected
+        // candidate once through the correctness gate — no re-benchmarking.
+        if FileManager.default.fileExists(atPath: planURL.path) {
+            let program = try makeProgram()
+            var probeInput: [Float] = []
+            var rng = SplitMix64(seed: seed)
+            for _ in 0..<(batch * program.inputDim) {
+                probeInput.append(rng.nextUniform())
+            }
+            let prepared = try MetalBackend.Prepared(
+                program: program, batch: batch, input: probeInput)
+            let hardware = ForgeHardwareProfile(
+                deviceName: prepared.deviceName,
+                maxTotalThreadsPerThreadgroup: prepared.maxTotalThreadsPerThreadgroup,
+                threadExecutionWidth: prepared.threadExecutionWidth,
+                recommendedMaxWorkingSetSize: prepared.recommendedMaxWorkingSetSize)
+            if let plan = try? ForgePlan.loadValidated(
+                    from: planURL, graph: graph, seed: seed, batch: batch,
+                    hardware: hardware, weights: weights) {
+                let (output, gpuMicros) = try prepared.run(
+                    threadgroupWidth: plan.selected.threadgroupWidth,
+                    fuseDenseRelu: plan.selected.fuseDenseRelu)
+                let scalar = try ScalarBackend.run(program, batch: batch, input: probeInput)
+                guard output.count == scalar.count,
+                      output.allSatisfy({ $0.isFinite }),
+                      zip(output, scalar).allSatisfy({ abs($0.0 - $0.1) < 1e-4 }) else {
+                    fail("cached plan \(plan.planDigest) failed the correctness gate")
+                }
+                print("cache hit: plan \(plan.planDigest)")
+                print("selected: width \(plan.selected.threadgroupWidth)"
+                      + " fused \(plan.selected.fuseDenseRelu)")
+                print(String(format: "recorded median gpu %.1f us, this run %.1f us",
+                             plan.selectedMedianGpuMicros, gpuMicros))
+                try runParity(plan, "reused")
+                print("PASS (reused)")
+                exit(0)
+            }
+            print("stale plan at \(planURL.path) — re-forging")
+        }
+        let (plan, _, hardware, results) = try Forge.forge(
+            graph: graph, batch: batch, seed: seed, weights: weights)
+        print("hardware: \(hardware.deviceName), max threads/threadgroup \(hardware.maxTotalThreadsPerThreadgroup), exec width \(hardware.threadExecutionWidth), working set \(hardware.recommendedMaxWorkingSetSize) bytes")
+        if let weights { print("weights: real parameters, \(weights.count) floats") }
+        for r in results {
+            let median = r.medianGpuMicros.map { String(format: "%.1f us", $0) } ?? "-"
+            print("  width \(r.candidate.threadgroupWidth) fused \(r.candidate.fuseDenseRelu ? 1 : 0): correct \(r.correct), median \(median) — \(r.note)")
+        }
+        print("selected: width \(plan.selected.threadgroupWidth)"
+              + " fused \(plan.selected.fuseDenseRelu), median "
+              + String(format: "%.1f", plan.selectedMedianGpuMicros) + " us")
+        // PyTorch parity when an export prefix was supplied: the selected
+        // candidate, real weights, manifest's deterministic input — from
+        // the SAME validated export loaded once at startup.
+        try runParity(plan, "fresh")
+        try plan.save(to: planURL)
+        print("plan saved: \(planURL.path), digest \(plan.planDigest)")
+        print("PASS")
+    } catch {
+        fail("forge failed: \(error)")
+    }
+
 default:
     usage()
 }

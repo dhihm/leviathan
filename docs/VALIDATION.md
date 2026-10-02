@@ -8,7 +8,48 @@ GLM-5.3 (via ZCode); all authored code, docs, and commits are in English.
 All results below are from the final rerun after the buffer-safety fixes
 (canonical fresh output buffers, buffer-count match, overflow-safe offsets).
 
-## Test suite — `swift run leviathan-tests`
+## Test suite — `swift run leviathan-tests` (2026-10-02 update)
+
+```
+metal device: Apple M1 Max
+163 passed, 0 failed
+ALL TESTS PASSED
+```
+
+The suite now covers, beyond the original 73 checks:
+
+- **GGUF reader** (original implementation): synthetic known-field
+  containers; arrays with real GGUF element layout (string/uint32, with
+  trailing metadata proving cursor position); malformed-input rejection
+  (bad magic, truncation, UInt64.max counts/lengths, nested/oversized
+  arrays, zero/huge dims, ragged quantized blocks, unsupported GGML
+  types, data beyond EOF, misaligned/overlapping tensors, duplicate
+  names/keys, zero-tensor files, near-Int.max offsets through checked
+  error paths).
+- **Q4_0**: hand-computed block decode (nibble order low-16 then
+  high-16, FP16 scales, non-finite scale rejection); fused Metal matvec
+  vs a Double-accumulating scalar oracle; geometry/count/finiteness
+  guards firing before dispatch.
+- **Q6_K**: hand-computed known block including negative signed subgroup
+  scales and chunk-1 nibble maps (GPU = scalar = hand, exactly -315);
+  random 64x512 matvec gated at 1e-4 relative against an FP64 reference
+  (measured worst GPU 2.4e-05, scalar 5.7e-08; the worst row's small
+  result |−15.70| from 195,570 of |products| documents the cancellation,
+  not a bit-mapping error).
+- **LeviathanForge**: candidate generation (width dedup to actual
+  dispatch, fusion only on fusable graphs), correctness-gated measured
+  selection with GPU command-buffer timing, plan cache round-trip,
+  stale-plan rejection (wrong seed / workload), illegal-selected-width
+  rejection, zero-batch rejection, fused==unfused output equivalence.
+- **Python frontends end-to-end** (explicit user-run processes):
+  dict-contract frontend, and the restricted PyTorch exporter with REAL
+  parameter weights — two seeds give different weight hashes and
+  different references; GPU output with the real weights matches the
+  PyTorch reference at 2.235e-08 worst relative difference; weight
+  content hashing (plan forged for one parameter set never validates for
+  another); tampered weight bytes rejected by the manifest SHA-256.
+
+## Original 73-check run (historical scope)
 
 ```
 metal device: Apple M1 Max
