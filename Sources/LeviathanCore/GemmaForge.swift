@@ -47,15 +47,20 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
     /// per-kernel profile). NOT bit-identical (reassociated sum-of-
     /// squares); gated against a Double oracle + full Forge gates.
     public let rmsnormTiled: Bool
+    /// Tiled cooperative F32 matvec (the MoE router ffn_gate_inp; the
+    /// scalar one-thread-per-row kernel is a measured GPU hotspot).
+    /// Same non-bit-identical caveat and gates as matvecTiledQ4.
+    public let matvecTiledF32: Bool
 
     public init(segmentBatching: Bool, top5Diagnostic: Bool,
                 matvecTiledQ4: Bool = false, matvecTiledQ6: Bool = false,
-                rmsnormTiled: Bool = false) {
+                rmsnormTiled: Bool = false, matvecTiledF32: Bool = false) {
         self.segmentBatching = segmentBatching
         self.top5Diagnostic = top5Diagnostic
         self.matvecTiledQ4 = matvecTiledQ4
         self.matvecTiledQ6 = matvecTiledQ6
         self.rmsnormTiled = rmsnormTiled
+        self.matvecTiledF32 = matvecTiledF32
     }
 }
 
@@ -204,6 +209,13 @@ public enum GemmaForge {
             // Tiled cooperative RMSNorm stacked on the current winner.
             GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
                                 matvecTiledQ4: true, rmsnormTiled: true),
+            // Tiled cooperative F32 matvec (MoE router) alone for
+            // attribution, and stacked on the current winner.
+            GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false,
+                                matvecTiledF32: true),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                matvecTiledQ4: true, rmsnormTiled: true,
+                                matvecTiledF32: true),
         ]
     }
 
@@ -377,11 +389,13 @@ public enum GemmaForge {
         runner.q4TiledKernel = candidate.matvecTiledQ4
         runner.q6TiledKernel = candidate.matvecTiledQ6
         runner.rmsTiledKernel = candidate.rmsnormTiled
+        runner.f32TiledKernel = candidate.matvecTiledF32
         defer {
             runner.autoSegment = false
             runner.q4TiledKernel = false
             runner.q6TiledKernel = false
             runner.rmsTiledKernel = false
+            runner.f32TiledKernel = false
         }
         var routerState = [Int: (topIdx: [Int], weights: [Float])]()
 
@@ -786,16 +800,28 @@ public enum GemmaForge {
                 // Per-step gate vs the independent reference logits —
                 // outside the timed region.
                 let want = refDecodeLogits[warmupTokens + run]
-                guard next == refDecodeSeq[warmupTokens + run],
-                      stepLogits.count == want.count,
-                      stepLogits.allSatisfy({ $0.isFinite }),
-                      zip(stepLogits, want).allSatisfy({
-                          abs(Double($0.0 - $0.1)) / max(1.0, abs(Double($0.1))) < 1e-4
-                      }) else {
+                // Full-array worst rel AFTER explicit length/finiteness
+                // checks — allSatisfy would short-circuit and understate
+                // the worst value (and even report 0 on token mismatch).
+                var worstStep = 0.0
+                let shapeOk = next == refDecodeSeq[warmupTokens + run]
+                    && stepLogits.count == want.count
+                    && stepLogits.allSatisfy({ $0.isFinite })
+                    && want.allSatisfy({ $0.isFinite })
+                if shapeOk {
+                    for (a, b) in zip(stepLogits, want) {
+                        worstStep = max(worstStep, abs(Double(a - b))
+                                        / max(1.0, abs(Double(b))))
+                    }
+                }
+                guard shapeOk && worstStep < 1e-4 else {
                     results.append(GemmaForgeCandidateResult(
                         candidate: candidate, correct: false,
                         medianGpuMicrosPerToken: nil,
-                        note: "decode step \(run) outside 1e-4 of reference"))
+                        note: String(format: "decode step %d outside 1e-4 of reference (worst %.3e%@)",
+                                     run, worstStep,
+                                     next == refDecodeSeq[warmupTokens + run]
+                                         ? "" : "; shape/token mismatch")))
                     continue outer
                 }
                 prev = next

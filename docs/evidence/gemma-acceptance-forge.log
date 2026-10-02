@@ -1,0 +1,28 @@
+graph validated: 934 ops, model gemma4-26b-a4b
+hardware: Apple M1 Max, max threads/threadgroup 1024, exec width 32, working set 26800603136 bytes
+engine digest: b91025fc567b8eff78ba9599c621df76df73a62fa8acabd80e25c7b537634296
+hashing GGUF for plan identity (streaming, one pass)…
+stale/foreign plan at /tmp/leviathan-forge2-tooling/gemma-plan-acceptance.json — re-forging
+  candidate batching=0 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0: correct 1, wall 709663 us/token, gpu 417905 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 709663 us, gpu 417905 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0: correct 1, wall 437889 us/token, gpu 400218 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 437889 us, gpu 400218 us, 1799 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=1 tiledQ6=0 rmsTiled=0 f32Tiled=0: correct 1, wall 575890 us/token, gpu 256651 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 575890 us, gpu 256651 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=0 f32Tiled=0: correct 1, wall 286871 us/token, gpu 250328 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 286871 us, gpu 250328 us, 1799 kernels, 127 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=1 rmsTiled=0 f32Tiled=0: correct 1, wall 297688 us/token, gpu 257150 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 297688 us, gpu 257150 us, 1799 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=1 tiledQ6=1 rmsTiled=0 f32Tiled=0: correct 1, wall 579853 us/token, gpu 262734 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 579853 us, gpu 262734 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=1 f32Tiled=0: correct 1, wall 113090 us/token, gpu 84693 us/token, 1799 kernels/token, 127 buffers/token — valid; logits rel 2.5e-05; 3 timed tokens; wall 113090 us, gpu 84693 us, 1799 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=1: correct 1, wall 736897 us/token, gpu 421141 us/token, 1799 kernels/token, 1799 buffers/token — valid; logits rel 1.8e-05; 3 timed tokens; wall 736897 us, gpu 421141 us, 1799 kernels, 1799 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=1 f32Tiled=1: correct 0, wall -/token, gpu -/token, - kernels/token, - buffers/token — decode step 2 outside 1e-4 of reference (worst 1.066e-04)
+selected: batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=1 f32Tiled=0 (tile widths q4=64 q6=64 rms=64 f32=64), wall 113090 us/token, gpu 84693 us/token
+plan saved: /tmp/leviathan-forge2-tooling/gemma-plan-acceptance.json, digest 2c4c7533b72c6b402e4d4abb84cdcb0dc98b13226e6613a0e441300a790962f8
+  step 1: token 236772, wall 139815 us, gpu 106575 us, 1799 kernels, 127 buffers
+  step 2: token 1437, wall 122278 us, gpu 88091 us, 1799 kernels, 127 buffers
+  step 3: token 236772, wall 128838 us, gpu 95096 us, 1799 kernels, 127 buffers
+  step 4: token 236751, wall 126110 us, gpu 93470 us, 1799 kernels, 127 buffers
+  step 5: token 2964, wall 145360 us, gpu 110158 us, 1799 kernels, 127 buffers
+  step 6: token 236772, wall 133734 us, gpu 99917 us, 1799 kernels, 127 buffers
+  step 7: token 1340, wall 136941 us, gpu 105593 us, 1799 kernels, 127 buffers
+prompt ids: 2 9259
+greedy ids (reference == graph): 3324 236772 1437 236772 236751 2964 236772 1340
+text:  upon-the-sands-of
+verified generation: 7 steps, median wall 133734 us/token, gpu total 849.2 ms
+FORGE_PASS

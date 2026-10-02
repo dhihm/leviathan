@@ -532,7 +532,7 @@ public final class Gemma4Runner {
         // ---- shaders + pipelines (compiled once).
         do { library = try device.makeLibrary(source: Self.shaderSource, options: nil) }
         catch { throw Gemma4Error.shaderCompileFailed("\(error)") }
-        for name in ["g4_q4_matvec", "g4_q4_matvec_tiled", "g4_q6_matvec", "g4_q6_matvec_tiled", "g4_f32_matvec", "g4_q6_embed_row",
+        for name in ["g4_q4_matvec", "g4_q4_matvec_tiled", "g4_q6_matvec", "g4_q6_matvec_tiled", "g4_f32_matvec", "g4_f32_matvec_tiled", "g4_q6_embed_row",
                      "g4_rmsnorm", "g4_rmsnorm_tiled", "g4_gelu_up", "g4_rope", "g4_attn",
                      "g4_axpy", "g4_add", "g4_scale", "g4_softcap"] {
             guard let fn = library.makeFunction(name: name),
@@ -560,6 +560,7 @@ public final class Gemma4Runner {
         q4TileWidth = try derivedTileWidth("g4_q4_matvec_tiled")
         q6TileWidth = try derivedTileWidth("g4_q6_matvec_tiled")
         rmsTileWidth = try derivedTileWidth("g4_rmsnorm_tiled")
+        f32TileWidth = try derivedTileWidth("g4_f32_matvec_tiled")
 
         // ---- activation buffers. Widths are preflighted for every use:
         // bufT1/bufT3 hold qHeads*globalHeadDim (8192); bufT2 must hold
@@ -652,16 +653,21 @@ public final class Gemma4Runner {
 
     /// When true, Q4_0 matvecs dispatch the tiled cooperative kernel
     /// (a Forge candidate — gated against the FP64 oracle and measured
-    /// on real hardware before selection).
-    internal var q4TiledKernel = false
+    /// on real hardware before selection). Public so the profiling CLI
+    /// can measure the selected kernels with exact per-kernel attribution.
+    public var q4TiledKernel = false
     /// Same for Q6_K matvecs (tied embedding / LM head).
-    internal var q6TiledKernel = false
+    public var q6TiledKernel = false
     /// Q6_K tiled width, derived from the Q6 pipeline's OWN limits.
     internal var q6TileWidth = 64
     /// Tiled cooperative RMSNorm (a Forge candidate; the per-vector
     /// single-thread reduce is the measured 44% GPU-time hotspot).
-    internal var rmsTiledKernel = false
+    public var rmsTiledKernel = false
     internal var rmsTileWidth = 64
+    /// Tiled cooperative F32 matvec (MoE router ffn_gate_inp — the
+    /// one-thread-per-row scalar kernel is a measured GPU hotspot).
+    public var f32TiledKernel = false
+    internal var f32TileWidth = 64
     /// Hardware-derived tile width (set at init from the compiled
     /// pipeline): 2× execution width, clamped to the device maximum and
     /// the kernel's 128-slot partials array.
@@ -902,6 +908,9 @@ public final class Gemma4Runner {
         } else if type == .q6_K && q6TiledKernel {
             try dispatchExplicit("g4_q6_matvec_tiled", groups: outRows,
                                  threads: q6TileWidth, bind)
+        } else if type == .float32 && f32TiledKernel {
+            try dispatchExplicit("g4_f32_matvec_tiled", groups: outRows,
+                                 threads: f32TileWidth, bind)
         } else {
             try dispatch(kernel, grid: outRows, bind)
         }
@@ -1161,6 +1170,13 @@ public final class Gemma4Runner {
         expertCache?.stats()
     }
 
+    /// Point sample of MTLDevice.currentAllocatedSize. NOT a peak or
+    /// residency measurement: the Metal allocator may retain freed bytes
+    /// and lazy allocations may not have happened yet.
+    public func metalAllocatedSample() -> Int {
+        Int(clamping: device.currentAllocatedSize)
+    }
+
     /// Per-vector RMSNorm over `vectors` contiguous vectors of length `n`
     /// (1 thread per vector; in-place x==y is safe). `weightTensor` nil =
     /// scale-free (router norm, v_norm).
@@ -1299,10 +1315,11 @@ public final class Gemma4Runner {
     internal func contextPosition() -> Int { consumedPosition }
 
     /// Read-only tile-width metadata for reporting/identity (the
-    /// mutable internal flags stay internal — candidates set them only
-    /// through the gated executor).
-    public var tileWidths: (q4: Int, q6: Int, rms: Int) {
-        (q4TileWidth, q6TileWidth, rmsTileWidth)
+    /// The tiled-kernel flags are public for the profiling CLI (which
+    /// measures selected kernels with exact per-kernel attribution);
+    /// Forge candidates set them only through the gated executor.
+    public var tileWidths: (q4: Int, q6: Int, rms: Int, f32: Int) {
+        (q4TileWidth, q6TileWidth, rmsTileWidth, f32TileWidth)
     }
 
     /// Public bounded accessor for the final logits vector (flushes any
@@ -1356,7 +1373,7 @@ public final class Gemma4Runner {
     public func engineIdentity() throws -> String {
         let msl = SHA256.hex(SHA256.hash(Array(Self.shaderSource.utf8)))
         let candidates = GemmaForge.candidates()
-            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)" }
+            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)" }
             .sorted().joined(separator: ",")
         return "gemma-graph-executor-v1|exe=" + (try Self.executableDigest())
             + "|msl=" + msl
@@ -1366,6 +1383,7 @@ public final class Gemma4Runner {
             + "|q4TileWidth=\(q4TileWidth)"
             + "|q6TileWidth=\(q6TileWidth)"
             + "|rmsTileWidth=\(rmsTileWidth)"
+            + "|f32TileWidth=\(f32TileWidth)"
             + "|mslOptions=default"
             + "|expertCacheBudget=\(expertCache?.budgetBytes ?? 0)"
             + "|expertPrefetch=\(expertCache != nil && expertPrefetch ? "free-only" : "none")"
@@ -1910,6 +1928,43 @@ public final class Gemma4Runner {
         float sum = 0.0f;
         for (uint i = 0; i < p.x; i++) { sum += w[i] * x[i]; }
         y[row] = sum;
+    }
+
+    // Tiled cooperative F32 matvec (one threadgroup per row, strided
+    // input, threadgroup partials tree reduction). The scalar kernel uses
+    // one thread per row, which underparallelizes the MoE router
+    // (ffn_gate_inp: outDim = expert count) — a measured GPU-time hotspot.
+    // NOT bit-identical to g4_f32_matvec: the reduction reassociates the
+    // addition order; gated against the FP64 oracle + full Forge gates.
+    // Measured outcome: valid as a standalone candidate, but stacked with
+    // the tiled Q4/RMS candidates the full-logit drift reaches 1.066e-04,
+    // just over the 1e-4 gate — the Forge therefore does NOT select the
+    // stacked combination. A Kahan-compensated variant measured the SAME
+    // worst value (and default Metal fast-math may cancel compensation),
+    // so the plain reduction is kept; no claim is made about which term
+    // dominates the stacked drift.
+    kernel void g4_f32_matvec_tiled(constant const uint2& p [[buffer(0)]],
+                                    constant const ulong& wOff [[buffer(1)]],
+                                    device const uchar* wbase [[buffer(2)]],
+                                    device const float* x [[buffer(3)]],
+                                    device float* y [[buffer(4)]],
+                                    uint lid [[thread_position_in_threadgroup]],
+                                    uint lsizeUInt [[threads_per_threadgroup]],
+                                    uint wid [[threadgroup_position_in_grid]]) {
+        uint row = wid;
+        uint lsize = lsizeUInt;
+        if (row >= p.y) { return; }
+        device const float* w = (device const float*)(wbase + wOff) + (ulong)row * p.x;
+        float sum = 0.0f;
+        for (uint i = lid; i < p.x; i += lsize) { sum += w[i] * x[i]; }
+        threadgroup float partials[128];
+        partials[lid] = sum;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint s = lsize / 2u; s > 0u; s >>= 1u) {
+            if (lid < s) { partials[lid] += partials[lid + s]; }
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+        }
+        if (lid == 0u) { y[row] = partials[0]; }
     }
 
     // Dequantize one Q6_K embedding row (valuesPerBlock 256, bytes 210).

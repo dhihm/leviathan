@@ -1,0 +1,27 @@
+prompt ids: 2 9259
+hashing GGUF for plan identity (streaming, one pass)…
+plan identity validated: 2c4c7533b72c6b402e4d4abb84cdcb0dc98b13226e6613a0e441300a790962f8 (selected GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: true, matvecTiledQ6: false, rmsnormTiled: true, matvecTiledF32: false))
+identity validation prep: 11410.9 ms (graph parse + GGUF hash + plan load)
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340
+generated text:  upon-the-sands-of
+repetition 1/1: prefill/TTFT: 17329.0 ms (2 prompt tokens) | decode: 873.1 ms total (7 steps), median ms/token 126.60 | gpu total: 876.0 ms | metal device allocated sample: 15.168 GiB
+load (once): 498.7 ms
+GENERATION_COMPLETED
+       31.50 real         6.84 user         5.72 sys
+          2229420032  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              905814  page reclaims
+               34068  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                3014  voluntary context switches
+               73477  involuntary context switches
+         50880367223  instructions retired
+         37130336881  cycles elapsed
+         16477132224  peak memory footprint

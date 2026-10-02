@@ -654,6 +654,16 @@ case "forge":
             Int(requireValue("--max-tokens", args)) ?? 0
         } ?? 8
         guard maxTokens > 0, maxTokens <= 256 else { fail("--max-tokens must be 1...256") }
+        // --repeat runs the SAME greedy generation N times in ONE process
+        // (KV reset between repetitions) so repetition 1 measures a load +
+        // first generation while later repetitions measure warm in-process
+        // decode without re-paying model load. Determinism across
+        // repetitions is asserted (identical token IDs) — greedy Metal
+        // execution is expected to be bit-stable here.
+        let repeatCount = args.firstIndex(of: "--repeat").map { _ in
+            Int(requireValue("--repeat", args)) ?? 0
+        } ?? 1
+        guard repeatCount > 0, repeatCount <= 32 else { fail("--repeat must be 1...32") }
         do {
             // Parse and validate the prompt BEFORE any GPU allocation.
             let fileURL = URL(fileURLWithPath: path)
@@ -688,41 +698,185 @@ case "forge":
             }
             let loadMs = ms(ContinuousClock.now - loadStart)
 
-            let prefillStart = ContinuousClock.now
-            var evidence = try runner.forward(tokenIds: promptIDs)
-            let ttftMs = ms(ContinuousClock.now - prefillStart)
-            var gpuMicrosTotal = evidence.gpuMicros
-
-            var generated = [evidence.argmaxToken]
-            var decodeMs = [Double]()
-            while generated.count < maxTokens {
-                if tokenizer.isEndOfGeneration(generated.last!) {
-                    print("eos: token \(generated.last!)")
-                    break
+            // Optional stored-plan mode: the PRIMARY acceptance path. The
+            // timed repetitions below execute the persisted validated SSA
+            // schedule + selected candidate ONLY. Before them, ONE untimed
+            // correctness gate replays the runner reference path (a
+            // separate execution path sharing the same validated kernel
+            // primitives, NOT a mathematically independent implementation)
+            // and requires exact greedy token ids with rel < 1e-4 on every
+            // logit array (both arrays finiteness-checked explicitly).
+            var planOpt: GemmaForgePlan? = nil
+            var graphOpt: GemmaGraphIR? = nil
+            var memorySample = 0
+            var gatedIds: [Int]? = nil
+            if args.contains("--plan") {
+                let prepStart = ContinuousClock.now
+                let planPath = requireValue("--plan", args)
+                let graphPath = requireValue("--graph", args)
+                let graphHandle = try FileHandle(
+                    forReadingFrom: URL(fileURLWithPath: graphPath))
+                var graphData = Data()
+                while graphData.count <= 8 << 20 {
+                    let chunk = try graphHandle.read(upToCount: 1 << 16) ?? Data()
+                    if chunk.isEmpty { break }
+                    graphData.append(chunk)
                 }
-                let stepStart = ContinuousClock.now
-                evidence = try runner.forward(tokenIds: [generated.last!])
-                decodeMs.append(ms(ContinuousClock.now - stepStart))
-                gpuMicrosTotal += evidence.gpuMicros
-                generated.append(evidence.argmaxToken)
+                try? graphHandle.close()
+                guard graphData.count <= 8 << 20 else {
+                    fail("graph file > 8 MiB: \(graphPath)")
+                }
+                graphOpt = try GemmaGraph.parse(graphData)
+                let engine = GemmaForge.engineDigest(try runner.engineIdentity())
+                print("hashing GGUF for plan identity (streaming, one pass)…")
+                let ggufDigest = try GemmaForge.fileDigest(fileURL)
+                planOpt = try GemmaForge.loadPlan(
+                    from: URL(fileURLWithPath: planPath))
+                try GemmaForge.validatePlanIdentity(
+                    planOpt!, graph: graphOpt!, ggufDigest: ggufDigest,
+                    engineDigest: engine,
+                    hardware: runner.hardwareProfile(),
+                    expertCacheBudget: nil)
+                print("plan identity validated: \(planOpt!.planDigest) "
+                      + "(selected \(planOpt!.selected))")
+                print(String(format: "identity validation prep: %.1f ms (graph parse + GGUF hash + plan load)",
+                             ms(ContinuousClock.now - prepStart)))
             }
-            print("generated ids: \(generated.map(String.init).joined(separator: " "))")
-            print("generated text: \(try tokenizer.decode(generated))")
-            let decodeSum = decodeMs.reduce(0, +)
-            let medianText: String
-            if decodeMs.isEmpty {
-                medianText = "n/a"
-            } else {
-                let sorted = decodeMs.sorted()
-                let mid = sorted.count / 2
-                let median = sorted.count % 2 == 1
-                    ? sorted[mid]
-                    : (sorted[mid - 1] + sorted[mid]) / 2
-                medianText = String(format: "%.2f", median)
+            if let plan = planOpt, let graph = graphOpt, args.contains("--gate") {
+                // --gate is OPTIONAL and OFF for measurements: this untimed
+                // reference replay warms every model resource, so a first
+                // repetition after it cannot be called cold. Run it as a
+                // separate verification invocation.
+                runner.reset()
+                let gateStart = ContinuousClock.now
+                let prefill = try runner.forward(tokenIds: promptIDs)
+                let prefillLogits = try runner.currentLogits()
+                memorySample = prefill.metalAllocatedBytes
+                var refIds = [prefill.argmaxToken]
+                var stepLogits = [[Float]]()
+                var prev = prefill.argmaxToken
+                while refIds.count < maxTokens {
+                    if tokenizer.isEndOfGeneration(prev) { break }
+                    let ev = try runner.forward(tokenIds: [prev])
+                    stepLogits.append(try runner.currentLogits())
+                    refIds.append(ev.argmaxToken)
+                    prev = ev.argmaxToken
+                }
+                runner.reset()
+                let (am, lg, _, _, _) = try GemmaForge.executeGraph(
+                    graph, runner: runner, tokenIds: promptIDs,
+                    candidate: plan.selected, schedule: plan.schedule)
+                guard am == refIds[0],
+                      lg.count == prefillLogits.count,
+                      lg.allSatisfy({ $0.isFinite }),
+                      prefillLogits.allSatisfy({ $0.isFinite }),
+                      zip(lg, prefillLogits).allSatisfy({
+                          abs(Double($0.0 - $0.1))
+                              / max(1.0, abs(Double($0.1))) < 1e-4
+                      }) else {
+                    fail("plan gate: prefill diverged from reference")
+                }
+                var gateGen = [am]
+                for step in 1..<min(refIds.count, maxTokens) {
+                    let (next, sl, _, _, _) = try GemmaForge.executeGraphContinue(
+                        graph, runner: runner, token: gateGen.last!,
+                        candidate: plan.selected, schedule: plan.schedule)
+                    let want = stepLogits[step - 1]
+                    guard next == refIds[step],
+                          sl.count == want.count,
+                          sl.allSatisfy({ $0.isFinite }),
+                          want.allSatisfy({ $0.isFinite }),
+                          zip(sl, want).allSatisfy({
+                              abs(Double($0.0 - $0.1))
+                                  / max(1.0, abs(Double($0.1))) < 1e-4
+                          }) else {
+                        fail("plan gate: step \(step) diverged from reference")
+                    }
+                    gateGen.append(next)
+                }
+                guard gateGen == refIds else {
+                    fail("plan gate: sequence differs from reference")
+                }
+                print(String(format: "plan gate passed (untimed reference replay, rel < 1e-4, exact ids): %.1f ms",
+                             ms(ContinuousClock.now - gateStart)))
+                // Timed repetitions must reproduce the gated sequence.
+                gatedIds = gateGen
             }
-            print(String(format: "load: %.1f ms | prefill/TTFT: %.1f ms (%d prompt tokens) | decode: %.1f ms total (%d steps), median ms/token %@ | gpu total: %.1f ms",
-                         loadMs, ttftMs, promptIDs.count, decodeSum,
-                         decodeMs.count, medianText, gpuMicrosTotal / 1000))
+
+            var referenceIds = gatedIds
+            for repetition in 1...repeatCount {
+                if repetition > 1 { runner.reset() }
+                let prefillStart = ContinuousClock.now
+                var gpuMicrosTotal = 0.0
+                var firstToken = 0
+                if let plan = planOpt, let graph = graphOpt {
+                    let (am, _, gpuMicros, _, _) = try GemmaForge.executeGraph(
+                        graph, runner: runner, tokenIds: promptIDs,
+                        candidate: plan.selected, schedule: plan.schedule)
+                    firstToken = am
+                    gpuMicrosTotal = gpuMicros
+                    if memorySample == 0 {
+                        memorySample = runner.metalAllocatedSample()
+                    }
+                } else {
+                    let evidence = try runner.forward(tokenIds: promptIDs)
+                    firstToken = evidence.argmaxToken
+                    gpuMicrosTotal = evidence.gpuMicros
+                    memorySample = evidence.metalAllocatedBytes
+                }
+                let ttftMs = ms(ContinuousClock.now - prefillStart)
+
+                var generated = [firstToken]
+                var decodeMs = [Double]()
+                while generated.count < maxTokens {
+                    if tokenizer.isEndOfGeneration(generated.last!) {
+                        print("eos: token \(generated.last!)")
+                        break
+                    }
+                    let stepStart = ContinuousClock.now
+                    if let plan = planOpt, let graph = graphOpt {
+                        let (next, _, gpuMicros, _, _) =
+                            try GemmaForge.executeGraphContinue(
+                                graph, runner: runner, token: generated.last!,
+                                candidate: plan.selected, schedule: plan.schedule)
+                        gpuMicrosTotal += gpuMicros
+                        generated.append(next)
+                    } else {
+                        let evidence = try runner.forward(
+                            tokenIds: [generated.last!])
+                        gpuMicrosTotal += evidence.gpuMicros
+                        generated.append(evidence.argmaxToken)
+                    }
+                    decodeMs.append(ms(ContinuousClock.now - stepStart))
+                }
+                if let ref = referenceIds {
+                    guard generated == ref else {
+                        fail("repetition \(repetition) diverged: \(generated) != \(ref)")
+                    }
+                } else {
+                    referenceIds = generated
+                }
+                print("generated ids: \(generated.map(String.init).joined(separator: " "))")
+                print("generated text: \(try tokenizer.decode(generated))")
+                let decodeSum = decodeMs.reduce(0, +)
+                let medianText: String
+                if decodeMs.isEmpty {
+                    medianText = "n/a"
+                } else {
+                    let sorted = decodeMs.sorted()
+                    let mid = sorted.count / 2
+                    let median = sorted.count % 2 == 1
+                        ? sorted[mid]
+                        : (sorted[mid - 1] + sorted[mid]) / 2
+                    medianText = String(format: "%.2f", median)
+                }
+                print(String(format: "repetition %d/%d: prefill/TTFT: %.1f ms (%d prompt tokens) | decode: %.1f ms total (%d steps), median ms/token %@ | gpu total: %.1f ms | metal device allocated sample: %.3f GiB",
+                             repetition, repeatCount, ttftMs, promptIDs.count,
+                             decodeSum, decodeMs.count, medianText,
+                             gpuMicrosTotal / 1000,
+                             Double(memorySample) / 1073741824.0))
+            }
+            print(String(format: "load (once): %.1f ms", loadMs))
             print("GENERATION_COMPLETED")
         } catch {
             fail("gemma-generate failed: \(error)")
@@ -919,11 +1073,12 @@ case "forge":
                 try GemmaForge.savePlan(plan, to: planURL)
             }
             for r in plan.results {
-                print(String(format: "  candidate batching=%d tiledQ4=%d tiledQ6=%d rmsTiled=%d: correct %d, wall %@/token, gpu %@/token, %@ kernels/token, %@ buffers/token — %@",
+                print(String(format: "  candidate batching=%d tiledQ4=%d tiledQ6=%d rmsTiled=%d f32Tiled=%d: correct %d, wall %@/token, gpu %@/token, %@ kernels/token, %@ buffers/token — %@",
                              r.candidate.segmentBatching ? 1 : 0,
                              r.candidate.matvecTiledQ4 ? 1 : 0,
                              r.candidate.matvecTiledQ6 ? 1 : 0,
                              r.candidate.rmsnormTiled ? 1 : 0,
+                             r.candidate.matvecTiledF32 ? 1 : 0,
                              r.correct ? 1 : 0,
                              r.medianWallMicrosPerToken.map { String(format: "%.0f us", $0) } ?? "-",
                              r.medianGpuMicrosPerToken.map { String(format: "%.0f us", $0) } ?? "-",
@@ -931,13 +1086,14 @@ case "forge":
                              r.buffersPerToken.map { String(format: "%.0f", $0) } ?? "-",
                              r.note))
             }
-            print(String(format: "selected: batching=%d tiledQ4=%d tiledQ6=%d rmsTiled=%d (tile widths q4=%d q6=%d rms=%d), wall %.0f us/token, gpu %.0f us/token",
+            print(String(format: "selected: batching=%d tiledQ4=%d tiledQ6=%d rmsTiled=%d f32Tiled=%d (tile widths q4=%d q6=%d rms=%d f32=%d), wall %.0f us/token, gpu %.0f us/token",
                          plan.selected.segmentBatching ? 1 : 0,
                          plan.selected.matvecTiledQ4 ? 1 : 0,
                          plan.selected.matvecTiledQ6 ? 1 : 0,
                          plan.selected.rmsnormTiled ? 1 : 0,
+                         plan.selected.matvecTiledF32 ? 1 : 0,
                          runner.tileWidths.q4, runner.tileWidths.q6,
-                         runner.tileWidths.rms,
+                         runner.tileWidths.rms, runner.tileWidths.f32,
                          plan.selectedMedianWallMicrosPerToken,
                          plan.selectedMedianGpuMicrosPerToken))
             if forgedFresh {
@@ -1851,14 +2007,25 @@ case "forge":
         do {
             let prompt = promptArg.split(separator: ",").map { Int($0) ?? -1 }
             let runner = try Gemma4Runner(fileAt: URL(fileURLWithPath: path))
+            // Optional kernel flags to profile the SELECTED kernels (e.g.
+            // --q4-tiled --rms-tiled) while keeping per-kernel dispatch so
+            // attribution stays exact; batching stays off for that reason.
+            if args.contains("--q4-tiled") { runner.q4TiledKernel = true }
+            if args.contains("--q6-tiled") { runner.q6TiledKernel = true }
+            if args.contains("--rms-tiled") { runner.rmsTiledKernel = true }
+            if args.contains("--f32-tiled") { runner.f32TiledKernel = true }
+            let flagText = "q4Tiled=\(runner.q4TiledKernel) "
+                + "q6Tiled=\(runner.q6TiledKernel) "
+                + "rmsTiled=\(runner.rmsTiledKernel) "
+                + "f32Tiled=\(runner.f32TiledKernel)"
             guard prompt.allSatisfy({ $0 >= 0 && $0 < runner.config.vocabSize }) else {
                 fail("bad prompt ids")
             }
             runner.reset()
             let evidence = try runner.forward(tokenIds: prompt)
             let total = evidence.gpuMicros
-            print(String(format: "per-kernel forward: %d tokens, total GPU %.1f ms, %d kernels",
-                         prompt.count, total / 1000, evidence.dispatchedKernels))
+            print(String(format: "per-kernel forward (%@): %d tokens, total GPU %.1f ms, %d kernels",
+                         flagText, prompt.count, total / 1000, evidence.dispatchedKernels))
             let profile = runner.matvecGpuProfile()
             let matvecSum = profile.reduce(0.0) { $0 + $1.gpuMicros }
             var byFamily = [String: (gpu: Double, calls: Int)]()

@@ -1,0 +1,21 @@
+prompt ids: 2 9259
+hashing GGUF for plan identity (streaming, one pass)…
+plan identity validated: 66de53f61cc517b1b00f4a5c69e7d8349e0faadac3272384dd7001113025e702 (selected GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: true, matvecTiledQ6: false, rmsnormTiled: true))
+identity validation prep: 10741.6 ms (graph parse + GGUF hash + plan load)
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340
+generated text:  upon-the-sands-of
+repetition 1/5: prefill/TTFT: 15213.0 ms (2 prompt tokens) | decode: 874.8 ms total (7 steps), median ms/token 125.45 | gpu total: 881.3 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340
+generated text:  upon-the-sands-of
+repetition 2/5: prefill/TTFT: 200.0 ms (2 prompt tokens) | decode: 839.7 ms total (7 steps), median ms/token 119.00 | gpu total: 767.6 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340
+generated text:  upon-the-sands-of
+repetition 3/5: prefill/TTFT: 214.5 ms (2 prompt tokens) | decode: 884.3 ms total (7 steps), median ms/token 125.38 | gpu total: 779.3 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340
+generated text:  upon-the-sands-of
+repetition 4/5: prefill/TTFT: 208.8 ms (2 prompt tokens) | decode: 884.1 ms total (7 steps), median ms/token 124.33 | gpu total: 766.1 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340
+generated text:  upon-the-sands-of
+repetition 5/5: prefill/TTFT: 206.3 ms (2 prompt tokens) | decode: 878.8 ms total (7 steps), median ms/token 128.38 | gpu total: 777.9 ms | metal device allocated sample: 15.168 GiB
+load (once): 448.8 ms
+GENERATION_COMPLETED

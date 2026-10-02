@@ -1904,7 +1904,7 @@ do {
              expectMutated("selected") {
                  $0["selected"] = ["segmentBatching": true, "top5Diagnostic": false,
                                    "matvecTiledQ4": true, "matvecTiledQ6": true,
-                                   "rmsnormTiled": true]
+                                   "rmsnormTiled": true, "matvecTiledF32": true]
              })
     // Wrong CURRENT inputs (not plan mutations) are rejected too.
     check("foreign current gguf digest rejected", (try? GemmaForge.validatePlanIdentity(
@@ -2089,6 +2089,144 @@ do {
     print("q4 tiled numerical gates completed")
 } catch {
     failed += 1; print("FAIL: q4 tiled gate — threw \(error)")
+}
+
+// MARK: - Tiled cooperative F32 matvec vs FP64 oracle (ACTUAL runtime shader)
+
+do {
+    // Same discipline as the Q4 gate: compiles Gemma4Runner.shaderSource
+    // (never a duplicated shader) and dispatches BOTH g4_f32_matvec (one
+    // thread per row) and g4_f32_matvec_tiled (one threadgroup per row,
+    // tree reduction) over synthetic cancellation-prone F32 weights at
+    // real router geometries (inDim = hidden sizes, outDim = expert
+    // count). The tiled reduction reassociates the addition order, so
+    // agreement with the FP64 oracle is a tolerance gate (rel < 1e-5),
+    // not bit equality.
+    struct F32TiledTestError: Error, CustomStringConvertible {
+        let message: String
+        var description: String { message }
+        init(_ m: String) { message = m }
+    }
+    guard let device = MTLCreateSystemDefaultDevice(),
+          let queue = device.makeCommandQueue() else {
+        throw F32TiledTestError("Metal unavailable")
+    }
+    let library = try device.makeLibrary(source: Gemma4Runner.shaderSource, options: nil)
+    func pipeline(_ name: String) throws -> MTLComputePipelineState {
+        guard let fn = library.makeFunction(name: name),
+              let p = try? device.makeComputePipelineState(function: fn) else {
+            throw F32TiledTestError("pipeline \(name) missing")
+        }
+        return p
+    }
+    let plain = try pipeline("g4_f32_matvec")
+    let tiled = try pipeline("g4_f32_matvec_tiled")
+
+    func runKernel(_ p: MTLComputePipelineState, w: [Float], outDim: Int,
+                   inDim: Int, x: [Float], tileWidth: Int?) throws -> [Float] {
+        let wb = device.makeBuffer(bytes: w, length: w.count * 4,
+                                   options: .storageModeShared)!
+        let xb = device.makeBuffer(bytes: x, length: x.count * 4,
+                                   options: .storageModeShared)!
+        let yb = device.makeBuffer(length: outDim * 4, options: .storageModeShared)!
+        var param = SIMD2<UInt32>(UInt32(inDim), UInt32(outDim))
+        var off = UInt64(0)
+        let cmd = queue.makeCommandBuffer()!
+        let enc = cmd.makeComputeCommandEncoder()!
+        enc.setComputePipelineState(p)
+        enc.setBytes(&param, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
+        enc.setBytes(&off, length: MemoryLayout<UInt64>.stride, index: 1)
+        enc.setBuffer(wb, offset: 0, index: 2)
+        enc.setBuffer(xb, offset: 0, index: 3)
+        enc.setBuffer(yb, offset: 0, index: 4)
+        if let tw = tileWidth {
+            // The PRODUCTION validator decides — no mirrored test guard.
+            guard Gemma4Runner.legalCooperativeWidth(tw, pipelineMax: p.maxTotalThreadsPerThreadgroup) else {
+                throw F32TiledTestError("illegal tile width \(tw)")
+            }
+            enc.dispatchThreadgroups(MTLSize(width: outDim, height: 1, depth: 1),
+                                     threadsPerThreadgroup: MTLSize(width: tw, height: 1, depth: 1))
+        } else {
+            enc.dispatchThreadgroups(MTLSize(width: outDim, height: 1, depth: 1),
+                                     threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+        }
+        enc.endEncoding()
+        cmd.commit()
+        cmd.waitUntilCompleted()
+        guard cmd.status == .completed, cmd.error == nil else {
+            throw F32TiledTestError("kernel failed: \(String(describing: cmd.error))")
+        }
+        return [Float](UnsafeBufferPointer(start: yb.contents().assumingMemoryBound(to: Float.self),
+                                           count: outDim))
+    }
+    var rng = SplitMix64(seed: 7777)
+    // Real geometries: inDim covers block/expert/router-hidden scales;
+    // outDim 128 = expert count. The kernel is stride-based, so any
+    // inDim is legal.
+    for inDim in [256, 2112, 2816, 3840] {
+        let outDim = 128
+        var w = [Float](repeating: 0, count: outDim * inDim)
+        for i in 0..<w.count {
+            w[i] = Float(rng.nextUniform() * 2 - 1)
+        }
+        // Cancellation-prone input: alternating-sign magnitudes.
+        var x = [Float](repeating: 0, count: inDim)
+        for i in 0..<inDim {
+            x[i] = (i % 2 == 0 ? 1 : -1) * Float(rng.nextUniform() * 10 - 5)
+        }
+        // FP64 oracle over the same float32 weight values, plus per-row
+        // magnitude S = sum |w_i x_i|. The gate is an empirically chosen
+        // magnitude-scaled bound abs(diff) <= 1e-4*S + 1e-6: on this
+        // cancellation-prone data a flat 1e-5 relative gate is not met
+        // even by the plain kernel's own summation order, while the
+        // scaled bound retains a large margin over the observed
+        // differences of both kernels.
+        var oracle = [Double](repeating: 0, count: outDim)
+        var magnitude = [Double](repeating: 0, count: outDim)
+        for row in 0..<outDim {
+            var sum = 0.0
+            var mag = 0.0
+            for i in 0..<inDim {
+                let term = Double(w[row * inDim + i]) * Double(x[i])
+                sum += term
+                mag += abs(term)
+            }
+            oracle[row] = sum
+            magnitude[row] = mag
+        }
+        func worstRatio(_ out: [Float]) -> Double {
+            var worst = 0.0
+            for i in 0..<outDim {
+                let diff = abs(Double(out[i]) - oracle[i])
+                let tol = 1e-4 * magnitude[i] + 1e-6
+                worst = max(worst, diff / tol)
+            }
+            return worst
+        }
+        let plainOut = try runKernel(plain, w: w, outDim: outDim,
+                                     inDim: inDim, x: x, tileWidth: nil)
+        check(String(format: "f32 plain kernel vs fp64 oracle (inDim %d, worst %.2f of tol)",
+                     inDim, worstRatio(plainOut)), worstRatio(plainOut) < 1)
+        for tile in [32, 64, 128] {
+            guard tile <= tiled.maxTotalThreadsPerThreadgroup else { continue }
+            let out = try runKernel(tiled, w: w, outDim: outDim,
+                                    inDim: inDim, x: x, tileWidth: tile)
+            let ratio = worstRatio(out)
+            check(String(format: "f32 tiled kernel width %d vs fp64 oracle (inDim %d, worst %.2f of tol)",
+                         tile, inDim, ratio), ratio < 1)
+        }
+    }
+    for bad in [0, 33, 256] {
+        check("f32 tiled illegal width \(bad) rejected by production validator",
+              !Gemma4Runner.legalCooperativeWidth(bad,
+                  pipelineMax: tiled.maxTotalThreadsPerThreadgroup))
+    }
+    check("f32 tiled legal width 64 accepted by production validator",
+          Gemma4Runner.legalCooperativeWidth(64,
+              pipelineMax: tiled.maxTotalThreadsPerThreadgroup))
+    print("f32 tiled numerical gates completed")
+} catch {
+    failed += 1; print("FAIL: f32 tiled gate — threw \(error)")
 }
 
 // MARK: - Tiled cooperative Q6_K matvec vs FP64 oracle (ACTUAL runtime shader)

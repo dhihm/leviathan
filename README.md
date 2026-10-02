@@ -47,9 +47,14 @@ python3 tools/forge_gemma/export_gemma_graph.py examples/gemma_model.py /tmp/cfg
 .build/release/leviathan-cli gemma-forge --file <gguf> --graph /tmp/graph.json \
     --plan /tmp/plan.json --prompt-ids 2,9259 --gen-tokens 8
 
-# 3. Generation + GPU-time profile:
+# 3. Generation + GPU-time profile. gemma-generate also accepts
+#    --plan/--graph (execute the persisted SSA artifact; the PRIMARY
+#    measured path), --repeat N (in-process warm repetitions with KV
+#    reset and cross-repetition determinism asserted), and --gate
+#    (optional untimed reference verification — OFF for cold
+#    measurements because the replay warms all model resources):
 .build/release/leviathan-cli gemma-generate --file <gguf> --text "Hello" --chat --max-tokens 8
-.build/release/leviathan-cli gemma-profile --file <gguf>
+.build/release/leviathan-cli gemma-profile --file <gguf> --q4-tiled --rms-tiled --f32-tiled
 
 # 4. Optional bounded SSD expert mode: non-expert weights compacted to
 #    a ~1.58 GB GPU buffer, expert slices streamed through an LRU slot
@@ -89,11 +94,42 @@ command-buffer batching (1799 → 127 submissions/token) + a tiled
 cooperative Q4_0 matvec, and a tiled cooperative RMSNorm: 754,092 →
 122,565 µs wall per token within one gated run (6.2× vs the per-kernel
 baseline of that run; ~8.0 decode tokens/s).
-The gap to the same-GGUF Ollama baseline (server-reported ~71 eval
-tokens/s, cold load 7.5 s, prefill 163 ms; the API's streamed chunks
-arrive coalesced client-side, so no per-token interval is claimed)
-remains large; optimization continues one measured, gated pass at a
-time. Two later passes are now implemented and measured:
+The gap to the same-GGUF Ollama baseline remains large; optimization
+continues one measured, gated pass at a time. A matched warm/cold
+ACCEPTANCE pass (tools/baseline/ollama_warmcold.py +
+leviathan_warmcold.sh; same raw "Hello" greedy 8-token protocol,
+byte-linked GGUF verified by sha256 both sides, repeated rounds,
+sequential GPU, honest cold/page-cache/KV-prefix-reuse/client-TTFT
+disclosures; final-run statistics only) measured on this machine:
+Ollama 0.23.0 steady-warm server-reported ~14.6 ms/eval-token
+(~68.4 tok/s median), cold TTFT 6.1-10.0 s (load 5.9-9.7 s) — vs
+the selected resident SSA artifact's steady-warm decode medians
+118.7-124.6 ms/token, warm prefill 198-214 ms, cold-process client
+total 29.3-31.5 s (load 0.5 s; identity prep incl. a 14.4 GB GGUF
+hash 11.1-11.4 s; first prefill 15.4-17.3 s, cause not causally
+measured), peak memory footprint 16.47 GB, process peak RSS
+2.13-2.32 GB. Decode accounting caveat: the Leviathan median is
+over 7 inter-token steps of the 8-token output while Ollama reports
+eval_count 8; warm prefill is additionally not like-for-like (Ollama
+may reuse the KV prefix across identical warm requests — its warm
+prompt_eval 0.02 s vs cold 0.14-0.18 s — while every Leviathan
+repetition resets and re-prefills), and the machine carried
+nontrivial background load during both harnesses (loadavg ~10-15,
+recorded in the evidence). Both engines agree exactly on the greedy
+text and count; ~8x per-token difference, reported as-is. The same
+pass profiled the selected kernels per-kernel (Q4 matvec 32.4% /
+Q6 LM head 23.8% / F32 router matvec 17.4% / tiled RMSNorm 12.3% /
+attention 8.0% of GPU; per-kernel-mode attribution, batched
+execution timing may differ) and implemented ONE new measured
+candidate:
+a tiled cooperative F32 router matvec (g4_f32_matvec_tiled + the
+matvecTiledF32 candidate + FP64-oracle tests) — 20x faster per
+kernel call (532 → 26 µs) and correct standalone (rel 1.8e-05), but
+its stacking with the selected tiled Q4/RMS candidates reaches
+worst rel 1.066e-04, just over the pre-registered 1e-4 full-logit
+gate, so the Forge measured and did NOT select it (selection and
+wall/token unchanged within run-to-run noise). Two earlier passes
+are also implemented and measured:
 an EXPLICIT bounded SSD expert mode (`--expert-cache-budget`; whole
 expert families no longer GPU-resident — non-expert weights compact to
 a 1,577,172,088 B buffer and expert slices stream through LRU slot
@@ -258,11 +294,14 @@ Gemma Forge path (measured, gated, still bounded):
   "Hello" 8 tokens; EN chat 8; KO chat 10) — no global no-quality-loss
   claim.
 - Decode ~8.0 tokens/s wall on the M1 Max vs the same-GGUF Ollama
-  server-reported ~71 eval tokens/s (client streaming is buffered; no
-  per-token interval claimed) — a large gap remains; optimization
-  continues one measured gated pass at a time.
-- SSD expert streaming, prefill batching, and serving are not
-  implemented.
+  steady-warm server-reported ~68.4 eval tokens/s in the matched
+  acceptance run (client streaming is buffered; no per-token interval
+  claimed) — a large gap remains; optimization continues one measured
+  gated pass at a time.
+- Remaining scope limits: greedy decoding only, single model, serial
+  GPU, and the strict 1e-4 full-logit stacking gate currently blocks
+  the (otherwise 20x-faster-per-kernel) tiled F32 router candidate
+  from selection.
 
 ## Roadmap
 

@@ -553,3 +553,138 @@ Remaining known limits: ~330 ms (325,149 µs) per served decode token
 in 1 GB cache mode vs the Ollama server-reported ~71 tok/s (external
 baseline, text+count agreement only — no global quality or
 competitiveness claim), single-model serial GPU, greedy subset only.
+
+## Pass 6 — matched warm/cold acceptance vs the same-GGUF Ollama, and a measured F32 router candidate (2026-10-02 UTC)
+
+External baseline harness (tools/baseline/ollama_warmcold.py, stdlib
+only): talks ONLY to the task-owned Ollama 0.23.0 daemon on 127.0.0.1:
+11499 (the user's own daemon on 11434 is never touched). Preflight
+fails closed unless: the daemon answers, no leviathan-cli process is
+resident (sequential GPU), the model exists, the /api/show
+parent_model blob sha256 EQUALS the sha256 of the authorized GGUF
+computed by the harness itself (byte-linked: both are
+3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d),
+and no model is resident in Ollama. Protocol: raw "Hello", greedy
+(temperature 0, top_k 1, top_p 1, repeat_penalty 1, seed 42),
+num_predict 8, num_ctx 4096, streaming; 3 COLD rounds (keep_alive 0,
+unload VERIFIED via /api/ps before the next round; "cold" = not
+resident in the server — the OS page cache is NOT purged, so storage
+is not guaranteed cold) + 5 WARM rounds (keep_alive -1). Client TTFT
+(request start to first nonempty chunk) is reported separately from
+the API's server-side load/prompt_eval/eval durations; only exposed
+text/count agreement is claimed (" upon-the-sands-of",
+prompt_eval_count 2 and eval_count 8 in every round) — hidden token
+IDs are not claimed, and per-token latency is NOT derived from chunk
+timing. Memory: post-request ps RSS point samples only (in-stream
+pgrep/ps would block the reader and inflate client timestamps); the
+reported value is the max across rounds (a sampled maximum, NOT a
+peak): runner child 14.4 GiB, task-owned serve 124 MiB. Machine load
+recorded via sysctl vm.loadavg (start ~{9.6-10.7}, end up to
+{15.3 13.6 12.0} — nontrivial background load; comparability
+context only).
+
+Measured Ollama, FINAL run (docs/evidence/ollama-warmcold.json; the
+initial run is preserved as ollama-warmcold-run1.json and is NOT
+mixed into these statistics): COLD client TTFT 6.09-10.01 s (server
+load 5.87-9.67 s), WARM round-1 TTFT 5.45 s (still pays a 5.27 s
+load) then steady warm TTFT 0.23-0.33 s, steady-warm api_server
+eval_duration median ~0.117 s per 8-token request → ~14.6 ms/token
+(68.4 tok/s, server-reported; no per-token client claim).
+
+Leviathan harness (tools/baseline/leviathan_warmcold.sh): PRIMARY
+path is the persisted selected SSA artifact — step 0 (re)forges the
+plan so its identity binds the CURRENT executable SHA + GGUF digest
++ hardware; step 1 is a SEPARATE gated verification invocation
+(gemma-generate --gate: one untimed reference replay, exact greedy
+ids + rel < 1e-4 per logit array + finiteness on both arrays); the
+measurement invocations run WITHOUT the gate (so a first cold
+repetition is not pre-warmed by any replay), still validate plan
+identity, and time identity-prep separately from prefill TTFT.
+gemma-generate gained --repeat N (in-process warm repetitions via KV
+reset, cross-repetition determinism asserted), --plan/--graph
+(stored-schedule execution), and --gate (optional verification).
+COLD = 3 fresh processes with /usr/bin/time -l; WARM = 1 process x
+5 repetitions. Client-token-timing disclosure: this CLI is not a
+streaming server and stdout is emitted at completion, so no
+client-side first-token timing is claimed for it; the reported
+TTFT/decode are in-process ContinuousClock measurements. PROTOCOL
+DISCLOSURE: every Leviathan repetition resets the KV cache and
+re-prefills; Ollama's server may reuse the KV prefix across
+identical warm requests (its warm prompt_eval 0.02 s vs cold
+0.14-0.18 s) — TTFT/prefill are NOT strictly like-for-like across
+engines; decode per-token medians are the comparable metric.
+
+Measured Leviathan, FINAL run only (docs/evidence/gemma-acceptance-
+cold1..3.log / -warm.log / -gate.log / -forge.log; earlier runs
+preserved as -before.log and -intermediate.log and NOT mixed in):
+COLD client total 29.29-31.50 s, process peak RSS 2,126,528,512-
+2,322,399,232 bytes and peak memory footprint 16,474,838,464-
+16,477,377,984 bytes (client-side /usr/bin/time -l, incl. Swift
+runtime; not a GPU residency claim), composed of load 498.7-508.3 ms
++ identity prep (graph parse + 14.4 GB GGUF hash + plan load)
+11,112.8-11,410.9 ms + first prefill 15,355.0-17,329.0 ms (cause
+not causally measured — plausibly first-touch/lazy pipeline
+compilation, labeled unknown) + decode. WARM steady state
+(repetitions 2-5): prefill TTFT 198.0-214.2 ms, decode medians
+118.70/118.96/121.33/124.59 ms/token, GPU total 764.9-769.7 ms per
+9 token-forwards. The residual wall-minus-GPU difference is
+reported as measured only — NOT attributed to launch overhead or
+readback without a dedicated measurement. Metal device allocated
+sample 15.168 GiB (point sample of currentAllocatedSize — not a
+peak). Cross-run caveat: these runs and the pass-3 122,565 µs/token
+are separate executions; no causal comparison across runs is
+claimed. Comparison caveat: the Leviathan decode median is over 7
+inter-token steps of an 8-token greedy output (the first token comes
+from prefill) while Ollama reports eval_count 8 — an approximation,
+not an identical token accounting. With that caveat, the Ollama
+steady-warm baseline is ~8x faster per decode token (~14.6 vs
+~120 ms) on the same GGUF; both engines agree exactly on the greedy
+continuation text and count.
+
+Bottleneck analysis (gemma-profile --q4-tiled --rms-tiled, exact
+per-kernel attribution over 2 tokens — per-kernel mode; batched
+execution timing may differ; gemma-profile-selected.log): the
+selected-kernel GPU time splits as g4_q4_matvec_tiled 32.4% /
+g4_q6_matvec (LM head) 23.8% / g4_f32_matvec (MoE router
+ffn_gate_inp) 17.4% / g4_rmsnorm_tiled 12.3% / g4_attn 8.0%. The
+router is dispatched as the scalar one-thread-per-row kernel: 31.9
+ms per 2 tokens (532 us/call x 30 calls/token ≈ 16 ms/token) — one
+thread per row for a 128-row x hidden-dim matvec underparallelizes
+the GPU.
+
+The ONE optimization this pass (g4_f32_matvec_tiled): a tiled
+cooperative F32 matvec (one threadgroup per row, strided input,
+128-slot partials tree reduction), a new legal Forge candidate
+matvecTiledF32 in the grid, plumbed through dispatch, engine
+identity (candidates + f32TileWidth), plan schema, and the CLI
+profiler. Numerical gates: FP64-oracle test on the ACTUAL runtime
+shader at router-relevant geometries (inDim 256/2112/2816/3840 x
+outDim 128, cancellation-prone data, tolerance 1e-4 * sum|terms| +
+1e-6 — fp32 dot-product rounding scales with the term-magnitude
+sum; a flat 1e-5 rel gate is not met even by the plain kernel's own
+summation order), plus the existing full Forge gates. Suite: 499
+passed / 0 failed (479 + 20 new f32-tiled checks incl. illegal-width
+rejection via the production validator).
+
+Measured outcome (gemma-acceptance-forge*.log, distinct plans/logs
+per diagnostic; intermediate runs preserved as -intermediate.log):
+the kernel itself is 20x faster per call (532 -> 26 us; per-kernel
+GPU 31.9 -> 1.6 ms per 2 tokens,
+gemma-profile-selected-f32tiled.log). As a STANDALONE candidate it
+is correct (full-logits rel 1.8e-05). STACKED with the selected
+tiled Q4/RMS candidates it FAILS the pre-registered 1e-4 full-logit
+gate at decode step 2 with worst rel 1.066e-04 (greedy token
+identical; the gate now computes the true full-array worst
+explicitly after length/finiteness checks — the previous
+allSatisfy-based note could short-circuit and understate the worst;
+on a shape/token mismatch the worst is reported as 0.0 and the
+mismatch is labeled separately). A Kahan-compensated variant
+measured the SAME worst value (and default Metal fast-math may
+cancel compensation), so the plain reduction is kept; no claim is
+made about which term dominates the stacked drift. The Forge
+therefore did NOT select the stacked combination: selection remains
+batching+tiledQ4+rmsTiled at 113,090-120,389 us/token across this
+pass's forges (same configuration as pass 3 within run-to-run noise;
+no end-to-end win is claimed). This mirrors the pass-2 Q6-tiled
+precedent: measured, gated, not selected — the machinery (kernel +
+candidate + identity + oracle tests) is the reusable artifact.
