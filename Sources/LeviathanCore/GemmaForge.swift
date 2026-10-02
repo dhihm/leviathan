@@ -51,16 +51,31 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
     /// scalar one-thread-per-row kernel is a measured GPU hotspot).
     /// Same non-bit-identical caveat and gates as matvecTiledQ4.
     public let matvecTiledF32: Bool
+    /// Dispatch the vectorized-load plain RMSNorm when the production
+    /// alignment/width guards hold: float4 LOADS ONLY, with an
+    /// arithmetic sequence identical to the original kernel. The test
+    /// suite asserts EXACT bit equality on hardware for the tested
+    /// geometries (256/2112/2816, weighted/scale-free, in/out-of-place)
+    /// and the measured cross-path logit rel in the Forge was 0.0e+00
+    /// on this configuration; bit equality on hardware is a measured
+    /// property of the compiled pair, not a proof for all inputs.
+    /// (A vectorized-load Q4 matvec was measured ~2.1x per synthetic
+    /// call but its compiled outputs differed from the original kernel
+    /// — cause not established — and it is rejected from legal
+    /// dispatch.)
+    public let vectorizedLoads: Bool
 
     public init(segmentBatching: Bool, top5Diagnostic: Bool,
                 matvecTiledQ4: Bool = false, matvecTiledQ6: Bool = false,
-                rmsnormTiled: Bool = false, matvecTiledF32: Bool = false) {
+                rmsnormTiled: Bool = false, matvecTiledF32: Bool = false,
+                vectorizedLoads: Bool = false) {
         self.segmentBatching = segmentBatching
         self.top5Diagnostic = top5Diagnostic
         self.matvecTiledQ4 = matvecTiledQ4
         self.matvecTiledQ6 = matvecTiledQ6
         self.rmsnormTiled = rmsnormTiled
         self.matvecTiledF32 = matvecTiledF32
+        self.vectorizedLoads = vectorizedLoads
     }
 }
 
@@ -125,6 +140,13 @@ public struct GemmaForgePlan: Codable, Equatable, Sendable {
     /// SHA-256 of the canonical schedule JSON (must equal
     /// GemmaSSA.digest(lower(graph)) on reuse).
     public let scheduleDigest: String
+    /// Full-workload gate record (set when the forge verified the plan's
+    /// selection over a longer --gen-tokens generation than the 4-token
+    /// measurement workload): the gate length and the measured rejection
+    /// reasons of every candidate that failed it. nil on plans forged
+    /// before this field existed or when no long gate ran.
+    public let fullGateTokens: Int?
+    public let fullGateRejections: [String]?
     public let planDigest: String
 
     init(schemaVersion: Int, graphDigest: String, ggufDigest: String,
@@ -158,7 +180,9 @@ public struct GemmaForgePlan: Codable, Equatable, Sendable {
          selectedMedianGpuMicrosPerToken: Double,
          expertCacheBudgetBytes: Int?,
          results: [GemmaForgeCandidateResult], schedule: GemmaSSAIR?,
-         scheduleDigest: String, planDigest: String) {
+         scheduleDigest: String, planDigest: String,
+         fullGateTokens: Int? = nil,
+         fullGateRejections: [String]? = nil) {
         self.schemaVersion = schemaVersion
         self.graphDigest = graphDigest
         self.ggufDigest = ggufDigest
@@ -175,6 +199,8 @@ public struct GemmaForgePlan: Codable, Equatable, Sendable {
         self.results = results
         self.schedule = schedule
         self.scheduleDigest = scheduleDigest
+        self.fullGateTokens = fullGateTokens
+        self.fullGateRejections = fullGateRejections
         self.planDigest = planDigest
     }
 }
@@ -216,6 +242,14 @@ public enum GemmaForge {
             GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
                                 matvecTiledQ4: true, rmsnormTiled: true,
                                 matvecTiledF32: true),
+            // Vectorized-load plain RMSNorm (identical arithmetic
+            // sequence; the test suite asserts exact bit equality
+            // against the retained original for the tested geometries)
+            // — alone for attribution and stacked on segment batching.
+            GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false,
+                                vectorizedLoads: true),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                vectorizedLoads: true),
         ]
     }
 
@@ -390,12 +424,14 @@ public enum GemmaForge {
         runner.q6TiledKernel = candidate.matvecTiledQ6
         runner.rmsTiledKernel = candidate.rmsnormTiled
         runner.f32TiledKernel = candidate.matvecTiledF32
+        runner.vectorizedLoads = candidate.vectorizedLoads
         defer {
             runner.autoSegment = false
             runner.q4TiledKernel = false
             runner.q6TiledKernel = false
             runner.rmsTiledKernel = false
             runner.f32TiledKernel = false
+            runner.vectorizedLoads = false
         }
         var routerState = [Int: (topIdx: [Int], weights: [Float])]()
 
@@ -993,6 +1029,82 @@ public enum GemmaForge {
         try bytes.write(to: url, options: [.atomic])
     }
 
+    /// Rebuilds a plan with a different selected candidate (used by the
+    /// full-workload legal-candidate fallback: candidates are tried in
+    /// the short-selection timing order and the FIRST that passes the
+    /// requested gate length is selected — not necessarily the fastest
+    /// overall, since faster ones may be measured-rejected). The
+    /// candidate must be a correct result in `plan.results`; its
+    /// recorded medians become the plan's selection medians; the
+    /// schedule and all identity digests are unchanged. The full-gate
+    /// record (gate length + measured rejection reasons for failed
+    /// candidates) is persisted so reuse cannot silently forget that a
+    /// faster candidate was rejected (same-length re-gates merge with
+    /// the prior history); the plan digest is recomputed over the new
+    /// body.
+    public static func reselect(_ plan: GemmaForgePlan,
+                                to candidate: GemmaForgeCandidate,
+                                fullGateTokens: Int,
+                                fullGateRejections: [String]) throws
+        -> GemmaForgePlan {
+        guard let result = plan.results.first(where: { $0.candidate == candidate }),
+              result.correct,
+              let wall = result.medianWallMicrosPerToken,
+              let gpu = result.medianGpuMicrosPerToken else {
+            throw GemmaForgeError.invalidPlan(
+                "reselect target is not a correct measured result")
+        }
+        // Re-gate history: when a cached plan is re-gated at the SAME
+        // length, this run's (possibly empty) rejection list must not
+        // erase the prior history — prior reasons are kept first and
+        // any new unique reasons appended (stable order). A different
+        // gate length starts a fresh record.
+        let recordedRejections: [String]
+        if let priorTokens = plan.fullGateTokens, priorTokens == fullGateTokens,
+           let prior = plan.fullGateRejections {
+            var seen = Set(prior)
+            recordedRejections = prior
+                + fullGateRejections.filter { seen.insert($0).inserted }
+        } else {
+            recordedRejections = fullGateRejections
+        }
+        let body = GemmaForgePlan(
+            schemaVersion: plan.schemaVersion, graphDigest: plan.graphDigest,
+            ggufDigest: plan.ggufDigest, engineDigest: plan.engineDigest,
+            hardware: plan.hardware, toolchain: plan.toolchain,
+            workloadDigest: plan.workloadDigest,
+            promptTokenCount: plan.promptTokenCount,
+            decodeTokens: plan.decodeTokens, selected: candidate,
+            selectedMedianWallMicrosPerToken: wall,
+            selectedMedianGpuMicrosPerToken: gpu,
+            expertCacheBudgetBytes: plan.expertCacheBudgetBytes,
+            results: plan.results, schedule: plan.schedule,
+            scheduleDigest: plan.scheduleDigest, planDigest: "",
+            fullGateTokens: fullGateTokens,
+            fullGateRejections: recordedRejections)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let digest = SHA256.hex(SHA256.hash(Array(try encoder.encode(body))))
+        return GemmaForgePlan(schemaVersion: body.schemaVersion,
+                              graphDigest: body.graphDigest,
+                              ggufDigest: body.ggufDigest,
+                              engineDigest: body.engineDigest,
+                              hardware: body.hardware,
+                              toolchain: body.toolchain,
+                              workloadDigest: body.workloadDigest,
+                              promptTokenCount: body.promptTokenCount,
+                              decodeTokens: body.decodeTokens,
+                              selected: body.selected,
+                              selectedMedianWallMicrosPerToken: wall,
+                              selectedMedianGpuMicrosPerToken: gpu,
+                              expertCacheBudgetBytes: body.expertCacheBudgetBytes,
+                              results: body.results, schedule: body.schedule,
+                              scheduleDigest: body.scheduleDigest,
+                              planDigest: digest,
+                              fullGateTokens: fullGateTokens,
+                              fullGateRejections: recordedRejections)
+    }
+
     /// Bounded-read plan loader: the file is read in chunks up to 1 MiB
     /// BEFORE any full-file allocation.
     public static func loadPlan(from url: URL) throws -> GemmaForgePlan {
@@ -1136,6 +1248,22 @@ public enum GemmaForge {
               plan.scheduleDigest == (try GemmaSSA.digest(lowered)) else {
             throw GemmaForgeError.invalidPlan("embedded schedule tampered/mismatched")
         }
+        // Full-gate record bounds and pairing: the gate length is a
+        // bounded generation count, and the token/rejection fields must
+        // be present together (a gate length without its rejection
+        // record could silently hide measured rejections).
+        if let tokens = plan.fullGateTokens {
+            guard tokens >= 2, tokens <= 64,
+                  plan.promptTokenCount + tokens <= maxBoundedContext,
+                  plan.fullGateRejections != nil else {
+                throw GemmaForgeError.invalidPlan(
+                    "full-gate record malformed (tokens \(plan.fullGateTokens ?? -1), "
+                    + "rejections \(plan.fullGateRejections == nil ? "missing" : "present"))")
+            }
+        } else if plan.fullGateRejections != nil {
+            throw GemmaForgeError.invalidPlan(
+                "full-gate rejections present without a gate length")
+        }
         // planDigest self-consistency: the digest covers all fields.
         let body = GemmaForgePlan(
             schemaVersion: plan.schemaVersion, graphDigest: plan.graphDigest,
@@ -1148,7 +1276,9 @@ public enum GemmaForge {
             selectedMedianGpuMicrosPerToken: plan.selectedMedianGpuMicrosPerToken,
             expertCacheBudgetBytes: plan.expertCacheBudgetBytes,
             results: plan.results, schedule: plan.schedule,
-            scheduleDigest: plan.scheduleDigest, planDigest: "")
+            scheduleDigest: plan.scheduleDigest, planDigest: "",
+            fullGateTokens: plan.fullGateTokens,
+            fullGateRejections: plan.fullGateRejections)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let digest = SHA256.hex(SHA256.hash(Array(try encoder.encode(body))))
@@ -1178,7 +1308,9 @@ public enum GemmaForge {
                 selectedMedianGpuMicrosPerToken: plan.selectedMedianGpuMicrosPerToken,
                 expertCacheBudgetBytes: plan.expertCacheBudgetBytes,
                 results: plan.results, schedule: plan.schedule,
-                scheduleDigest: plan.scheduleDigest, planDigest: digest)
+                scheduleDigest: plan.scheduleDigest, planDigest: digest,
+                fullGateTokens: plan.fullGateTokens,
+                fullGateRejections: plan.fullGateRejections)
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]

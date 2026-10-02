@@ -1904,7 +1904,7 @@ do {
              expectMutated("selected") {
                  $0["selected"] = ["segmentBatching": true, "top5Diagnostic": false,
                                    "matvecTiledQ4": true, "matvecTiledQ6": true,
-                                   "rmsnormTiled": true, "matvecTiledF32": true]
+                                   "rmsnormTiled": true, "matvecTiledF32": true, "vectorizedLoads": true]
              })
     // Wrong CURRENT inputs (not plan mutations) are rejected too.
     check("foreign current gguf digest rejected", (try? GemmaForge.validatePlanIdentity(
@@ -1936,6 +1936,117 @@ do {
           (try? GemmaForge.validatePlanIdentity(
               planB, graph: graph, ggufDigest: gguf, engineDigest: engine,
               hardware: hw)) == nil)
+    // Full-gate record (the 32-token legal-candidate fallback): a
+    // reselected plan persists the gate length plus every measured
+    // rejection; pairing, bounds, and digest coverage are validated.
+    let reselected = try GemmaForge.reselect(
+        plan, to: selected, fullGateTokens: 32,
+        fullGateRejections: ["candidate X rejected: step 25 worst rel 1.171e-04 >= 1e-4"])
+    check("reselected plan keeps identity-valid form",
+          (try? GemmaForge.validatePlanIdentity(
+              reselected, graph: graph, ggufDigest: gguf, engineDigest: engine,
+              hardware: hw)) != nil)
+    check("reselected plan records gate length and rejections",
+          reselected.fullGateTokens == 32 && reselected.fullGateRejections?.count == 1)
+    check("reselected plan digest changed", reselected.planDigest != plan.planDigest)
+    check("reselect to a non-result candidate throws",
+          (try? GemmaForge.reselect(
+              plan, to: GemmaForgeCandidate(segmentBatching: false,
+                                            top5Diagnostic: true),
+              fullGateTokens: 32, fullGateRejections: [])) == nil)
+    // Cached-plan re-gate history: the CLI keeps prior rejection
+    // reasons when the SAME gate length is re-run (this run's list may
+    // be empty because the reselected candidate now passes first) and
+    // resets the record when the gate length changes.
+    let regate = try GemmaForge.reselect(
+        reselected, to: selected, fullGateTokens: 32,
+        fullGateRejections: [])
+    check("same-length regate keeps prior rejection history",
+          regate.fullGateRejections?.count == 1
+          && regate.fullGateRejections == reselected.fullGateRejections)
+    let regateNew = try GemmaForge.reselect(
+        reselected, to: selected, fullGateTokens: 32,
+        fullGateRejections: ["new unique reason"])
+    check("same-length regate appends only new unique reasons",
+          regateNew.fullGateRejections?.count == 2
+          && regateNew.fullGateRejections?.first
+              == reselected.fullGateRejections?.first)
+    let regateOther = try GemmaForge.reselect(
+        reselected, to: selected, fullGateTokens: 8,
+        fullGateRejections: [])
+    check("different-length regate resets the record",
+          regateOther.fullGateTokens == 8
+          && regateOther.fullGateRejections?.isEmpty == true)
+    func gateMutated(_ name: String,
+                     _ body: (inout [String: Any]) -> Void) -> GemmaForgePlan? {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        guard let data = try? enc.encode(reselected),
+              var obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else {
+            failed += 1; print("FAIL: \(name) — plan re-encode failed")
+            return nil
+        }
+        body(&obj)
+        guard JSONSerialization.isValidJSONObject(obj),
+              let d2 = try? JSONSerialization.data(withJSONObject: obj),
+              let decoded = try? JSONDecoder().decode(GemmaForgePlan.self, from: d2)
+        else {
+            failed += 1; print("FAIL: \(name) — mutated plan did not decode")
+            return nil
+        }
+        guard decoded != reselected else {
+            failed += 1; print("FAIL: \(name) — mutation did not change the plan")
+            return nil
+        }
+        guard let resigned = try? GemmaForge.resignPlan(decoded) else {
+            failed += 1; print("FAIL: \(name) — resign failed")
+            return nil
+        }
+        return resigned
+    }
+    func gateRejected(_ name: String, _ p: GemmaForgePlan?) {
+        guard let p else { return }
+        if (try? GemmaForge.validatePlanIdentity(
+                p, graph: graph, ggufDigest: gguf, engineDigest: engine,
+                hardware: hw)) != nil {
+            failed += 1; print("FAIL: \(name) — mutated plan accepted")
+        } else {
+            passed += 1
+        }
+    }
+    gateRejected("full-gate tokens without rejections rejected",
+                 gateMutated("unpaired") { $0["fullGateRejections"] = nil })
+    gateRejected("full-gate rejections without tokens rejected",
+                 gateMutated("unpaired2") { $0["fullGateTokens"] = nil })
+    gateRejected("full-gate tokens below 2 rejected",
+                 gateMutated("toolo") { $0["fullGateTokens"] = 1 })
+    gateRejected("full-gate tokens above 64 rejected",
+                 gateMutated("toohi") { $0["fullGateTokens"] = 65 })
+    gateRejected("full-gate tokens beyond bounded context rejected",
+                 gateMutated("ctx") { $0["fullGateTokens"] = 4095 })
+    // Digest coverage: editing the rejection record WITHOUT re-signing
+    // must fail the planDigest gate (the record cannot be silently
+    // rewritten on a persisted artifact).
+    do {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        let data = try enc.encode(reselected)
+        var obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        var rej = obj["fullGateRejections"] as? [String] ?? []
+        if rej.count != 1 {
+            failed += 1; print("FAIL: stale-digest gate — fields missing")
+            rej = []
+        }
+        if !rej.isEmpty {
+            rej[0] = "rewritten history"
+            obj["fullGateRejections"] = rej
+            if let d2 = try? JSONSerialization.data(withJSONObject: obj),
+               let decoded = try? JSONDecoder().decode(GemmaForgePlan.self, from: d2) {
+                gateRejected("stale-digest full-gate record rejected", decoded)
+            }
+        }
+    }
 } catch {
     failed += 1; print("FAIL: plan identity gates — \(error)")
 }
@@ -2747,6 +2858,265 @@ do {
 } catch {
     failed += 1; print("FAIL: expert cache component gates — \(error)")
 }
+
+// MARK: - Vectorized-load RMSNorm bit gate + Q4 VL rejection diagnostics
+
+do {
+    // The vectorizedLoads Forge candidate dispatches g4_rmsnorm_vl
+    // (float4 loads, IDENTICAL source arithmetic sequence) when the
+    // production guards hold. GATE: EXACT bit equality against the
+    // retained original kernel on real hardware across model
+    // geometries with cancellation-prone inputs — anything other than
+    // bit equality fails (no tolerance). The production
+    // alignment/fallback predicate is tested directly. The
+    // g4_q4_matvec_vl variant is a MEASURED-REJECTED DIAGNOSTIC ONLY
+    // (excluded from the production pipeline list and legal dispatch):
+    // its compiled outputs differed from the original kernel (worst
+    // rel printed; cause not established), so bit-equality could not
+    // be proven despite a faster synthetic per-call time; the prints
+    // below preserve the rejection evidence (including an FP64
+    // decode/dot oracle bound for the Q4 variant) outside the
+    // pass/fail counts.
+    guard let device = MTLCreateSystemDefaultDevice(),
+          let queue = device.makeCommandQueue() else {
+        throw Q4TiledTestError("Metal unavailable")
+    }
+    let library = try device.makeLibrary(source: Gemma4Runner.shaderSource, options: nil)
+    func pipeline(_ name: String) throws -> MTLComputePipelineState {
+        guard let fn = library.makeFunction(name: name),
+              let p = try? device.makeComputePipelineState(function: fn) else {
+            throw Q4TiledTestError("pipeline \(name) missing")
+        }
+        return p
+    }
+    let q4Plain = try pipeline("g4_q4_matvec")
+    let q4VL = try pipeline("g4_q4_matvec_vl")
+    let rmsPlain = try pipeline("g4_rmsnorm")
+    let rmsVL = try pipeline("g4_rmsnorm_vl")
+
+    // Production alignment/fallback predicate: one decision point,
+    // tested directly (zero/negative width, non-multiple-of-4 width,
+    // unaligned scaled offsets, UInt64.max offset, aligned cases).
+    check("rms VL guard rejects n=0", !Gemma4Runner.rmsVectorLoadGuards(n: 0, scaled: false, wOff: 0))
+    check("rms VL guard rejects negative n", !Gemma4Runner.rmsVectorLoadGuards(n: -4, scaled: false, wOff: 0))
+    check("rms VL guard rejects n%4!=0", !Gemma4Runner.rmsVectorLoadGuards(n: 254, scaled: false, wOff: 0))
+    check("rms VL guard rejects misaligned scaled wOff",
+          !Gemma4Runner.rmsVectorLoadGuards(n: 256, scaled: true, wOff: 2))
+    check("rms VL guard rejects UInt64.max scaled wOff",
+          !Gemma4Runner.rmsVectorLoadGuards(n: 256, scaled: true, wOff: UInt64.max))
+    check("rms VL guard accepts aligned scaled wOff",
+          Gemma4Runner.rmsVectorLoadGuards(n: 2112, scaled: true, wOff: 1 << 20))
+    check("rms VL guard accepts unscaled multiple of 4",
+          Gemma4Runner.rmsVectorLoadGuards(n: 2816, scaled: false, wOff: 0))
+
+    // Finite Float16 block scales (explicit signed set — random half
+    // bits would include NaN/Inf scales), random quant bytes.
+    func q4Blocks(rows: Int, blocksPerRow: Int, rng: inout SplitMix64) -> [UInt8] {
+        let scales: [Float16] = [0.5, -0.5, 1.0, -1.0, 2.0, -2.0, 0.25, -0.25]
+        var blocks = [UInt8]()
+        blocks.reserveCapacity(rows * blocksPerRow * 18)
+        for block in 0..<(rows * blocksPerRow) {
+            let d = scales[block % scales.count]
+            let bits = d.bitPattern
+            blocks.append(UInt8(truncatingIfNeeded: bits))
+            blocks.append(UInt8(truncatingIfNeeded: bits >> 8))
+            for _ in 0..<16 {
+                blocks.append(UInt8(truncatingIfNeeded: rng.next()))
+            }
+        }
+        return blocks
+    }
+
+    func runQ4(_ p: MTLComputePipelineState, blocks: [UInt8], outDim: Int,
+               inDim: Int, x: [Float]) throws -> [Float] {
+        let wb = device.makeBuffer(bytes: blocks, length: blocks.count,
+                                   options: .storageModeShared)!
+        let xb = device.makeBuffer(bytes: x, length: x.count * 4,
+                                   options: .storageModeShared)!
+        let yb = device.makeBuffer(length: outDim * 4, options: .storageModeShared)!
+        var param = SIMD2<UInt32>(UInt32(inDim), UInt32(outDim))
+        var off = UInt64(0)
+        let cmd = queue.makeCommandBuffer()!
+        let enc = cmd.makeComputeCommandEncoder()!
+        enc.setComputePipelineState(p)
+        enc.setBytes(&param, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
+        enc.setBytes(&off, length: MemoryLayout<UInt64>.stride, index: 1)
+        enc.setBuffer(wb, offset: 0, index: 2)
+        enc.setBuffer(xb, offset: 0, index: 3)
+        enc.setBuffer(yb, offset: 0, index: 4)
+        let width = p.maxTotalThreadsPerThreadgroup
+        let groups = (outDim + width - 1) / width
+        enc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
+                                 threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+        enc.endEncoding()
+        cmd.commit()
+        cmd.waitUntilCompleted()
+        guard cmd.status == .completed, cmd.error == nil else {
+            throw Q4TiledTestError("kernel failed: \(String(describing: cmd.error))")
+        }
+        return [Float](UnsafeBufferPointer(start: yb.contents().assumingMemoryBound(to: Float.self),
+                                           count: outDim))
+    }
+
+    // Independent FP64 decode/dot oracle: per-row magnitude S = sum |w_i
+    // x_i|; the empirical gate is abs(diff) <= 1e-4*S + 1e-6 (identical
+    // discipline to the existing tiled-kernel gates).
+    func q4Oracle(blocks: [UInt8], outDim: Int, inDim: Int, x: [Float])
+        -> (y: [Double], s: [Double]) {
+        let blocksPerRow = inDim / 32
+        var y = [Double](repeating: 0, count: outDim)
+        var s = [Double](repeating: 0, count: outDim)
+        for row in 0..<outDim {
+            var sum = 0.0
+            var mag = 0.0
+            for b in 0..<blocksPerRow {
+                let base = (row * blocksPerRow + b) * 18
+                let dbits = UInt16(blocks[base]) | (UInt16(blocks[base + 1]) << 8)
+                let d = Double(Float(Float16(bitPattern: dbits)))
+                for l in 0..<16 {
+                    let q = blocks[base + 2 + l]
+                    let lo = Double(Float(q & 0x0F) - 8)
+                    let hi = Double(Float(q >> 4) - 8)
+                    let t1 = d * lo * Double(x[b * 32 + l])
+                    let t2 = d * hi * Double(x[b * 32 + 16 + l])
+                    sum += t1
+                    sum += t2
+                    mag += abs(t1) + abs(t2)
+                }
+            }
+            y[row] = sum
+            s[row] = mag
+        }
+        return (y, s)
+    }
+
+    var rng = SplitMix64(seed: 9090)
+    // Q4 matvec: single-block, expert-intermediate, and hidden widths.
+    for inDim in [32, 704, 2816] {
+        let outDim = 64
+        let blocksPerRow = inDim / 32
+        let blocks = q4Blocks(rows: outDim, blocksPerRow: blocksPerRow, rng: &rng)
+        var x = [Float](repeating: 0, count: inDim)
+        for i in 0..<inDim {
+            x[i] = (i % 2 == 0 ? 1.0 : -1.0) * Float(rng.next() % 1000) / 1000.0
+        }
+        let a = try runQ4(q4Plain, blocks: blocks, outDim: outDim,
+                          inDim: inDim, x: x)
+        let b = try runQ4(q4VL, blocks: blocks, outDim: outDim,
+                          inDim: inDim, x: x)
+        // DIAGNOSTIC ONLY (measured-rejected variant, never dispatched
+        // in production): prints the observed deviation of the compiled
+        // Q4 VL kernel from the original kernel and from the FP64
+        // oracle. Not pass/fail — evidence for the rejection record.
+        var worstQ4 = 0.0
+        var notBitEqual = 0
+        for row in 0..<outDim where a[row].bitPattern != b[row].bitPattern {
+            notBitEqual += 1
+        }
+        for row in 0..<outDim {
+            let rel = abs(Double(a[row] - b[row])) / max(1.0, abs(Double(a[row])))
+            worstQ4 = max(worstQ4, rel)
+        }
+        let (ref, mag) = q4Oracle(blocks: blocks, outDim: outDim, inDim: inDim, x: x)
+        var worstOracle = 0.0
+        for row in 0..<outDim {
+            worstOracle = max(worstOracle,
+                              abs(Double(b[row]) - ref[row]) / (1e-4 * mag[row] + 1e-6))
+        }
+        print(String(format: "DIAGNOSTIC q4 matvec vl (inDim %d): %d/%d rows not bit-equal, worst rel vs plain %.3e, worst of FP64 magnitude bound %.3f",
+                     inDim, notBitEqual, outDim, worstQ4, worstOracle))
+    }
+
+    func runRms(_ p: MTLComputePipelineState, x: [Float], w: [Float]?,
+                vectors: Int, inPlace: Bool) throws -> [[Float]] {
+        let n = x.count / vectors
+        let xb = device.makeBuffer(bytes: x, length: x.count * 4,
+                                   options: .storageModeShared)!
+        let yb = inPlace ? xb : device.makeBuffer(length: x.count * 4,
+                                                  options: .storageModeShared)!
+        let wb = w.map { device.makeBuffer(bytes: $0, length: $0.count * 4,
+                                           options: .storageModeShared)! }
+            ?? device.makeBuffer(length: 16, options: .storageModeShared)!
+        var dims = SIMD2<UInt32>(UInt32(n), UInt32(vectors))
+        var eps: Float = 1e-6
+        var withScale: Int32 = w == nil ? 0 : 1
+        var wOff = UInt64(0)
+        let cmd = queue.makeCommandBuffer()!
+        let enc = cmd.makeComputeCommandEncoder()!
+        enc.setComputePipelineState(p)
+        enc.setBytes(&dims, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
+        enc.setBytes(&eps, length: MemoryLayout<Float>.stride, index: 1)
+        enc.setBytes(&withScale, length: MemoryLayout<Int32>.stride, index: 2)
+        enc.setBytes(&wOff, length: MemoryLayout<UInt64>.stride, index: 3)
+        enc.setBuffer(wb, offset: 0, index: 4)
+        enc.setBuffer(xb, offset: 0, index: 5)
+        enc.setBuffer(yb, offset: 0, index: 6)
+        let width = p.maxTotalThreadsPerThreadgroup
+        let groups = (vectors + width - 1) / width
+        enc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
+                                 threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+        enc.endEncoding()
+        cmd.commit()
+        cmd.waitUntilCompleted()
+        guard cmd.status == .completed, cmd.error == nil else {
+            throw Q4TiledTestError("kernel failed: \(String(describing: cmd.error))")
+        }
+        let ptr = yb.contents().assumingMemoryBound(to: Float.self)
+        return (0..<vectors).map { v in
+            [Float](UnsafeBufferPointer(start: ptr + v * n, count: n))
+        }
+    }
+
+    // RMSNorm: model widths 2112/256/2816, weighted and scale-free,
+    // out-of-place and in-place.
+    for (n, vectors, weighted, inPlace) in [(256, 4, true, false),
+                                            (2112, 2, true, true),
+                                            (2112, 2, false, false),
+                                            (2816, 1, true, false)] {
+        var x = [Float](repeating: 0, count: n * vectors)
+        for i in 0..<x.count {
+            x[i] = (i % 2 == 0 ? 1.0 : -1.0) * Float(rng.next() % 1000) / 1000.0
+        }
+        var w: [Float]? = nil
+        if weighted {
+            w = [Float](repeating: 0, count: n)
+            for i in 0..<n { w![i] = i % 2 == 0 ? 0.5 : -0.5 }
+        }
+        let a = try runRms(rmsPlain, x: x, w: w, vectors: vectors, inPlace: inPlace)
+        let b = try runRms(rmsVL, x: x, w: w, vectors: vectors, inPlace: inPlace)
+        check("rmsnorm vl finite (n \(n), weighted=\(weighted), inPlace=\(inPlace))",
+              a.flatMap { $0 }.allSatisfy(\.isFinite)
+              && b.flatMap { $0 }.allSatisfy(\.isFinite))
+        check("rmsnorm vl BIT-IDENTICAL to original (n \(n), weighted=\(weighted), inPlace=\(inPlace))",
+              a.count == b.count && zip(a, b).allSatisfy {
+                  $0.count == $1.count && zip($0, $1).allSatisfy {
+                      $0.bitPattern == $1.bitPattern }
+              })
+    }
+
+    // Coarse per-kernel timing (record only — one dedicated command
+    // buffer per call, so this understates batched throughput; the
+    // Forge wall/GPU breakdown measures the end-to-end impact).
+    do {
+        let inDim = 2816, outDim = 512
+        let blocks = q4Blocks(rows: outDim, blocksPerRow: inDim / 32, rng: &rng)
+        var x = [Float](repeating: 0, count: inDim)
+        for i in 0..<inDim { x[i] = Float(rng.next() % 1000) / 1000.0 }
+        func timeQ4(_ p: MTLComputePipelineState) throws -> Double {
+            _ = try runQ4(p, blocks: blocks, outDim: outDim, inDim: inDim, x: x)
+            let t0 = DispatchTime.now()
+            for _ in 0..<20 { _ = try runQ4(p, blocks: blocks, outDim: outDim, inDim: inDim, x: x) }
+            return Double(DispatchTime.now().uptimeNanoseconds - t0.uptimeNanoseconds) / 20000.0
+        }
+        let plainUs = try timeQ4(q4Plain)
+        let vlUs = try timeQ4(q4VL)
+        print(String(format: "q4 matvec per-call, dedicated-buffer submit (record only): plain %.0f us, vectorized %.0f us",
+                     plainUs, vlUs))
+    }
+} catch {
+    failed += 1; print("FAIL: vectorized-load bit-equality gates — \(error)")
+}
+
 
 // MARK: - Gemma 4 real-model gates (opt-in via LEVIATHAN_GEMMA_GGUF)
 

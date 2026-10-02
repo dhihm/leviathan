@@ -1,0 +1,5 @@
+error: plan gate: step 25 diverged from reference
+prompt ids: 2 9259
+hashing GGUF for plan identity (streaming, one pass)…
+plan identity validated: c70b3b7c4a8cad5c89d671ba7a833c1ca9b23833c2574b09f97bc989c8456e87 (selected GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: true, matvecTiledQ6: false, rmsnormTiled: true, matvecTiledF32: false))
+identity validation prep: 11068.5 ms (graph parse + GGUF hash + plan load)

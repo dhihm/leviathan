@@ -529,11 +529,16 @@ public final class Gemma4Runner {
             self.weightsBuffer = wb
         }
 
-        // ---- shaders + pipelines (compiled once).
+        // ---- shaders + pipelines (compiled once). The runtime Metal
+        // library compile + pipeline construction is clocked SEPARATELY
+        // from the rest of the runner load (weight mapping etc.) so the
+        // CLI can report the split; monotonic DispatchTime, bounded to
+        // this one section, kernels and error paths unchanged.
+        let metalCompileT0 = DispatchTime.now().uptimeNanoseconds
         do { library = try device.makeLibrary(source: Self.shaderSource, options: nil) }
         catch { throw Gemma4Error.shaderCompileFailed("\(error)") }
         for name in ["g4_q4_matvec", "g4_q4_matvec_tiled", "g4_q6_matvec", "g4_q6_matvec_tiled", "g4_f32_matvec", "g4_f32_matvec_tiled", "g4_q6_embed_row",
-                     "g4_rmsnorm", "g4_rmsnorm_tiled", "g4_gelu_up", "g4_rope", "g4_attn",
+                     "g4_rmsnorm", "g4_rmsnorm_vl", "g4_rmsnorm_tiled", "g4_gelu_up", "g4_rope", "g4_attn",
                      "g4_axpy", "g4_add", "g4_scale", "g4_softcap"] {
             guard let fn = library.makeFunction(name: name),
                   let p = try? device.makeComputePipelineState(function: fn) else {
@@ -541,6 +546,7 @@ public final class Gemma4Runner {
             }
             pipelines[name] = p
         }
+        metalCompileMicros = Double(DispatchTime.now().uptimeNanoseconds - metalCompileT0) / 1000
         // Hardware-derived tile widths: the largest legal power of two
         // (tree reduction, kernel partials cap 128) that is at most 2× the
         // pipeline's execution width and the device maximum. A missing
@@ -651,6 +657,58 @@ public final class Gemma4Runner {
     internal var matvecCallsByTensor: [String: Int] = [:]
     internal var kernelGpuMicrosByName: [String: (Double, Int)] = [:]
 
+    /// Batched wall/GPU breakdown instrumentation (OFF by default; no
+    /// timer reads when off — one branch remains). Categories are
+    /// measured at the runner primitives WITHOUT changing submission
+    /// or synchronization — unlike the per-kernel profile, the batched
+    /// execution path is untouched (same kernels, same segments, same
+    /// flush points):
+    ///   encode   — CPU time encoding kernels into the open deferred
+    ///              segment (dispatch/dispatchExplicit deferred branch);
+    ///              GPU is idle at this point in batched mode, so this
+    ///              does not overlap GPU busy time,
+    ///   flush    — wall time inside flushOpenSegment (endEncoding +
+    ///              commit + waitUntilCompleted + status checks); this
+    ///              OVERLAPS GPU busy time (the wait spans execution),
+    ///              so the host-side share is flush - gpu (reported
+    ///              clamped at 0),
+    ///   readCopy — CPU time copying bytes out of a shared buffer
+    ///              (excluding the flush it triggers),
+    ///   writeCopy — CPU time memcpy-ing into a shared buffer.
+    /// GPU busy time comes from gpuMicrosTotal as usual. Everything else
+    /// (router softmax/top-k on CPU, operand resolution, argmax, CLI
+    /// overhead) is the reported residual. Monotonic DispatchTime.
+    /// Runtime Metal library compile + compute-pipeline construction
+    /// time (microseconds), measured inside the runner constructor so
+    /// load-time reporting can separate shader compilation from weight
+    /// mapping/allocation. Zero only if somehow skipped; set once at init.
+    public internal(set) var metalCompileMicros: Double = 0
+
+    public var breakdownInstrumentation = false
+    internal var brEncodeMicros = 0.0
+    internal var brFlushMicros = 0.0
+    internal var brReadCopyMicros = 0.0
+    internal var brWriteCopyMicros = 0.0
+
+    /// Zeroes the breakdown counters (call right before the measured
+    /// window; GPU time is read as a gpuMicrosTotal delta by the caller).
+    public func breakdownReset() {
+        brEncodeMicros = 0
+        brFlushMicros = 0
+        brReadCopyMicros = 0
+        brWriteCopyMicros = 0
+    }
+
+    /// Point sample of the counters (microseconds) since the last reset.
+    public func breakdownCounters() -> (encode: Double, flush: Double,
+                                        readCopy: Double, writeCopy: Double) {
+        (brEncodeMicros, brFlushMicros, brReadCopyMicros, brWriteCopyMicros)
+    }
+
+    private static func brNow() -> Double {
+        Double(DispatchTime.now().uptimeNanoseconds) / 1000
+    }
+
     /// When true, Q4_0 matvecs dispatch the tiled cooperative kernel
     /// (a Forge candidate — gated against the FP64 oracle and measured
     /// on real hardware before selection). Public so the profiling CLI
@@ -668,6 +726,16 @@ public final class Gemma4Runner {
     /// one-thread-per-row scalar kernel is a measured GPU hotspot).
     public var f32TiledKernel = false
     internal var f32TileWidth = 64
+    /// Vectorized-load plain RMSNorm dispatch (a Forge candidate;
+    /// float4 loads with an identical arithmetic sequence — EXACT bit
+    /// equality against the retained original kernel is asserted on
+    /// hardware by the test suite). A vectorized-load Q4 matvec variant
+    /// was also written and measured 2.1x per call, but its compiled
+    /// outputs differed from the original kernel (cause not established)
+    /// — it is REJECTED from legal dispatch and kept only as a test
+    /// diagnostic. The runner's reference forward path keeps the
+    /// original kernels unless this is set.
+    public var vectorizedLoads = false
     /// Hardware-derived tile width (set at init from the compiled
     /// pipeline): 2× execution width, clamped to the device maximum and
     /// the kernel's 128-slot partials array.
@@ -676,6 +744,8 @@ public final class Gemma4Runner {
     /// Commits and waits for the open deferred segment, if any.
     internal func flushOpenSegment() throws {
         guard let cmd = openCmd, let enc = openEnc else { return }
+        let brT0 = breakdownInstrumentation ? Self.brNow() : 0
+        defer { if breakdownInstrumentation { brFlushMicros += Self.brNow() - brT0 } }
         openCmd = nil
         openEnc = nil
         enc.endEncoding()
@@ -728,6 +798,8 @@ public final class Gemma4Runner {
         // one command buffer; CPU readback flushes it.
         if openEnc == nil, autoSegment { try beginSegment() }
         if let deferredEnc = openEnc {
+            let brT0 = breakdownInstrumentation ? Self.brNow() : 0
+            defer { if breakdownInstrumentation { brEncodeMicros += Self.brNow() - brT0 } }
             deferredEnc.setComputePipelineState(pipeline)
             bind(deferredEnc)
             let width = max(1, min(grid, pipeline.maxTotalThreadsPerThreadgroup))
@@ -767,6 +839,17 @@ public final class Gemma4Runner {
     /// partials arrays), and within the pipeline's device maximum. Used
     /// by dispatchExplicit AND by numerical tests — one decision, no
     /// mirrored guards.
+    /// PRODUCTION guard for the vectorized-load RMSNorm dispatch: the
+    /// width must be a positive float4 multiple, and a scaled weight
+    /// tensor must sit at a 16-byte aligned offset in the packed weight
+    /// buffer. Used by rmsnorm() and directly by the test suite — one
+    /// decision, no mirrored guards.
+    public static func rmsVectorLoadGuards(n: Int, scaled: Bool, wOff: UInt64) -> Bool {
+        guard n > 0, n % 4 == 0 else { return false }
+        if scaled && wOff % 16 != 0 { return false }
+        return true
+    }
+
     public static func legalCooperativeWidth(_ w: Int, pipelineMax: Int) -> Bool {
         w > 0 && w & (w - 1) == 0 && w <= 128 && w <= pipelineMax
     }
@@ -787,6 +870,8 @@ public final class Gemma4Runner {
         let width = threads
         if openEnc == nil, autoSegment { try beginSegment() }
         if let deferredEnc = openEnc {
+            let brT0 = breakdownInstrumentation ? Self.brNow() : 0
+            defer { if breakdownInstrumentation { brEncodeMicros += Self.brNow() - brT0 } }
             deferredEnc.setComputePipelineState(pipeline)
             bind(deferredEnc)
             deferredEnc.dispatchThreadgroups(
@@ -1214,6 +1299,15 @@ public final class Gemma4Runner {
             // thread-per-vector reduce is the measured 44% GPU hotspot).
             try dispatchExplicit("g4_rmsnorm_tiled", groups: vectors,
                                  threads: rmsTileWidth, bindNorm)
+        } else if vectorizedLoads && Self.rmsVectorLoadGuards(
+                n: n, scaled: weightTensor != nil, wOff: wOff) {
+            // Vectorized-load variant: identical arithmetic order, float4
+            // loads. Guards (one production decision point, also tested):
+            // the width must be a float4 multiple, and a scaled weight
+            // tensor must sit at a 16-byte aligned offset in the packed
+            // weight buffer (x/y offsets are vec*n floats, so n % 4 == 0
+            // already aligns them). Otherwise: original kernel.
+            try dispatch("g4_rmsnorm_vl", grid: vectors, bindNorm)
         } else {
             try dispatch("g4_rmsnorm", grid: vectors, bindNorm)
         }
@@ -1298,12 +1392,16 @@ public final class Gemma4Runner {
         // A deferred segment must be committed (and verified) before CPU
         // readback — a failed segment must surface, not vanish.
         try flushOpenSegment()
+        let brT0 = breakdownInstrumentation ? Self.brNow() : 0
+        defer { if breakdownInstrumentation { brReadCopyMicros += Self.brNow() - brT0 } }
         return [Float](UnsafeBufferPointer(start: buffer.contents().assumingMemoryBound(to: Float.self),
                                            count: count))
     }
 
     internal func write(_ values: [Float], to buffer: MTLBuffer) throws {
         try flushOpenSegment()
+        let brT0 = breakdownInstrumentation ? Self.brNow() : 0
+        defer { if breakdownInstrumentation { brWriteCopyMicros += Self.brNow() - brT0 } }
         _ = values.withUnsafeBytes { raw in
             memcpy(buffer.contents(), raw.baseAddress!, values.count * 4)
         }
@@ -1373,7 +1471,7 @@ public final class Gemma4Runner {
     public func engineIdentity() throws -> String {
         let msl = SHA256.hex(SHA256.hash(Array(Self.shaderSource.utf8)))
         let candidates = GemmaForge.candidates()
-            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)" }
+            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)" }
             .sorted().joined(separator: ",")
         return "gemma-graph-executor-v1|exe=" + (try Self.executableDigest())
             + "|msl=" + msl
@@ -1780,6 +1878,75 @@ public final class Gemma4Runner {
         y[row] = sum;
     }
 
+    // MEASURED-REJECTED vectorized-load variant of g4_q4_matvec (kept
+    // for the test diagnostic ONLY — never in the production pipeline
+    // list or legal dispatch). The 18-byte Q4_0 block stride forbids
+    // aligned vector loads of the quant bytes, so the q loads stay
+    // scalar; the 32 activations per block load as eight float4s. The
+    // source arithmetic sequence is identical to g4_q4_matvec, yet the
+    // COMPILED kernels produced different outputs on real hardware
+    // (measured, worst rel printed by the test suite; cause not
+    // established), so bit-equality could not be proven and the variant
+    // was rejected despite a measured ~2.1x per-call speedup.
+    kernel void g4_q4_matvec_vl(constant const uint2& p [[buffer(0)]],
+                                constant const ulong& wOff [[buffer(1)]],
+                                device const uchar* wbase [[buffer(2)]],
+                                device const float* x [[buffer(3)]],
+                                device float* y [[buffer(4)]],
+                                uint gid [[thread_position_in_grid]]) {
+        uint row = gid;
+        if (row >= p.y) { return; }
+        uint blocksPerRow = p.x / 32u;
+        device const uchar* rowBytes = wbase + wOff + (ulong)row * blocksPerRow * 18u;
+        float sum = 0.0f;
+        for (uint b = 0; b < blocksPerRow; b++) {
+            device const uchar* blk = rowBytes + b * 18u;
+            ushort dbits = ushort(blk[0]) | (ushort(blk[1]) << 8u);
+            float d = float(as_type<half>(dbits));
+            float4 xa = *(device const float4*)(x + b * 32u);
+            float4 xb2 = *(device const float4*)(x + b * 32u + 4u);
+            float4 xc = *(device const float4*)(x + b * 32u + 8u);
+            float4 xd = *(device const float4*)(x + b * 32u + 12u);
+            float4 xe = *(device const float4*)(x + b * 32u + 16u);
+            float4 xf = *(device const float4*)(x + b * 32u + 20u);
+            float4 xg = *(device const float4*)(x + b * 32u + 24u);
+            float4 xh = *(device const float4*)(x + b * 32u + 28u);
+            sum += d * (float(blk[2u] & 0x0Fu) - 8.0f) * xa.x;
+            sum += d * (float(blk[2u] >> 4) - 8.0f) * xe.x;
+            sum += d * (float(blk[3u] & 0x0Fu) - 8.0f) * xa.y;
+            sum += d * (float(blk[3u] >> 4) - 8.0f) * xe.y;
+            sum += d * (float(blk[4u] & 0x0Fu) - 8.0f) * xa.z;
+            sum += d * (float(blk[4u] >> 4) - 8.0f) * xe.z;
+            sum += d * (float(blk[5u] & 0x0Fu) - 8.0f) * xa.w;
+            sum += d * (float(blk[5u] >> 4) - 8.0f) * xe.w;
+            sum += d * (float(blk[6u] & 0x0Fu) - 8.0f) * xb2.x;
+            sum += d * (float(blk[6u] >> 4) - 8.0f) * xf.x;
+            sum += d * (float(blk[7u] & 0x0Fu) - 8.0f) * xb2.y;
+            sum += d * (float(blk[7u] >> 4) - 8.0f) * xf.y;
+            sum += d * (float(blk[8u] & 0x0Fu) - 8.0f) * xb2.z;
+            sum += d * (float(blk[8u] >> 4) - 8.0f) * xf.z;
+            sum += d * (float(blk[9u] & 0x0Fu) - 8.0f) * xb2.w;
+            sum += d * (float(blk[9u] >> 4) - 8.0f) * xf.w;
+            sum += d * (float(blk[10u] & 0x0Fu) - 8.0f) * xc.x;
+            sum += d * (float(blk[10u] >> 4) - 8.0f) * xg.x;
+            sum += d * (float(blk[11u] & 0x0Fu) - 8.0f) * xc.y;
+            sum += d * (float(blk[11u] >> 4) - 8.0f) * xg.y;
+            sum += d * (float(blk[12u] & 0x0Fu) - 8.0f) * xc.z;
+            sum += d * (float(blk[12u] >> 4) - 8.0f) * xg.z;
+            sum += d * (float(blk[13u] & 0x0Fu) - 8.0f) * xc.w;
+            sum += d * (float(blk[13u] >> 4) - 8.0f) * xg.w;
+            sum += d * (float(blk[14u] & 0x0Fu) - 8.0f) * xd.x;
+            sum += d * (float(blk[14u] >> 4) - 8.0f) * xh.x;
+            sum += d * (float(blk[15u] & 0x0Fu) - 8.0f) * xd.y;
+            sum += d * (float(blk[15u] >> 4) - 8.0f) * xh.y;
+            sum += d * (float(blk[16u] & 0x0Fu) - 8.0f) * xd.z;
+            sum += d * (float(blk[16u] >> 4) - 8.0f) * xh.z;
+            sum += d * (float(blk[17u] & 0x0Fu) - 8.0f) * xd.w;
+            sum += d * (float(blk[17u] >> 4) - 8.0f) * xh.w;
+        }
+        y[row] = sum;
+    }
+
     // Tiled cooperative variant: one threadgroup computes ONE row; each
     // thread accumulates a strided subset of blocks, then a threadgroup
     // reduction combines the partials. NOTE: the reduction reassociates
@@ -2023,6 +2190,57 @@ public final class Gemma4Runner {
         device float* yv = y + (ulong)vec * n;
         for (uint i = 0; i < n; i++) {
             yv[i] = xv[i] * inv * (withScale != 0 ? w[i] : 1.0f);
+        }
+    }
+
+    // Vectorized-load variant of g4_rmsnorm: the sum-of-squares and the
+    // apply loop consume x (and w) in float4 chunks, accumulating the
+    // components in EXACTLY the original scalar order (i, i+1, i+2,
+    // i+3). Requires n % 4 == 0 and, when withScale != 0, a 16-byte
+    // aligned weight offset — the dispatcher checks both and falls back
+    // to g4_rmsnorm otherwise. Bit-identity to the original kernel is
+    // asserted on hardware by the test suite.
+    kernel void g4_rmsnorm_vl(constant const uint2& p [[buffer(0)]],
+                              constant const float& eps [[buffer(1)]],
+                              constant const int& withScale [[buffer(2)]],
+                              constant const ulong& wOff [[buffer(3)]],
+                              device const uchar* wbase [[buffer(4)]],
+                              device const float* x [[buffer(5)]],
+                              device float* y [[buffer(6)]],
+                              uint gid [[thread_position_in_grid]]) {
+        uint vec = gid;
+        if (vec >= p.y) { return; }
+        uint n = p.x;
+        device const float* xv = x + (ulong)vec * n;
+        float ms = 0.0f;
+        for (uint i = 0; i < n; i += 4u) {
+            float4 v = *(device const float4*)(xv + i);
+            ms += v.x * v.x;
+            ms += v.y * v.y;
+            ms += v.z * v.z;
+            ms += v.w * v.w;
+        }
+        ms = ms / float(n) + eps;
+        float inv = 1.0f / sqrt(ms);
+        device const float* w = (device const float*)(wbase + wOff);
+        device float* yv = y + (ulong)vec * n;
+        if (withScale != 0) {
+            for (uint i = 0; i < n; i += 4u) {
+                float4 v = *(device const float4*)(xv + i);
+                float4 wv = *(device const float4*)(w + i);
+                yv[i] = v.x * inv * wv.x;
+                yv[i + 1u] = v.y * inv * wv.y;
+                yv[i + 2u] = v.z * inv * wv.z;
+                yv[i + 3u] = v.w * inv * wv.w;
+            }
+        } else {
+            for (uint i = 0; i < n; i += 4u) {
+                float4 v = *(device const float4*)(xv + i);
+                yv[i] = v.x * inv;
+                yv[i + 1u] = v.y * inv;
+                yv[i + 2u] = v.z * inv;
+                yv[i + 3u] = v.w * inv;
+            }
         }
     }
 

@@ -1,0 +1,76 @@
+prompt ids: 2 9259
+hashing GGUF for plan identity (streaming, one pass)…
+plan identity validated: 2bb012e93703e4cb6074b707c7cf821fd0ad11d76ae870aa05b00a70b2a15b8d (selected GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: false, matvecTiledQ6: false, rmsnormTiled: false, matvecTiledF32: false, vectorizedLoads: true))
+identity validation prep: 11651.3 ms (graph parse + GGUF hash + plan load)
+breakdown step 1: wall 319.94 ms | gpu 278.92 | flushWait 307.29 (host share 28.37) | encode 1.70 | readCopy 0.81 | writeCopy 0.10 | residual 10.04
+breakdown step 2: wall 341.00 ms | gpu 282.92 | flushWait 324.03 (host share 41.11) | encode 2.64 | readCopy 0.54 | writeCopy 0.13 | residual 13.66
+breakdown step 3: wall 325.72 ms | gpu 288.21 | flushWait 316.00 (host share 27.79) | encode 1.30 | readCopy 0.58 | writeCopy 0.10 | residual 7.73
+breakdown step 4: wall 324.23 ms | gpu 288.11 | flushWait 315.26 (host share 27.15) | encode 1.15 | readCopy 0.27 | writeCopy 0.11 | residual 7.45
+breakdown step 5: wall 331.32 ms | gpu 294.47 | flushWait 321.55 (host share 27.08) | encode 1.30 | readCopy 0.35 | writeCopy 0.11 | residual 8.00
+breakdown step 6: wall 338.03 ms | gpu 297.46 | flushWait 327.18 (host share 29.72) | encode 1.49 | readCopy 0.48 | writeCopy 0.11 | residual 8.77
+breakdown step 7: wall 340.05 ms | gpu 300.08 | flushWait 329.06 (host share 28.98) | encode 1.51 | readCopy 0.39 | writeCopy 0.12 | residual 8.96
+breakdown step 8: wall 349.05 ms | gpu 306.02 | flushWait 337.05 (host share 31.02) | encode 1.57 | readCopy 0.31 | writeCopy 0.11 | residual 10.01
+breakdown step 9: wall 350.48 ms | gpu 309.10 | flushWait 339.99 (host share 30.90) | encode 1.40 | readCopy 0.35 | writeCopy 0.12 | residual 8.61
+breakdown step 10: wall 503.73 ms | gpu 331.18 | flushWait 455.04 (host share 123.86) | encode 6.91 | readCopy 5.11 | writeCopy 0.44 | residual 36.22
+breakdown step 11: wall 440.32 ms | gpu 312.15 | flushWait 384.85 (host share 72.70) | encode 3.08 | readCopy 5.31 | writeCopy 0.11 | residual 46.98
+breakdown step 12: wall 417.59 ms | gpu 321.10 | flushWait 390.86 (host share 69.76) | encode 3.14 | readCopy 1.26 | writeCopy 0.80 | residual 21.53
+breakdown step 13: wall 485.57 ms | gpu 333.91 | flushWait 462.80 (host share 128.89) | encode 3.22 | readCopy 3.22 | writeCopy 0.16 | residual 16.17
+breakdown step 14: wall 450.94 ms | gpu 329.46 | flushWait 415.49 (host share 86.03) | encode 3.98 | readCopy 2.87 | writeCopy 0.13 | residual 28.48
+breakdown step 15: wall 384.28 ms | gpu 330.25 | flushWait 370.95 (host share 40.69) | encode 2.09 | readCopy 0.66 | writeCopy 0.13 | residual 10.46
+breakdown step 16: wall 375.03 ms | gpu 334.18 | flushWait 364.39 (host share 30.21) | encode 1.49 | readCopy 0.29 | writeCopy 0.15 | residual 8.72
+breakdown step 17: wall 469.45 ms | gpu 336.20 | flushWait 419.80 (host share 83.60) | encode 5.94 | readCopy 11.47 | writeCopy 0.16 | residual 32.08
+breakdown step 18: wall 403.45 ms | gpu 341.85 | flushWait 376.65 (host share 34.80) | encode 2.53 | readCopy 0.45 | writeCopy 0.11 | residual 23.70
+breakdown step 19: wall 390.36 ms | gpu 344.94 | flushWait 376.97 (host share 32.03) | encode 1.83 | readCopy 1.02 | writeCopy 0.14 | residual 10.40
+breakdown step 20: wall 391.64 ms | gpu 349.79 | flushWait 379.99 (host share 30.20) | encode 1.51 | readCopy 0.39 | writeCopy 0.11 | residual 9.64
+breakdown step 21: wall 439.29 ms | gpu 362.58 | flushWait 416.90 (host share 54.32) | encode 2.04 | readCopy 0.47 | writeCopy 0.12 | residual 19.77
+breakdown step 22: wall 400.08 ms | gpu 358.35 | flushWait 387.07 (host share 28.72) | encode 1.55 | readCopy 0.42 | writeCopy 0.15 | residual 10.89
+breakdown step 23: wall 402.74 ms | gpu 359.69 | flushWait 391.28 (host share 31.59) | encode 1.32 | readCopy 0.33 | writeCopy 0.12 | residual 9.69
+breakdown step 24: wall 405.15 ms | gpu 363.19 | flushWait 394.59 (host share 31.40) | encode 1.48 | readCopy 0.62 | writeCopy 0.11 | residual 8.35
+breakdown step 25: wall 410.50 ms | gpu 367.68 | flushWait 399.53 (host share 31.86) | encode 1.67 | readCopy 0.38 | writeCopy 0.11 | residual 8.80
+breakdown step 26: wall 418.48 ms | gpu 374.59 | flushWait 406.89 (host share 32.31) | encode 1.54 | readCopy 1.45 | writeCopy 0.11 | residual 8.47
+breakdown step 27: wall 412.38 ms | gpu 371.92 | flushWait 401.49 (host share 29.57) | encode 1.31 | readCopy 0.35 | writeCopy 0.11 | residual 9.11
+breakdown step 28: wall 422.63 ms | gpu 376.36 | flushWait 408.00 (host share 31.64) | encode 1.48 | readCopy 2.84 | writeCopy 0.13 | residual 10.18
+breakdown step 29: wall 421.27 ms | gpu 380.79 | flushWait 410.46 (host share 29.67) | encode 1.30 | readCopy 0.33 | writeCopy 0.11 | residual 9.07
+breakdown step 30: wall 429.63 ms | gpu 389.95 | flushWait 419.94 (host share 30.00) | encode 1.22 | readCopy 0.34 | writeCopy 0.10 | residual 8.03
+breakdown step 31: wall 430.64 ms | gpu 390.23 | flushWait 420.19 (host share 29.96) | encode 1.53 | readCopy 0.70 | writeCopy 0.11 | residual 8.12
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 1/2: prefill/TTFT: 398.2 ms (2 prompt tokens) | decode: 12335.8 ms total (31 steps), median ms/token 403.52 | gpu total: 10682.2 ms | metal device allocated sample: 15.168 GiB
+breakdown totals (31 steps, decode only): wall 12325.0 ms | gpu 10405.6 (84.4%) | flush-host 1365.9 (11.1%) | encode 66.2 (0.5%) | readCopy 44.4 (0.4%) | writeCopy 4.7 (0.0%) | residual 438.1 (3.6%)
+breakdown step 1: wall 488.60 ms | gpu 298.09 | flushWait 395.35 (host share 97.26) | encode 7.22 | readCopy 6.72 | writeCopy 4.96 | residual 74.36
+breakdown step 2: wall 348.42 ms | gpu 281.67 | flushWait 326.42 (host share 44.75) | encode 3.68 | readCopy 1.05 | writeCopy 0.12 | residual 17.15
+breakdown step 3: wall 325.26 ms | gpu 285.26 | flushWait 315.00 (host share 29.74) | encode 1.33 | readCopy 0.58 | writeCopy 0.11 | residual 8.23
+breakdown step 4: wall 326.84 ms | gpu 291.40 | flushWait 317.96 (host share 26.55) | encode 1.23 | readCopy 0.28 | writeCopy 0.11 | residual 7.26
+breakdown step 5: wall 364.32 ms | gpu 294.42 | flushWait 348.10 (host share 53.68) | encode 2.07 | readCopy 0.70 | writeCopy 0.73 | residual 12.72
+breakdown step 6: wall 338.05 ms | gpu 298.39 | flushWait 328.05 (host share 29.66) | encode 1.36 | readCopy 0.35 | writeCopy 0.10 | residual 8.18
+breakdown step 7: wall 340.63 ms | gpu 304.28 | flushWait 331.01 (host share 26.73) | encode 1.24 | readCopy 0.26 | writeCopy 0.13 | residual 7.99
+breakdown step 8: wall 351.95 ms | gpu 305.64 | flushWait 337.62 (host share 31.98) | encode 1.58 | readCopy 3.56 | writeCopy 0.11 | residual 9.08
+breakdown step 9: wall 346.92 ms | gpu 307.16 | flushWait 336.39 (host share 29.23) | encode 1.41 | readCopy 0.39 | writeCopy 0.12 | residual 8.61
+breakdown step 10: wall 354.75 ms | gpu 313.84 | flushWait 344.31 (host share 30.48) | encode 1.55 | readCopy 0.47 | writeCopy 0.12 | residual 8.29
+breakdown step 11: wall 358.22 ms | gpu 317.71 | flushWait 348.11 (host share 30.40) | encode 1.49 | readCopy 0.28 | writeCopy 0.12 | residual 8.21
+breakdown step 12: wall 361.70 ms | gpu 320.34 | flushWait 350.90 (host share 30.56) | encode 1.75 | readCopy 0.37 | writeCopy 0.16 | residual 8.52
+breakdown step 13: wall 379.37 ms | gpu 326.96 | flushWait 366.12 (host share 39.16) | encode 2.16 | readCopy 0.56 | writeCopy 0.13 | residual 10.40
+breakdown step 14: wall 386.27 ms | gpu 329.08 | flushWait 371.86 (host share 42.77) | encode 1.73 | readCopy 0.41 | writeCopy 0.18 | residual 12.09
+breakdown step 15: wall 369.00 ms | gpu 329.36 | flushWait 358.95 (host share 29.59) | encode 1.38 | readCopy 0.56 | writeCopy 0.11 | residual 8.00
+breakdown step 16: wall 443.21 ms | gpu 337.93 | flushWait 412.09 (host share 74.16) | encode 3.98 | readCopy 4.66 | writeCopy 0.17 | residual 22.31
+breakdown step 17: wall 404.58 ms | gpu 338.07 | flushWait 388.16 (host share 50.10) | encode 1.93 | readCopy 1.12 | writeCopy 0.14 | residual 13.23
+breakdown step 18: wall 405.17 ms | gpu 348.74 | flushWait 390.63 (host share 41.89) | encode 1.54 | readCopy 2.64 | writeCopy 0.11 | residual 10.26
+breakdown step 19: wall 391.44 ms | gpu 346.36 | flushWait 380.90 (host share 34.54) | encode 1.50 | readCopy 0.39 | writeCopy 0.12 | residual 8.54
+breakdown step 20: wall 399.93 ms | gpu 352.22 | flushWait 389.06 (host share 36.84) | encode 1.43 | readCopy 0.29 | writeCopy 0.11 | residual 9.04
+breakdown step 21: wall 404.47 ms | gpu 356.07 | flushWait 392.95 (host share 36.88) | encode 1.36 | readCopy 0.50 | writeCopy 0.11 | residual 9.55
+breakdown step 22: wall 407.27 ms | gpu 357.54 | flushWait 396.58 (host share 39.04) | encode 1.52 | readCopy 0.43 | writeCopy 0.10 | residual 8.64
+breakdown step 23: wall 417.51 ms | gpu 361.08 | flushWait 406.68 (host share 45.60) | encode 1.54 | readCopy 0.44 | writeCopy 0.13 | residual 8.73
+breakdown step 24: wall 416.70 ms | gpu 364.22 | flushWait 406.02 (host share 41.80) | encode 1.41 | readCopy 0.34 | writeCopy 0.11 | residual 8.82
+breakdown step 25: wall 422.91 ms | gpu 370.02 | flushWait 409.96 (host share 39.94) | encode 1.52 | readCopy 1.95 | writeCopy 0.11 | residual 9.37
+breakdown step 26: wall 436.79 ms | gpu 377.58 | flushWait 423.98 (host share 46.40) | encode 1.49 | readCopy 0.68 | writeCopy 0.10 | residual 10.53
+breakdown step 27: wall 429.31 ms | gpu 377.40 | flushWait 418.01 (host share 40.61) | encode 1.58 | readCopy 0.43 | writeCopy 0.11 | residual 9.18
+breakdown step 28: wall 433.20 ms | gpu 381.29 | flushWait 420.19 (host share 38.90) | encode 2.01 | readCopy 0.94 | writeCopy 0.14 | residual 9.92
+breakdown step 29: wall 454.97 ms | gpu 385.76 | flushWait 440.21 (host share 54.45) | encode 2.22 | readCopy 0.67 | writeCopy 0.13 | residual 11.73
+breakdown step 30: wall 444.89 ms | gpu 388.16 | flushWait 433.40 (host share 45.24) | encode 1.56 | readCopy 0.54 | writeCopy 0.12 | residual 9.27
+breakdown step 31: wall 451.02 ms | gpu 392.35 | flushWait 439.38 (host share 47.03) | encode 1.49 | readCopy 0.58 | writeCopy 0.11 | residual 9.46
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 2/2: prefill/TTFT: 348.5 ms (2 prompt tokens) | decode: 12207.4 ms total (31 steps), median ms/token 399.99 | gpu total: 10713.4 ms | metal device allocated sample: 15.168 GiB
+breakdown totals (31 steps, decode only): wall 12203.6 ms | gpu 10438.4 (85.5%) | flush-host 1286.0 (10.5%) | encode 59.3 (0.5%) | readCopy 33.1 (0.3%) | writeCopy 9.2 (0.1%) | residual 377.7 (3.1%)
+load (once): 586.0 ms
+GENERATION_COMPLETED

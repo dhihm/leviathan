@@ -1,0 +1,12 @@
+prompt ids: 2 9259
+hashing GGUF for plan identity (streaming, one pass)…
+plan identity validated: b34b1cf58438028eac14aec55248951e9b7aa50b26182999706d8c1a2a6a2bb5 (selected GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: false, matvecTiledQ6: false, rmsnormTiled: false, matvecTiledF32: false))
+identity validation prep: 11378.0 ms (graph parse + GGUF hash + plan load)
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 1/2: prefill/TTFT: 434.6 ms (2 prompt tokens) | decode: 15148.2 ms total (31 steps), median ms/token 482.15 | gpu total: 14250.4 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 2/2: prefill/TTFT: 432.8 ms (2 prompt tokens) | decode: 15148.8 ms total (31 steps), median ms/token 491.92 | gpu total: 14231.0 ms | metal device allocated sample: 15.168 GiB
+load (once): 484.3 ms
+GENERATION_COMPLETED

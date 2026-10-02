@@ -1,0 +1,15 @@
+metal device: Apple M1 Max
+  q6_k worst rel vs FP64 reference: gpu 2.424e-05, scalar 5.719e-08
+  q6_k worst row 60: ref64 -15.704554 gpu -15.704173 sumAbsProducts 195570.4 (|result| 15.7)
+  q6_k known block: ref -315.000000 gpu -315.000000 hand -315.000000
+  torch parity: worst rel diff GPU vs PyTorch 2.235e-08 (scalar 2.235e-08)
+q4 tiled numerical gates completed
+f32 tiled numerical gates completed
+q6 tiled numerical gates completed
+rms tiled numerical gates completed
+FAIL: q4 matvec vl BIT-IDENTICAL to original (inDim 32)
+FAIL: q4 matvec vl BIT-IDENTICAL to original (inDim 704)
+FAIL: q4 matvec vl BIT-IDENTICAL to original (inDim 2816)
+q4 matvec per-call, dedicated-buffer submit (record only): plain 846 us, vectorized 398 us
+SKIP: real-model Gemma gates (set LEVIATHAN_GEMMA_GGUF to opt in)
+520 passed, 3 failed

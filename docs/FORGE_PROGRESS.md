@@ -688,3 +688,162 @@ pass's forges (same configuration as pass 3 within run-to-run noise;
 no end-to-end win is claimed). This mirrors the pass-2 Q6-tiled
 precedent: measured, gated, not selected — the machinery (kernel +
 candidate + identity + oracle tests) is the reusable artifact.
+
+## Pass 7 (2026-10-02 UTC): fair KV-aligned decode baseline, batched
+## wall/GPU breakdown, and the full-workload legal-candidate fallback
+
+### Motivation
+Pass 6's warm comparison had a KV-prefix asymmetry: Ollama could reuse
+the identical request's prompt KV while Leviathan reset and re-prefilled
+every repetition. This pass eliminates the ambiguity with AUTHORITATIVE
+cache-policy evidence, measures the ACTUAL batched wall-vs-GPU split of
+the selected SSA path, and delivers one gate-clean improvement chosen
+from that breakdown.
+
+### Authoritative cache policy (not a timing heuristic)
+A second task-owned Ollama 0.23.0 daemon (127.0.0.1:11498, started with
+OLLAMA_DEBUG=1, OLLAMA_NUM_PARALLEL=1, OLLAMA_MAX_LOADED_MODELS=1,
+OLLAMA_MODELS=/tmp/task5-ollama-models; the user's own 11434 daemon and
+the task's 11499 daemon were never modified) exposes the runner cache
+manager's own log line per request:
+  cache.go:151 "loading cache slot" id=0 cache=<len> prompt=<n> used=<u> remaining=<r>
+Observed (A/B/D/C probe preserved in docs/evidence/
+ollama-11498-debug-fairdecode.log): for the 2-token "Hello" prompt both
+the identical-request control AND the post-distractor request show
+used=1 remaining=1 — only the BOS token is retained and the non-BOS
+token is freshly evaluated in both cases (the distractor itself shows
+prompt=6 used=1 remaining=5), and runner.parallel=1 appears in the same
+log, proving a single slot. The official docs additionally state
+OLLAMA_NUM_PARALLEL defaults to 1 (docs.ollama.com/faq). The daemon was
+stopped after the phase; its model was verified unloaded first, and the
+11499 daemon was left running and empty.
+
+### Fair decode baseline (32 tokens, policies aligned)
+tools/baseline/ollama_fairdecode.py: 5 warm measured rounds, each
+preceded by a serial distractor; per-round PROOF from the log that slot
+0 shows prompt=2 used=1 remaining=1 (docs/evidence/
+ollama-fairdecode.json; the earlier protocol run is kept as
+ollama-fairdecode-run1.json and never mixed with final statistics).
+Leviathan aligns via the new gemma-generate --bos-align mode
+(tools/baseline/leviathan_fairdecode.sh): each warm repetition
+prefills [BOS] untimed and times the one-token continuation + 31 decode
+steps — both engines then freshly evaluate exactly one prompt token per
+round. Decode metric conventions are disclosed side by side: Ollama
+eval_duration/eval_count is the standard server metric (per generated
+token, N=32); the first-to-last normalization is an alternate only.
+Measured (loadavg 1/5/15-min: Ollama run { 5.86 12.59 11.83 } ->
+{ 5.93 12.27 11.73 }; Leviathan harness { 13.61 9.52 9.74 } ->
+{ 10.09 9.54 9.68 } — recorded, not controlled, no causal claim; the
+final VL cold/warm runs were not individually loadavg-recorded):
+  Ollama (final JSON): eval 0.472677954-0.494303125 s / 32 tokens,
+            median 0.480543623 s = 15.02 ms/eval-token (66.59 tok/s);
+            prompt_eval 0.0194865-0.027267 s (median 0.022870417);
+            identical text all 5 rounds.
+  Leviathan (selection below): warm aligned decode totals
+            12236.1-13097.8 ms for 31 steps across 5 repetitions,
+            median 12788.6 ms = 2.424 tok/s (pre-improvement selection:
+            15103.9-15545.2 ms totals — a descriptive ~16% reduction
+            across different binaries, times, and uncontrolled load; no
+            controlled claim). Final cold process (final binary, final
+            plan): total 41.44 s, load 257.0 ms of which runtime Metal
+            library + pipeline compile 6.6 ms (printed separately;
+            driver-side caching not claimed either way), identity
+            validation prep 12466.9 ms (graph parse + 14.4 GB GGUF hash
+            + plan load), first prefill 15976.9 ms (first-touch/
+            lazy-init not causally measured), decode 11607.8 ms
+            (median 374.44 ms/token), peak RSS 2,253,258,752 B, peak
+            memory footprint 16,477,181,376 B, Metal device allocated
+            sample 15.168 GiB (a sample, not a peak claim; distinct
+            from OS RSS/high-water marks).
+Both engines produce the exact same 32-token text
+" upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-"
+(token-ID agreement asserted on the Leviathan side; text/count only on
+the Ollama side — no hidden-ID claim). Descriptively, the Ollama N=32
+per-eval-token rate (66.59 tok/s) and the Leviathan warm per-step rate
+(2.424 tok/s) differ by roughly 27x; these accountings differ (Ollama
+includes the first generated token in eval_duration's N=32; Leviathan's
+31 steps exclude it), machine load was uncontrolled, and no causal
+attribution is made. The competitive-performance objective vs Ollama
+is UNMET at this scope; the reusable assets are the aligned protocol,
+the gate machinery, and the measured improvement.
+
+### Full-workload legal-candidate fallback (strict gates unchanged)
+The pass-6 8-token gate hid a real fact: at 32 tokens the accumulated
+cross-path drift of the reassociating tiled kernels crosses the strict
+rel < 1e-4 gate (measured worst 1.032e-04-1.171e-04 at steps 25-28;
+greedy ids/text still exact). Rather than relax anything, gemma-forge
+now gates candidates over the REQUESTED --gen-tokens length with a
+legal fallback: candidates are tried in the SAME order the short
+selection used (measured wall-median order at the decodeTokens=4
+measurement workload; current selection first, then medians with a
+deterministic legal-enumeration tie-break) and the FIRST candidate in
+that order that passes prefill + EVERY step of the fullGateTokens=32
+gate (rel < 1e-4 per full logit array + exact greedy ids) is selected.
+Caveat stated plainly: the gate compares the SSA path against the
+runner reference path, which shares the same kernel primitives — the
+only independent numerical check is the per-kernel FP64 oracle in the
+test suite. Rejections are recorded IN THE PLAN
+(fullGateTokens/fullGateRejections) with pairing/bounds/digest-
+coverage gates in the test suite; stale plans fail closed and re-forge.
+GemmaForge.reselect rebuilds the plan (schedule/identity unchanged,
+digest recomputed) and MERGES same-length re-gate history: a cached
+plan re-gated at the same length keeps its prior rejection reasons (a
+now-passing selection can produce an empty list this run) and appends
+only new unique reasons; a different gate length resets the record.
+Verified in production: the cached gemma-forge re-run preserved all 3
+rejections with the parsed whole-plan JSON object identical before and
+after (root-verified object equality; digest
+575adf9f9f17886d29bbd6b414a41bfac8218e4b76c2c4444e9a5969e8454c93).
+First-fallback artifact preserved at
+docs/evidence/gemma-plan-full32-first-fallback.json.
+
+### Batched wall-vs-GPU breakdown (--breakdown, opt-in counters)
+Runner-primitive counters (monotonic DispatchTime; no timer reads when
+off — one branch remains; submission/synchronization untouched): encode
+(deferred-segment kernel encoding; the GPU is idle then in batched
+mode, no overlap), flush wall (endEncoding+commit+waitUntilCompleted;
+OVERLAPS GPU busy time — the host share is flush-gpu, clamped at 0),
+readCopy, writeCopy; GPU busy from gpuMicrosTotal; everything else is
+the residual (CPU router softmax/top-k, operand resolution, CLI).
+Overhead control — same workload, same binary and plan, instrumentation
+off (medians 482.15/491.92 ms/token) vs on (496.90/484.64), n=2 per
+arm: the elapsed times look similar; no statistical claim is made from
+two observations. Result (31 decode steps, batching-only selection, no
+per-run loadavg recorded for this diagnostic): GPU 89.4-91.7% of wall,
+flush-host 6.1-7.4%, encode 0.3-0.5%, readCopy 0.2%, writeCopy ~0%,
+residual 1.8-2.4% — GPU busy time dominates, with material host-side
+flush overhead. (Per-kernel attribution remains exact only in
+per-kernel mode; it does not substitute for this batched breakdown.)
+
+### The improvement: vectorized-load RMSNorm (bit-identical, selected)
+Priority from the breakdown: GPU busy time dominates the wall, with
+material host overhead. Plain-mode per-kernel attribution
+(docs/evidence/gemma-profile-run3.log) has g4_q4_matvec 44.7% and
+g4_rmsnorm 44.6% of GPU time. g4_rmsnorm_vl consumes x (and w) in
+float4 chunks with an arithmetic sequence IDENTICAL to g4_rmsnorm —
+asserted EXACTLY bit-equal on hardware by the new test block (widths
+256/2112/2816, weighted/scale-free, in-place and out-of-place) plus the
+production predicate Gemma4Runner.rmsVectorLoadGuards (positive
+multiple of 4; scaled weight offset 16-byte aligned; fallback to the
+original kernel otherwise) tested directly.
+  - A Q4 matvec vectorized-load variant was also written and measured
+    ~2.1x per call in the synthetic harness (856 -> 420 us — but that
+    number includes per-call MTLBuffer allocation and a dedicated
+    command-buffer submit per call, so it is NOT a pure GPU-kernel
+    time; kept as a printed diagnostic), yet its COMPILED outputs
+    differed from the original kernel (worst rel up to 1.0e-05; cause
+    not established), so bit-equality could not be proven: the variant
+    is REJECTED from legal dispatch (excluded from the production
+    pipeline list) and survives only as a printed diagnostic in the
+    test suite.
+The new vectorizedLoads Forge candidate (RMS VL only; batched and
+unbatched entries) measures with logits rel 0.0e+00 vs the reference:
+  batching+plain:  439,691 us/token wall, 398,715 us/token GPU
+  batching+VL:     315,820 us/token wall, 278,191 us/token GPU
+                   (-28% wall, -30% GPU, zero measured drift)
+and it is the first candidate in the short-selection order that the
+fullGateTokens=32 gate passes (the three faster tiled candidates were
+rejected and recorded first; the same-session end-to-end numbers are
+above). Post-improvement breakdown: GPU 84.4-85.5%, flush-host
+10.5-11.1% (the freed GPU time shifts the split toward host share).
+Default suite: 527 passed / 0 failed.

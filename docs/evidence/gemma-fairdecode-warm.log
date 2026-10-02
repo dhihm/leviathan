@@ -1,0 +1,21 @@
+prompt ids: 2 9259
+hashing GGUF for plan identity (streaming, one pass)…
+plan identity validated: 116f4f5641fc98c07783cbe4cd9f5fb71a3759813e3c2882c59084b39d871b8a (selected GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: false, matvecTiledQ6: false, rmsnormTiled: false, matvecTiledF32: false))
+identity validation prep: 11803.1 ms (graph parse + GGUF hash + plan load)
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 1/5: prefill/TTFT: 429.9 ms (2 prompt tokens) | decode: 15274.8 ms total (31 steps), median ms/token 486.78 | gpu total: 14291.4 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 2/5: prefill/TTFT: 428.3 ms (2 prompt tokens) | decode: 15103.9 ms total (31 steps), median ms/token 483.89 | gpu total: 14226.6 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 3/5: prefill/TTFT: 424.9 ms (2 prompt tokens) | decode: 15076.9 ms total (31 steps), median ms/token 484.71 | gpu total: 14231.5 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 4/5: prefill/TTFT: 429.4 ms (2 prompt tokens) | decode: 15545.2 ms total (31 steps), median ms/token 501.12 | gpu total: 14228.3 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 5/5: prefill/TTFT: 475.4 ms (2 prompt tokens) | decode: 15224.6 ms total (31 steps), median ms/token 497.76 | gpu total: 14219.6 ms | metal device allocated sample: 15.168 GiB
+load (once): 437.3 ms
+GENERATION_COMPLETED

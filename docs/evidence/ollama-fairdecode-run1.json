@@ -1,0 +1,388 @@
+{
+ "model": "gemma4-task5",
+ "port": 11498,
+ "ollama_version": "0.23.0",
+ "daemon_log": "/tmp/leviathan-forge2-tooling/ollama-11498-debug.log",
+ "daemon_env": {
+  "OLLAMA_DEBUG": "1",
+  "OLLAMA_NUM_PARALLEL": "1",
+  "OLLAMA_MAX_LOADED_MODELS": "1",
+  "OLLAMA_MODELS": "/tmp/task5-ollama-models",
+  "note": "set by the operator when starting the task-owned 11498 daemon; single slot also confirmed by runner.parallel=1 in the debug log"
+ },
+ "gguf": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+ "gguf_sha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+ "ollama_blob_sha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+ "digest_linkage": "ollama model blob sha256 == authorized GGUF sha256 (byte-linked)",
+ "digest_computed_s": 8.7,
+ "loadavg_start": "{ 6.00 5.04 6.17 }",
+ "num_predict": 32,
+ "measured_rounds": 5,
+ "distractor_prompt": "Xqztv probe",
+ "cache_policy_evidence": "per-round 'loading cache slot' lines from the runner's cache manager (cache/prompt/used/remaining); proof the measured prompt's non-BOS token was freshly evaluated after each distractor \u2014 log-authoritative, not a timing heuristic",
+ "protocol_note": "measured rounds are WARM (model resident) with one serial distractor request before each; Leviathan's harness re-prefills all prompt tokens after a full reset, so the remaining asymmetry is at most the single reused BOS token",
+ "rss_note": "ps RSS point samples (KiB/1024 -> MiB); max across rounds; not a peak claim",
+ "control_A_load": {
+  "prompt": "Hello",
+  "num_predict": 1,
+  "keep_alive": -1,
+  "chunk_count": 2,
+  "failure": null,
+  "text": " upon",
+  "nonempty_chunk_count": 1,
+  "done_reason": "length",
+  "client": {
+   "ttft_first_nonempty_s": 6.460265459027141,
+   "total_to_done_s": 6.460367834195495,
+   "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+  },
+  "api_server": {
+   "load_duration_s": 6.253994834,
+   "prompt_eval_duration_s": 0.151804792,
+   "prompt_eval_count": 2,
+   "eval_duration_s": 0.0,
+   "eval_count": 1,
+   "decode_note": "eval_duration covers eval_count generated tokens; first-to-last decode accounting is eval_duration with eval_count-1 intervals"
+  },
+  "cache_slot_line": "time=2026-10-03T05:41:26.985+09:00 level=DEBUG source=cache.go:151 msg=\"loading cache slot\" id=0 cache=0 prompt=2 used=0 remaining=2",
+  "cache_slot_groups": [
+   "0",
+   "0",
+   "2",
+   "0",
+   "2"
+  ]
+ },
+ "control_B_reuse": {
+  "prompt": "Hello",
+  "num_predict": 1,
+  "keep_alive": -1,
+  "chunk_count": 2,
+  "failure": null,
+  "text": " upon",
+  "nonempty_chunk_count": 1,
+  "done_reason": "length",
+  "client": {
+   "ttft_first_nonempty_s": 0.3559632496908307,
+   "total_to_done_s": 0.3559777499176562,
+   "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+  },
+  "api_server": {
+   "load_duration_s": 0.283814958,
+   "prompt_eval_duration_s": 0.021967959,
+   "prompt_eval_count": 2,
+   "eval_duration_s": 0.0,
+   "eval_count": 1,
+   "decode_note": "eval_duration covers eval_count generated tokens; first-to-last decode accounting is eval_duration with eval_count-1 intervals"
+  },
+  "cache_slot_line": "time=2026-10-03T05:41:27.501+09:00 level=DEBUG source=cache.go:151 msg=\"loading cache slot\" id=0 cache=2 prompt=2 used=1 remaining=1",
+  "cache_slot_groups": [
+   "0",
+   "2",
+   "2",
+   "1",
+   "1"
+  ]
+ },
+ "rss_max_control_mib": {
+  "runner_child_pid96919": 14743.7,
+  "serve_pid4101": 2.0,
+  "serve_pid49103": 108.8,
+  "serve_pid68306": 4.6
+ },
+ "rounds": [
+  {
+   "distractor": {
+    "prompt": "Xqztv probe",
+    "num_predict": 1,
+    "keep_alive": -1,
+    "chunk_count": 2,
+    "failure": null,
+    "text": "-",
+    "nonempty_chunk_count": 1,
+    "done_reason": "length",
+    "client": {
+     "ttft_first_nonempty_s": 0.29926791694015265,
+     "total_to_done_s": 0.2992937918752432,
+     "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+    },
+    "api_server": {
+     "load_duration_s": 0.219928583,
+     "prompt_eval_duration_s": 0.04669575,
+     "prompt_eval_count": 6,
+     "eval_duration_s": 0.0,
+     "eval_count": 1,
+     "decode_note": "eval_duration covers eval_count generated tokens; first-to-last decode accounting is eval_duration with eval_count-1 intervals"
+    }
+   },
+   "measured": {
+    "prompt": "Hello",
+    "num_predict": 32,
+    "keep_alive": -1,
+    "chunk_count": 33,
+    "failure": null,
+    "text": " upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-",
+    "nonempty_chunk_count": 32,
+    "done_reason": "length",
+    "client": {
+     "ttft_first_nonempty_s": 0.24392729112878442,
+     "total_to_done_s": 0.7668750411830842,
+     "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+    },
+    "api_server": {
+     "load_duration_s": 0.218715625,
+     "prompt_eval_duration_s": 0.0207515,
+     "prompt_eval_count": 2,
+     "eval_duration_s": 0.489336083,
+     "eval_count": 32,
+     "decode_note": "eval_duration covers eval_count generated tokens; first-to-last decode accounting is eval_duration with eval_count-1 intervals"
+    }
+   },
+   "measured_cache_slot_line": "time=2026-10-03T05:41:28.112+09:00 level=DEBUG source=cache.go:151 msg=\"loading cache slot\" id=0 cache=6 prompt=2 used=1 remaining=1",
+   "measured_cache_slot_groups": [
+    "0",
+    "6",
+    "2",
+    "1",
+    "1"
+   ]
+  },
+  {
+   "distractor": {
+    "prompt": "Xqztv probe",
+    "num_predict": 1,
+    "keep_alive": -1,
+    "chunk_count": 2,
+    "failure": null,
+    "text": "-",
+    "nonempty_chunk_count": 1,
+    "done_reason": "length",
+    "client": {
+     "ttft_first_nonempty_s": 0.28137054201215506,
+     "total_to_done_s": 0.28139495803043246,
+     "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+    },
+    "api_server": {
+     "load_duration_s": 0.238587333,
+     "prompt_eval_duration_s": 0.03921825,
+     "prompt_eval_count": 6,
+     "eval_duration_s": 0.0,
+     "eval_count": 1,
+     "decode_note": "eval_duration covers eval_count generated tokens; first-to-last decode accounting is eval_duration with eval_count-1 intervals"
+    }
+   },
+   "measured": {
+    "prompt": "Hello",
+    "num_predict": 32,
+    "keep_alive": -1,
+    "chunk_count": 33,
+    "failure": null,
+    "text": " upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-",
+    "nonempty_chunk_count": 32,
+    "done_reason": "length",
+    "client": {
+     "ttft_first_nonempty_s": 0.23930349992588162,
+     "total_to_done_s": 0.7374713751487434,
+     "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+    },
+    "api_server": {
+     "load_duration_s": 0.212948958,
+     "prompt_eval_duration_s": 0.022838167,
+     "prompt_eval_count": 2,
+     "eval_duration_s": 0.470597877,
+     "eval_count": 32,
+     "decode_note": "eval_duration covers eval_count generated tokens; first-to-last decode accounting is eval_duration with eval_count-1 intervals"
+    }
+   },
+   "measured_cache_slot_line": "time=2026-10-03T05:41:29.233+09:00 level=DEBUG source=cache.go:151 msg=\"loading cache slot\" id=0 cache=6 prompt=2 used=1 remaining=1",
+   "measured_cache_slot_groups": [
+    "0",
+    "6",
+    "2",
+    "1",
+    "1"
+   ]
+  },
+  {
+   "distractor": {
+    "prompt": "Xqztv probe",
+    "num_predict": 1,
+    "keep_alive": -1,
+    "chunk_count": 2,
+    "failure": null,
+    "text": "-",
+    "nonempty_chunk_count": 1,
+    "done_reason": "length",
+    "client": {
+     "ttft_first_nonempty_s": 0.25516408309340477,
+     "total_to_done_s": 0.2552065411582589,
+     "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+    },
+    "api_server": {
+     "load_duration_s": 0.21098675,
+     "prompt_eval_duration_s": 0.0415525,
+     "prompt_eval_count": 6,
+     "eval_duration_s": 0.0,
+     "eval_count": 1,
+     "decode_note": "eval_duration covers eval_count generated tokens; first-to-last decode accounting is eval_duration with eval_count-1 intervals"
+    }
+   },
+   "measured": {
+    "prompt": "Hello",
+    "num_predict": 32,
+    "keep_alive": -1,
+    "chunk_count": 33,
+    "failure": null,
+    "text": " upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-",
+    "nonempty_chunk_count": 32,
+    "done_reason": "length",
+    "client": {
+     "ttft_first_nonempty_s": 0.23125208308920264,
+     "total_to_done_s": 0.7299242080189288,
+     "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+    },
+    "api_server": {
+     "load_duration_s": 0.206169083,
+     "prompt_eval_duration_s": 0.022709875,
+     "prompt_eval_count": 2,
+     "eval_duration_s": 0.473227085,
+     "eval_count": 32,
+     "decode_note": "eval_duration covers eval_count generated tokens; first-to-last decode accounting is eval_duration with eval_count-1 intervals"
+    }
+   },
+   "measured_cache_slot_line": "time=2026-10-03T05:41:30.275+09:00 level=DEBUG source=cache.go:151 msg=\"loading cache slot\" id=0 cache=6 prompt=2 used=1 remaining=1",
+   "measured_cache_slot_groups": [
+    "0",
+    "6",
+    "2",
+    "1",
+    "1"
+   ]
+  },
+  {
+   "distractor": {
+    "prompt": "Xqztv probe",
+    "num_predict": 1,
+    "keep_alive": -1,
+    "chunk_count": 2,
+    "failure": null,
+    "text": "-",
+    "nonempty_chunk_count": 1,
+    "done_reason": "length",
+    "client": {
+     "ttft_first_nonempty_s": 0.28577483305707574,
+     "total_to_done_s": 0.28579687513411045,
+     "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+    },
+    "api_server": {
+     "load_duration_s": 0.239527959,
+     "prompt_eval_duration_s": 0.0429225,
+     "prompt_eval_count": 6,
+     "eval_duration_s": 0.0,
+     "eval_count": 1,
+     "decode_note": "eval_duration covers eval_count generated tokens; first-to-last decode accounting is eval_duration with eval_count-1 intervals"
+    }
+   },
+   "measured": {
+    "prompt": "Hello",
+    "num_predict": 32,
+    "keep_alive": -1,
+    "chunk_count": 33,
+    "failure": null,
+    "text": " upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-",
+    "nonempty_chunk_count": 32,
+    "done_reason": "length",
+    "client": {
+     "ttft_first_nonempty_s": 0.23034574976190925,
+     "total_to_done_s": 0.736872541718185,
+     "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+    },
+    "api_server": {
+     "load_duration_s": 0.205121375,
+     "prompt_eval_duration_s": 0.022220125,
+     "prompt_eval_count": 2,
+     "eval_duration_s": 0.481274168,
+     "eval_count": 32,
+     "decode_note": "eval_duration covers eval_count generated tokens; first-to-last decode accounting is eval_duration with eval_count-1 intervals"
+    }
+   },
+   "measured_cache_slot_line": "time=2026-10-03T05:41:31.351+09:00 level=DEBUG source=cache.go:151 msg=\"loading cache slot\" id=0 cache=6 prompt=2 used=1 remaining=1",
+   "measured_cache_slot_groups": [
+    "0",
+    "6",
+    "2",
+    "1",
+    "1"
+   ]
+  },
+  {
+   "distractor": {
+    "prompt": "Xqztv probe",
+    "num_predict": 1,
+    "keep_alive": -1,
+    "chunk_count": 2,
+    "failure": null,
+    "text": "-",
+    "nonempty_chunk_count": 1,
+    "done_reason": "length",
+    "client": {
+     "ttft_first_nonempty_s": 0.2551881670951843,
+     "total_to_done_s": 0.2552074999548495,
+     "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+    },
+    "api_server": {
+     "load_duration_s": 0.2158025,
+     "prompt_eval_duration_s": 0.03660025,
+     "prompt_eval_count": 6,
+     "eval_duration_s": 0.0,
+     "eval_count": 1,
+     "decode_note": "eval_duration covers eval_count generated tokens; first-to-last decode accounting is eval_duration with eval_count-1 intervals"
+    }
+   },
+   "measured": {
+    "prompt": "Hello",
+    "num_predict": 32,
+    "keep_alive": -1,
+    "chunk_count": 33,
+    "failure": null,
+    "text": " upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-",
+    "nonempty_chunk_count": 32,
+    "done_reason": "length",
+    "client": {
+     "ttft_first_nonempty_s": 0.23730516713112593,
+     "total_to_done_s": 0.7238753330893815,
+     "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+    },
+    "api_server": {
+     "load_duration_s": 0.213090125,
+     "prompt_eval_duration_s": 0.02149575,
+     "prompt_eval_count": 2,
+     "eval_duration_s": 0.469210294,
+     "eval_count": 32,
+     "decode_note": "eval_duration covers eval_count generated tokens; first-to-last decode accounting is eval_duration with eval_count-1 intervals"
+    }
+   },
+   "measured_cache_slot_line": "time=2026-10-03T05:41:32.409+09:00 level=DEBUG source=cache.go:151 msg=\"loading cache slot\" id=0 cache=6 prompt=2 used=1 remaining=1",
+   "measured_cache_slot_groups": [
+    "0",
+    "6",
+    "2",
+    "1",
+    "1"
+   ]
+  }
+ ],
+ "rss_max_measured_mib": {
+  "runner_child_pid96919": 14806.0,
+  "serve_pid4101": 2.0,
+  "serve_pid49103": 108.8,
+  "serve_pid68306": 4.6
+ },
+ "reference_output": {
+  "text": " upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-",
+  "eval_count": 32,
+  "done_reason": "length"
+ },
+ "loadavg_end": "{ 5.99 5.07 6.17 }",
+ "failures": []
+}

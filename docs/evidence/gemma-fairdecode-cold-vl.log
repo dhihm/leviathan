@@ -1,0 +1,27 @@
+prompt ids: 2 9259
+hashing GGUF for plan identity (streaming, one pass)…
+plan identity validated: 2bb012e93703e4cb6074b707c7cf821fd0ad11d76ae870aa05b00a70b2a15b8d (selected GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: false, matvecTiledQ6: false, rmsnormTiled: false, matvecTiledF32: false, vectorizedLoads: true))
+identity validation prep: 12852.3 ms (graph parse + GGUF hash + plan load)
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 1/1: prefill/TTFT: 15901.1 ms (2 prompt tokens) | decode: 11307.0 ms total (31 steps), median ms/token 362.80 | gpu total: 10631.1 ms | metal device allocated sample: 15.168 GiB
+load (once): 594.3 ms
+GENERATION_COMPLETED
+       42.03 real         7.23 user         6.29 sys
+          1984905216  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              906709  page reclaims
+               33169  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                3103  voluntary context switches
+              123697  involuntary context switches
+         53528721434  instructions retired
+         39873014208  cycles elapsed
+         16467187200  peak memory footprint

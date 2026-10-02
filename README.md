@@ -50,9 +50,20 @@ python3 tools/forge_gemma/export_gemma_graph.py examples/gemma_model.py /tmp/cfg
 # 3. Generation + GPU-time profile. gemma-generate also accepts
 #    --plan/--graph (execute the persisted SSA artifact; the PRIMARY
 #    measured path), --repeat N (in-process warm repetitions with KV
-#    reset and cross-repetition determinism asserted), and --gate
+#    reset and cross-repetition determinism asserted), --gate
 #    (optional untimed reference verification — OFF for cold
-#    measurements because the replay warms all model resources):
+#    measurements because the replay warms all model resources),
+#    --bos-align (warm protocol matched to Ollama's proven BOS-only
+#    KV-prefix reuse: untimed [BOS] prefill, timed one-token
+#    continuation; requires --plan and a 2-token prompt), and
+#    --breakdown (opt-in per-decode-step wall/GPU split from runner
+#    primitive counters: encode / flush-wait (overlaps GPU) / copies /
+#    residual). Forge with --gen-tokens 32 tries candidates in the
+#    short-selection timing order and selects the FIRST that passes
+#    the full requested-generation gate, recording measured
+#    rejections in the plan (strict gates unchanged). See
+#    tools/baseline/{ollama_fairdecode.py,leviathan_fairdecode.sh} for
+#    the aligned 32-token comparison harnesses:
 .build/release/leviathan-cli gemma-generate --file <gguf> --text "Hello" --chat --max-tokens 8
 .build/release/leviathan-cli gemma-profile --file <gguf> --q4-tiled --rms-tiled --f32-tiled
 
@@ -83,17 +94,27 @@ original hand-written runner.forward — a separate execution path that
 drives the same validated kernel primitives, not a mathematically
 independent full-model implementation — bit-identically on the
 per-kernel path and within rel 2.5e-05 on the selected optimized pass
-(all 262,144 logits, gated per decode step), with exact greedy
+(all 262,144 logits, gated per decode step; the gate's reference is
+the runner's plain forward path, which shares the same kernel
+primitives — the independent numerical checks are the per-kernel FP64
+oracle component gates), with exact greedy
 next-token equality over the tested 8-token workload
 (" upon-the-sands-of" — also identical TEXT with matching token counts
 to the same-GGUF Ollama 0.23.0 raw greedy baseline; the baseline API
 exposes no internal IDs, so that agreement is text+count, and no
-global no-quality-loss claim is made). Quantized kernels carry their
-own independent FP64 component gates. Selected pass = cross-op
-command-buffer batching (1799 → 127 submissions/token) + a tiled
-cooperative Q4_0 matvec, and a tiled cooperative RMSNorm: 754,092 →
-122,565 µs wall per token within one gated run (6.2× vs the per-kernel
-baseline of that run; ~8.0 decode tokens/s).
+global no-quality-loss claim is made; pass 7 extends the tested
+workload to 32 tokens). Quantized kernels carry their
+own independent FP64 component gates. HISTORICAL passes 2-6 selected
+cross-op command-buffer batching (1799 → 127 submissions/token) + a
+tiled cooperative Q4_0 matvec and tiled RMSNorm: 754,092 → 122,565 µs
+wall per token within one gated 8-token run (6.2× vs the per-kernel
+baseline of that run) — SUPERSEDED at 32 tokens: the pass-7
+full-length gate measured-rejected the three attempted tiled
+candidates (accumulated cross-path drift 1.03-1.17e-04 over the strict
+1e-4 gate; the gate stops after the first passing candidate, so not
+all legal candidates were tested at 32) and selected segment batching
++ the bit-equal vectorized-load RMSNorm instead (-28% wall vs plain
+batching at zero measured drift).
 The gap to the same-GGUF Ollama baseline remains large; optimization
 continues one measured, gated pass at a time. A matched warm/cold
 ACCEPTANCE pass (tools/baseline/ollama_warmcold.py +
@@ -293,15 +314,18 @@ Gemma Forge path (measured, gated, still bounded):
   gates, and exact greedy equality over the TESTED workloads (raw
   "Hello" 8 tokens; EN chat 8; KO chat 10) — no global no-quality-loss
   claim.
-- Decode ~8.0 tokens/s wall on the M1 Max vs the same-GGUF Ollama
-  steady-warm server-reported ~68.4 eval tokens/s in the matched
-  acceptance run (client streaming is buffered; no per-token interval
-  claimed) — a large gap remains; optimization continues one measured
-  gated pass at a time.
+- KV-aligned 32-token comparison (pass 7): warm decode median
+  12788.6 ms / 31 steps = 2.424 tok/s vs the same-GGUF Ollama's
+  66.59 eval tok/s (N=32 accounting includes Ollama's first generated
+  token; Leviathan's 31 steps exclude it — different accountings,
+  uncontrolled machine load, ~27x descriptively). A large gap
+  remains; optimization continues one measured gated pass at a time.
 - Remaining scope limits: greedy decoding only, single model, serial
-  GPU, and the strict 1e-4 full-logit stacking gate currently blocks
-  the (otherwise 20x-faster-per-kernel) tiled F32 router candidate
-  from selection.
+  GPU, and the strict 1e-4 full-logit gate (checked over the full
+  requested generation length) currently blocks the faster tiled
+  candidates — including the 20x-faster-per-kernel tiled F32 router —
+  from 32-token selection; the selected vectorized-load RMSNorm
+  passes it with zero measured drift (bit-identical kernel).
 
 ## Roadmap
 
