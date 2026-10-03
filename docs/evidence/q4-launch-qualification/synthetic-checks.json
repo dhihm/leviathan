@@ -1,0 +1,212 @@
+{
+  "checks": [
+    {
+      "detail": "20 shapes (expected 20), sampled [0, 5, 15]",
+      "name": "resolver: v_eq_k global layer omits attn_v, every other required tensor resolves",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 schedule invalid: required hot-shape tensor blk.0.attn_v.weight missing on local layer 0",
+      "name": "resolver: missing LOCAL attn_v fails closed (never treated as shared)",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 schedule invalid: global layer 5 carries blk.5.attn_v.weight although V is shared with K (v_eq_k)",
+      "name": "resolver: attn_v present on a GLOBAL (v_eq_k) layer fails closed",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 schedule invalid: required hot-shape tensor blk.5.attn_k.weight missing on global layer 5",
+      "name": "resolver: missing GLOBAL attn_k fails closed",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 schedule invalid: hot shape blk.0.attn_q.weight is not a 2-D Q4_0 tensor",
+      "name": "resolver: non-Q4_0 required tensor fails closed",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 schedule invalid: hot shape blk.0.ffn_up.weight is not a 2-D Q4_0 tensor",
+      "name": "resolver: 3-D required tensor fails closed",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 schedule invalid: hot shape blk.0.ffn_down.weight dims invalid",
+      "name": "resolver: inDim not a 32-multiple fails closed",
+      "pass": true
+    },
+    {
+      "detail": "rejected: synthetic directory failure",
+      "name": "resolver: lookup errors propagate (never mapped to absent)",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 schedule invalid: hot shapes: layerCount 0 invalid",
+      "name": "resolver: layerCount 0 fails closed",
+      "pass": true
+    },
+    {
+      "detail": "21 shapes",
+      "name": "resolver: all-local architecture resolves attn_v on every sampled layer",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 schedule invalid: required hot-shape tensor blk.5.attn_v.weight missing on local layer 5",
+      "name": "resolver: all-local architecture with a missing attn_v fails closed",
+      "pass": true
+    },
+    {
+      "detail": "maxTotalThreadsPerThreadgroup 1024, threadExecutionWidth 32, ladder [32, 64, 128, 256, 1024]",
+      "name": "gpu: pipeline geometry recorded",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 component gate failed: runMatvec bounds invalid",
+      "name": "bounds: width above the pipeline maximum",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 component gate failed: runMatvec bounds invalid",
+      "name": "bounds: zero width",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 component gate failed: runMatvec bounds invalid",
+      "name": "bounds: non-power-of-two CANDIDATE width 48 rejected",
+      "pass": true
+    },
+    {
+      "detail": "",
+      "name": "bounds: non-power-of-two width 48 only via the explicit control path, bit-identical",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 component gate failed: runMatvec bounds invalid",
+      "name": "bounds: zero rows",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 component gate failed: runMatvec bounds invalid",
+      "name": "bounds: inDim not a 32-multiple",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 component gate failed: runMatvec buffers invalid: wb 4752 < 4752, xb 1024, yb 128 or aliasing",
+      "name": "bounds: undersized output buffer",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 component gate failed: runMatvec buffers invalid: wb 4752 < 4752, xb 1020, yb 132 or aliasing",
+      "name": "bounds: undersized input buffer",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 component gate failed: runMatvec buffers invalid: wb 4751 < 4752, xb 1024, yb 132 or aliasing",
+      "name": "bounds: undersized weight buffer",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 component gate failed: runMatvec buffers invalid: wb 4752 < 4770, xb 1024, yb 132 or aliasing",
+      "name": "bounds: weight offset past the extent",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 component gate failed: runMatvec bounds invalid",
+      "name": "bounds: negative weight offset",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 component gate failed: runMatvec buffers invalid: wb 4752 < 4752, xb 1024, yb 1024 or aliasing",
+      "name": "bounds: input aliases output",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 component gate failed: runMatvec buffers invalid: wb 4752 < 4752, xb 1024, yb 4752 or aliasing",
+      "name": "bounds: weights alias output",
+      "pass": true
+    },
+    {
+      "detail": "rejected: q4 component gate failed: runMatvec output must be CPU-visible shared storage (sentinel poisoning)",
+      "name": "bounds: private (non-CPU-visible) output storage rejected",
+      "pass": true
+    },
+    {
+      "detail": "",
+      "name": "bounds: overflow-safe ceil group formula",
+      "pass": true
+    },
+    {
+      "detail": "16 skipped rows, 17 written rows, width 32",
+      "name": "sentinel: rows skipped by a partial writer carry the exact NaN sentinel (no stale incumbent reuse)",
+      "pass": true
+    },
+    {
+      "detail": "",
+      "name": "sentinel: finite + bit-identity acceptance rejects the partial writer",
+      "pass": true
+    },
+    {
+      "detail": "worst rel 2.592e-07",
+      "name": "tail rows=33: incumbent default width 33 full-row finite, FP64 < 1e-4",
+      "pass": true
+    },
+    {
+      "detail": "groups 2, worst rel 2.592e-07",
+      "name": "tail rows=33 width=32: full-row finite, bit-identical, FP64 < 1e-4",
+      "pass": true
+    },
+    {
+      "detail": "groups 1, worst rel 2.592e-07",
+      "name": "tail rows=33 width=64: full-row finite, bit-identical, FP64 < 1e-4",
+      "pass": true
+    },
+    {
+      "detail": "groups 1, worst rel 2.592e-07",
+      "name": "tail rows=33 width=128: full-row finite, bit-identical, FP64 < 1e-4",
+      "pass": true
+    },
+    {
+      "detail": "groups 1, worst rel 2.592e-07",
+      "name": "tail rows=33 width=256: full-row finite, bit-identical, FP64 < 1e-4",
+      "pass": true
+    },
+    {
+      "detail": "groups 1, worst rel 2.592e-07",
+      "name": "tail rows=33 width=1024 (control): full-row finite, bit-identical, FP64 < 1e-4",
+      "pass": true
+    },
+    {
+      "detail": "worst rel 4.992e-07",
+      "name": "tail rows=1000: incumbent default width 1000 full-row finite, FP64 < 1e-4",
+      "pass": true
+    },
+    {
+      "detail": "groups 32, worst rel 4.992e-07",
+      "name": "tail rows=1000 width=32: full-row finite, bit-identical, FP64 < 1e-4",
+      "pass": true
+    },
+    {
+      "detail": "groups 16, worst rel 4.992e-07",
+      "name": "tail rows=1000 width=64: full-row finite, bit-identical, FP64 < 1e-4",
+      "pass": true
+    },
+    {
+      "detail": "groups 8, worst rel 4.992e-07",
+      "name": "tail rows=1000 width=128: full-row finite, bit-identical, FP64 < 1e-4",
+      "pass": true
+    },
+    {
+      "detail": "groups 4, worst rel 4.992e-07",
+      "name": "tail rows=1000 width=256: full-row finite, bit-identical, FP64 < 1e-4",
+      "pass": true
+    },
+    {
+      "detail": "groups 1, worst rel 4.992e-07",
+      "name": "tail rows=1000 width=1024 (control): full-row finite, bit-identical, FP64 < 1e-4",
+      "pass": true
+    }
+  ],
+  "failed": 0,
+  "mode": "synthetic",
+  "passed": 41
+}

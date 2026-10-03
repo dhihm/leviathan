@@ -955,6 +955,132 @@ public final class Gemma4Runner {
     /// cached across installs so matched arms never reallocate per layer).
     internal var moeScratch: (gu: MTLBuffer, act: MTLBuffer, dn: MTLBuffer)?
 
+    /// Phase-15 Q4 launch geometry: an optional threadgroup WIDTH for the
+    /// generic `g4_q4_matvec` launch ONLY (allowlist of exactly one
+    /// kernel — never the explicit/tiled/generated variants, which use
+    /// dispatchExplicit/dispatchPipeline and are untouched). The SAME
+    /// compiled pipeline and per-thread MSL arithmetic; ONLY the launch
+    /// width (and therefore the group count) changes. nil = the ORIGINAL
+    /// default `min(grid, pipeline max)` — unset behavior is bit-for-bit
+    /// unchanged. Persistent across reset(); uninstalled explicitly at
+    /// measurement-arm boundaries.
+    internal private(set) var q4LaunchWidth: Int?
+    /// Independent counters incremented in dispatch() itself (valid in
+    /// segment-batched mode): total generic g4_q4_matvec dispatches (the
+    /// ELIGIBLE population — derived from actual execution, never
+    /// hardcoded), candidate-width applications, and installations that
+    /// had to fall back to the default width (selection gates require
+    /// fallback == 0 and applied == eligible delta).
+    public private(set) var q4MatvecGenericDispatchCount = 0
+    public private(set) var q4LaunchAppliedCount = 0
+    public private(set) var q4LaunchFallbackCount = 0
+
+    /// The one allowlisted kernel for the launch-geometry pass.
+    public static let q4LaunchKernel = "g4_q4_matvec"
+
+    /// INTERNAL trial install (selection/verification arms; the public
+    /// production installer goes through the composite artifact). The
+    /// width must be positive and legal for the ACTUAL compiled pipeline
+    /// — illegal geometry throws, never clamps.
+    internal func installQ4LaunchTrial(width: Int) throws {
+        guard let p = pipelines[Self.q4LaunchKernel] else {
+            throw Gemma4Error.metalUnavailable
+        }
+        guard width > 0, width <= p.maxTotalThreadsPerThreadgroup else {
+            throw Gemma4Error.badTensorGeometry(
+                "Q4 launch width \(width) illegal (pipeline max "
+                + "\(p.maxTotalThreadsPerThreadgroup))")
+        }
+        q4LaunchWidth = width
+    }
+
+    /// Removes the launch geometry (arm boundaries / fallback baseline).
+    public func uninstallQ4LaunchGeometry() {
+        q4LaunchWidth = nil
+    }
+
+    /// The runner's CACHED compiled g4_q4_matvec pipeline: the exact
+    /// object the generic dispatch() launches. The phase-15 component
+    /// measures THIS pipeline, never a separately compiled copy.
+    internal func q4MatvecPipeline() throws -> MTLComputePipelineState {
+        guard let p = pipelines[Self.q4LaunchKernel] else {
+            throw Gemma4Error.metalUnavailable
+        }
+        return p
+    }
+
+    /// The runner's OWN Metal device and command queue (the device that
+    /// owns the resident weight mapping). Launch-geometry component runs
+    /// and composite/verification MoE compiles use these, never a second
+    /// MTLCreateSystemDefaultDevice() object.
+    internal var q4RunnerDevice: MTLDevice { device }
+    internal var q4RunnerQueue: MTLCommandQueue { queue }
+
+    /// The ACTUAL compiled g4_q4_matvec pipeline's threadgroup maximum
+    /// (the incumbent control width and the legality bound for the
+    /// phase-15 launch-geometry pass).
+    public func q4MatvecPipelineMaxThreads() throws -> Int {
+        try q4MatvecPipeline().maxTotalThreadsPerThreadgroup
+    }
+
+    /// FRESH-PROCESS VERIFICATION baseline setup (the phase-15 composite
+    /// verifier's E4 reference arm): HARD-PINNED to the accepted
+    /// E4_R32 schedule and its recorded phase-13 source SHA — arbitrary
+    /// schedules/hashes are rejected, so this exposes nothing beyond the
+    /// one recorded baseline. Compiles fresh, FAILS if the emission hash
+    /// drifted, then installs through the internal trial path. This
+    /// The hard pin itself (pure, testable): exactly the accepted E4_R32
+    /// schedule and the recorded phase-13 emission SHA.
+    public static func verificationBaselineIsHardPinned(
+        schedule: MoESchedule, sourceSha256: String) -> Bool {
+        schedule == MoESchedule(batch: 4, rowsPerGroup: 32)
+            && sourceSha256 == Q4LaunchArtifact.baselineMoeSourceSha256
+    }
+
+    /// approves NOTHING — the public composite installer validates the
+    /// full artifact separately.
+    public func installMoeBaselineForVerification(
+        region: MoERegionIR, schedule: MoESchedule,
+        expectedSourceSha256: String) throws {
+        guard Self.verificationBaselineIsHardPinned(
+                schedule: schedule, sourceSha256: expectedSourceSha256) else {
+            throw Gemma4Error.badTensorGeometry(
+                "verification baseline is hard-pinned to the accepted "
+                + "E4_R32 schedule and its recorded source SHA")
+        }
+        // The runner's OWN device (the device owning the resident
+        // weights), never a second MTLCreateSystemDefaultDevice() object.
+        let device = self.device
+        let kernels = try MoEEmittedKernels.compile(region: region,
+                                                    schedule: schedule, device: device)
+        guard MoEKernelEmitter.sourcesSha256([kernels.source]) == expectedSourceSha256 else {
+            throw Gemma4Error.badTensorGeometry(
+                "baseline E4 emission drifted — fresh selection required")
+        }
+        try installMoeTrialLowering(region: region, kernels: kernels)
+    }
+
+    /// Resident weight-mapping accessors for the launch-geometry
+    /// component measurement: the runner's OWN zero-copy mapped buffer
+    /// and tensor extents (offset == file offset; bounds were checked at
+    /// init). No component shadow copy of any weight tensor is made.
+    internal var residentWeightsBuffer: MTLBuffer? { weightsBuffer }
+    internal func tensorRef(_ name: String) -> G4TensorRef? { ref[name] }
+
+    /// State restore for the composite installer's atomicity: the prior
+    /// lowering state is captured BEFORE a coherent install and restored
+    /// if any later step throws (no partial success, no lost prior
+    /// install).
+    internal func snapshotLoweringState() -> (moe: MoEInstalledLowering?,
+                                              q4Width: Int?) {
+        (moeGenerated, q4LaunchWidth)
+    }
+    internal func restoreLoweringState(_ s: (moe: MoEInstalledLowering?,
+                                             q4Width: Int?)) {
+        moeGenerated = s.moe
+        q4LaunchWidth = s.q4Width
+    }
+
     /// PRODUCTION install of the generated MoE routed-region lowering:
     /// full artifact identity validation plus cross-checks against THIS
     /// runner (architecture binding via MoEModelBinding against the
@@ -1387,17 +1513,53 @@ public final class Gemma4Runner {
     internal func dispatch(_ name: String, grid: Int,
                           _ bind: (MTLComputeCommandEncoder) -> Void) throws {
         guard let pipeline = pipelines[name] else { throw Gemma4Error.metalUnavailable }
+        // Grid bounds BEFORE any segment opens: positive and within the
+        // kernels' uint indexing range. (Positive-grid behavior is
+        // unchanged; a nonpositive/overflowing grid now fails closed
+        // instead of launching a bogus geometry.)
+        guard grid > 0, grid <= Int(UInt32.max) else {
+            throw Gemma4Error.badTensorGeometry(
+                "grid \(grid) invalid for kernel \(name)")
+        }
         // Auto-segment mode (graph executor batching candidate): open a
         // segment lazily so consecutive GPU-only kernels across ops share
         // one command buffer; CPU readback flushes it.
         if openEnc == nil, autoSegment { try beginSegment() }
+        // Phase-15 Q4 launch geometry — the ONE width decision point,
+        // shared by BOTH submission branches (deferred and per-kernel)
+        // so a segment-batched decode and an attributed replay launch
+        // identical geometry. Allowlist: exactly g4_q4_matvec, the
+        // generic one-thread-per-row incumbent path (the explicit tiled
+        // kernels and every generated lowering go through
+        // dispatchExplicit/dispatchPipeline and are NOT affected). When
+        // no width is installed the ORIGINAL default is computed
+        // unchanged. The kernel guards `gid >= rows`, so ceil-group
+        // tails are correct for any legal width.
+        let width: Int
+        if name == Self.q4LaunchKernel {
+            q4MatvecGenericDispatchCount += 1
+            if let w = q4LaunchWidth {
+                if w > 0, w <= pipeline.maxTotalThreadsPerThreadgroup {
+                    width = w
+                    q4LaunchAppliedCount += 1
+                } else {
+                    q4LaunchFallbackCount += 1
+                    width = max(1, min(grid, pipeline.maxTotalThreadsPerThreadgroup))
+                }
+            } else {
+                width = max(1, min(grid, pipeline.maxTotalThreadsPerThreadgroup))
+            }
+        } else {
+            width = max(1, min(grid, pipeline.maxTotalThreadsPerThreadgroup))
+        }
+        // Overflow-safe ceil(grid/width): grid is already bounded by
+        // UInt32.max and width >= 1, so this cannot overflow.
+        let groups = (grid - 1) / width + 1
         if let deferredEnc = openEnc {
             let brT0 = breakdownInstrumentation ? Self.brNow() : 0
             defer { if breakdownInstrumentation { brEncodeMicros += Self.brNow() - brT0 } }
             deferredEnc.setComputePipelineState(pipeline)
             bind(deferredEnc)
-            let width = max(1, min(grid, pipeline.maxTotalThreadsPerThreadgroup))
-            let groups = (grid + width - 1) / width
             deferredEnc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
                                              threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
             dispatchCountTotal += 1   // count kernels, not buffers
@@ -1409,8 +1571,6 @@ public final class Gemma4Runner {
         }
         enc.setComputePipelineState(pipeline)
         bind(enc)
-        let width = max(1, min(grid, pipeline.maxTotalThreadsPerThreadgroup))
-        let groups = (grid + width - 1) / width
         enc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
                                  threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
         enc.endEncoding()

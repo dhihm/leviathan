@@ -56,9 +56,14 @@ public enum LoweringSelect {
     /// The ACTUAL compiled Forge SSA execution path (the serving engine's
     /// interpreter) under the unchanged pass-7 selected candidate. Both
     /// the incumbent and generated arms of a phase-13 selection run this.
-    public static func ssaForwardAdapters(graph: GemmaGraphIR)
+    /// `segmentBatching: false` is the DIAGNOSTIC per-kernel-attribution
+    /// variant (phase 14 profiling): the ONLY difference is submission
+    /// granularity — every kernel runs in its own command buffer so the
+    /// existing GPU start/end attribution applies per kernel.
+    public static func ssaForwardAdapters(graph: GemmaGraphIR,
+                                          segmentBatching: Bool = true)
             -> (ForwardMany, ForwardOne) {
-        let candidate = GemmaForgeCandidate(segmentBatching: true,
+        let candidate = GemmaForgeCandidate(segmentBatching: segmentBatching,
                                             top5Diagnostic: false,
                                             vectorizedLoads: true)
         let many: ForwardMany = { runner, tokens in
