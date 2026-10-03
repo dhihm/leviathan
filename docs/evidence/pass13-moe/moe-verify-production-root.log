@@ -1,0 +1,26 @@
+unoptimized incumbent reference [en-chat]: 32 steps
+unoptimized incumbent reference [kr-chat]: 32 steps
+unoptimized incumbent reference [raw-hello]: 32 steps
+production install OK: moegen_gu_E4_R32
+SSA replay [en-chat]: PASS, worst rel 0.000e+00; batched deltas 3120/3120/3120, merges 12480, fallbacks 0
+SSA replay [kr-chat]: PASS, worst rel 0.000e+00; batched deltas 3240/3240/3240, merges 12960, fallbacks 0
+SSA replay [raw-hello]: PASS, worst rel 0.000e+00; batched deltas 1980/1980/1980, merges 7920, fallbacks 0
+MOE_VERIFY_PRODUCTION_OK worst rel 0.000e+00 artifact 931deb8e3ded2f73…
+      133.63 real        16.11 user         9.46 sys
+          2636120064  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              917942  page reclaims
+               35652  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                3705  voluntary context switches
+              287585  involuntary context switches
+        105719553696  instructions retired
+         76446337701  cycles elapsed
+         16631420736  peak memory footprint

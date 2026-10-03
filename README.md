@@ -28,9 +28,33 @@ and validates the exported ATen graph into the same imported-weight
 Forge/Metal path (supported subset: `aten.linear.default` with bias and
 `aten.relu.default`, single static rank-2 chain; everything else fails
 closed with the offending op named). PyTorch is the model FRONTEND only —
-execution stays on the original Swift/Metal backend (no MLX, no new
-dependencies). The example weights are random
+execution stays on the original Swift/Metal backend (no MLX, no MPS
+runner wrapper, no new dependencies). The example weights are random
 initializations, not a trained model.
+
+**The Gemma routed-MoE expert region is now captured and lowered through
+this frontend too (pass 13)**: a user-authored `nn.Module` region
+(no-bias linear / split / GELU tanh / mul / stack over the routed
+slots) is captured with real `torch.export(strict=True)` on META
+tensors (no full float32 shadow), revalidated op-by-op by the Swift
+importer, and bound to the actual GGUF's all-30-layer expert tensors —
+then hardware-derived batched `E`×`R` Metal kernels (per-row arithmetic
+exactly the incumbent's, activation helpers embedded as the literal
+incumbent source) are gated bit-identical to the incumbent kernels plus
+a bounded FP64 oracle, strict-gated and measured on the SAME Forge SSA
+execution path (3 prompts × 32 steps, all logits, exact greedy; 3
+paired AB/BA × 31; fixed 2% policy), persisted as an identity-checked
+artifact, and re-proven by a separately launched fresh-process
+`moe-lower verify-production` run. Root's measured selection (E4_R32)
+reduced the matched policy metric by 21.9% vs the engine's own
+incumbent path — an incremental win, not a competitiveness claim. The
+host router and the original 8 ordered merges stay outside the capture;
+this is a scoped region lowering, not an arbitrary whole-LLM
+model.py compiler. See
+[docs/MOE_BATCH_LOWERING.md](docs/MOE_BATCH_LOWERING.md)
+(implementation + evidence) and
+[docs/MOE_BATCH_LOWERING_DESIGN.md](docs/MOE_BATCH_LOWERING_DESIGN.md)
+(historical design record).
 
 **Real-model Gemma 4 26B-A4B (QAT Q4_0) now runs end-to-end through the
 Forge pipeline** on an M1 Max — the original GGUF-backed tokenizer

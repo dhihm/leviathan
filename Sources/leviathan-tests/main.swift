@@ -3973,6 +3973,422 @@ if let gemmaPath, !gemmaPath.isEmpty, FileManager.default.fileExists(atPath: gem
     print("SKIP: real-model Gemma gates (set LEVIATHAN_GEMMA_GGUF to opt in)")
 }
 
+// MARK: - MoE routed-region lowering (phase 13)
+
+do {
+    // Fixtures captured by the REAL torch.export(strict=True) frontend
+    // (tools/moe_lower/export_moe_region.py): the actual Gemma-4 26B
+    // region and a tail region (topK 3) for GPU chunk-tail gates.
+    let fixtureDir = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().appendingPathComponent("tools/moe_lower/fixtures")
+    let realRegionJSON = try Data(contentsOf:
+        fixtureDir.appendingPathComponent("gemma4-26b-region.json"))
+    let realRegion = try MoERegionIR.parse(realRegionJSON)
+    checkEqual("moe region: real capture dims", realRegion.hidden, 2816)
+    checkEqual("moe region: inter", realRegion.expertIntermediate, 704)
+    checkEqual("moe region: topK", realRegion.topK, 8)
+    checkEqual("moe region: gateUpOut", realRegion.gateUpOut, 1408)
+    check("moe region: digest validates", moeIsLowercaseHex64(realRegion.graphSha256))
+    let tailRegion = try MoERegionIR.parse(try Data(contentsOf:
+        fixtureDir.appendingPathComponent("tail-region.json")))
+    checkEqual("moe region: tail topK", tailRegion.topK, 3)
+
+    // Tamper helpers: mutate the JSON, RECOMPUTE the canonical graph
+    // digest with the Swift importer itself, and re-parse — only the
+    // independent structural re-derivation can still catch these.
+    func tampered(_ mutate: (inout [String: Any]) -> Void) throws -> Data {
+        var obj = try JSONSerialization.jsonObject(with: realRegionJSON) as! [String: Any]
+        mutate(&obj)
+        let graphData = try JSONSerialization.data(withJSONObject: obj["graph"]!)
+        let graph = try JSONDecoder().decode(MoENormalizedGraph.self, from: graphData)
+        obj["graphSha256"] = graph.digest()
+        return try JSONSerialization.data(withJSONObject: obj)
+    }
+    func checkRegionReject(_ name: String, _ needle: String, _ data: Data) {
+        do {
+            _ = try MoERegionIR.parse(data)
+            failed += 1; print("FAIL: moe tamper rejected: \(name) (accepted)")
+        } catch {
+            let msg = "\(error)"
+            if msg.contains(needle) {
+                passed += 1; print("PASS: moe tamper rejected: \(name)")
+            } else {
+                failed += 1; print("FAIL: moe tamper rejected: \(name) — wrong error: \(msg)")
+            }
+        }
+    }
+    do { let d = try tampered { obj in obj["topK"] = 7 }
+         checkRegionReject("declared topK lies", "disagree with the graph-derived", d) }
+    do { let d = try tampered { obj in obj["hidden"] = 2815 }
+         checkRegionReject("declared hidden lies", "disagree with the graph-derived", d) }
+    do { // swap gate/up getitem indices on every slot (graph + digest updated)
+        let d = try tampered { obj in
+            var g = obj["graph"] as! [String: Any]
+            var nodes = g["nodes"] as! [[String: Any]]
+            for i in nodes.indices {
+                if nodes[i]["target"] as? String == "operator.getitem" {
+                    let args = nodes[i]["args"] as! [Any]
+                    if let idx = args[1] as? Int {
+                        var n = nodes[i]
+                        n["args"] = [args[0], idx == 0 ? 1 : 0]
+                        nodes[i] = n
+                    }
+                }
+            }
+            g["nodes"] = nodes; obj["graph"] = g
+        }
+        checkRegionReject("gate/up getitems swapped", "getitem", d) }
+    do { let d = try tampered { obj in
+        var g = obj["graph"] as! [String: Any]
+        var nodes = g["nodes"] as! [[String: Any]]
+        for i in nodes.indices where nodes[i]["target"] as? String == "aten.gelu.default" {
+            var n = nodes[i]
+            n["kwargs"] = ["approximate": "none"]
+            nodes[i] = n
+        }
+        g["nodes"] = nodes; obj["graph"] = g
+    }
+    checkRegionReject("gelu approximate=none", "tanh", d) }
+    do { let d = try tampered { obj in
+        var g = obj["graph"] as! [String: Any]
+        var nodes = g["nodes"] as! [[String: Any]]
+        nodes.append(["name": "extra_sin", "op": "call_function",
+                      "target": "aten.sin.default", "args": [[ "__node__": nodes[3]["name"] as! String]],
+                      "kwargs": [String: Any](), "meta": NSNull()])
+        g["nodes"] = nodes; obj["graph"] = g
+    }
+    checkRegionReject("extra aten.sin node", "unconsumed/extra graph node", d) }
+    do { let d = try tampered { obj in obj["region"] = "some.other.region" }
+         checkRegionReject("wrong region name", "unsupported region", d) }
+
+    // Emitter geometry: every (E, R) changes the emitted grid geometry.
+    let src1 = try MoEKernelEmitter.emit(region: tailRegion,
+                                         schedule: MoESchedule(batch: 2, rowsPerGroup: 32))
+    let src2 = try MoEKernelEmitter.emit(region: tailRegion,
+                                         schedule: MoESchedule(batch: 8, rowsPerGroup: 256))
+    check("moe emitter: schedules emit distinct geometry", src1 != src2)
+    check("moe emitter: kernel names parameterized",
+          src1.contains("moegen_gu_E2_R32") && src2.contains("moegen_dn_E8_R256"))
+    check("moe emitter: embeds the literal incumbent helpers",
+          src1.contains("static float g4_tanh")
+              && src1.contains("static float g4_gelu_up_value"))
+    let literalHelpers = try MoEKernelEmitter.literalActivationHelpers()
+    check("moe emitter: literal helpers are the incumbent source text",
+          src1.contains(literalHelpers))
+    do { _ = try MoEKernelEmitter.emit(region: tailRegion,
+                                       schedule: MoESchedule(batch: 3, rowsPerGroup: 32))
+         failed += 1; print("FAIL: moe emitter rejects E=3") } catch {
+        check("moe emitter: non-power-of-two E rejected", true) }
+
+    // Mapping-length helper (shared runner/forge formula).
+    checkEqual("moe maplen: aligned size unchanged",
+               MoEModelBinding.residentMappingLength(fileBytes: 4096, pageSize: 4096), 4096)
+    checkEqual("moe maplen: rounds up",
+               MoEModelBinding.residentMappingLength(fileBytes: 4097, pageSize: 4096), 8192)
+    checkEqual("moe maplen: 16K pages",
+               MoEModelBinding.residentMappingLength(fileBytes: 16384, pageSize: 16384), 16384)
+    check("moe maplen: overflow rejected",
+          MoEModelBinding.residentMappingLength(fileBytes: Int.max, pageSize: 4096) == nil)
+    check("moe maplen: invalid rejected",
+          MoEModelBinding.residentMappingLength(fileBytes: 0, pageSize: 4096) == nil)
+
+    // GPU scratch budget: the REAL region's payload is exactly the three
+    // device buffers (8 x (1408+704+2816) x 4 = 157696 B); the host-side
+    // setBytes id snapshots are NOT GPU scratch. Overflowing dims decode
+    // (validation deliberately bypassed to reach the arithmetic) must
+    // THROW, never wrap into a false fits.
+    let realScratch = try MoEScratch.budgetBytes(region: realRegion)
+    checkEqual("moe scratch: real region GPU bytes", realScratch, 157_696)
+    do {
+        var obj = try JSONSerialization.jsonObject(with: realRegionJSON) as! [String: Any]
+        obj["hidden"] = 1 << 60
+        obj["gateUpOut"] = 1 << 60
+        obj["topK"] = 1 << 60
+        let huge = try JSONDecoder().decode(
+            MoERegionIR.self, from: JSONSerialization.data(withJSONObject: obj))
+        do { _ = try MoEScratch.budgetBytes(region: huge)
+             failed += 1; print("FAIL: moe scratch overflow rejected") } catch {
+            check("moe scratch: overflowing dims throw (no wrap)", true) }
+        for (name, mutate) in [
+            ("zero topK", { (o: inout [String: Any]) in o["topK"] = 0 }),
+            ("zero hidden", { (o: inout [String: Any]) in o["hidden"] = 0 }),
+            ("negative inter", { (o: inout [String: Any]) in
+                o["expertIntermediate"] = -4 }),
+        ] as [(String, (inout [String: Any]) -> Void)] {
+            var z = try JSONSerialization.jsonObject(with: realRegionJSON) as! [String: Any]
+            mutate(&z)
+            let dec = try JSONDecoder().decode(
+                MoERegionIR.self, from: JSONSerialization.data(withJSONObject: z))
+            do { _ = try MoEScratch.budgetBytes(region: dec)
+                 failed += 1; print("FAIL: moe scratch rejects \(name)") } catch {
+                check("moe scratch: non-positive dims rejected (\(name))", true) }
+        }
+    }
+
+    // Schedule derivation fails CLOSED on invalid hardware caps (no
+    // silent width-1 fallback) and never overflows the w*2/4/8 ladder.
+    let realCaps = ForgeHardwareProfile(deviceName: "t", maxTotalThreadsPerThreadgroup: 1024,
+                                        threadExecutionWidth: 32,
+                                        recommendedMaxWorkingSetSize: 1 << 30)
+    let derived = try MoEScheduleDeriver.derive(region: realRegion, hardware: realCaps)
+    checkEqual("moe derive: real caps yield candidates", derived.count, 4 * 5)
+    for (name, hw) in [
+        ("zero width", ForgeHardwareProfile(deviceName: "t", maxTotalThreadsPerThreadgroup: 1024,
+                                            threadExecutionWidth: 0,
+                                            recommendedMaxWorkingSetSize: 1 << 30)),
+        ("negative max threads", ForgeHardwareProfile(deviceName: "t",
+                                                      maxTotalThreadsPerThreadgroup: -8,
+                                                      threadExecutionWidth: 32,
+                                                      recommendedMaxWorkingSetSize: 1 << 30)),
+        ("width above threadgroup cap", ForgeHardwareProfile(
+            deviceName: "t", maxTotalThreadsPerThreadgroup: 32,
+            threadExecutionWidth: 64, recommendedMaxWorkingSetSize: 1 << 30)),
+        ("working set below scratch", ForgeHardwareProfile(
+            deviceName: "t", maxTotalThreadsPerThreadgroup: 1024,
+            threadExecutionWidth: 32, recommendedMaxWorkingSetSize: 1024)),
+    ] as [(String, ForgeHardwareProfile)] {
+        do { _ = try MoEScheduleDeriver.derive(region: realRegion, hardware: hw)
+             failed += 1; print("FAIL: moe derive rejects \(name)") } catch {
+            check("moe derive: invalid caps rejected (\(name))", true) }
+    }
+    do { // width near Int.max: w*8 overflows — products are skipped, no crash
+        let huge = ForgeHardwareProfile(deviceName: "t", maxTotalThreadsPerThreadgroup: .max,
+                                        threadExecutionWidth: Int.max / 2,
+                                        recommendedMaxWorkingSetSize: 1 << 30)
+        let tiles = try MoEScheduleDeriver.derive(region: realRegion, hardware: huge)
+        check("moe derive: overflowing width ladder skips without crash",
+              !tiles.isEmpty && tiles.allSatisfy { $0.rowsPerGroup <= 1024 })
+    }
+
+    // Gate-policy SHAPE negatives: a full production-shaped record built
+    // via JSON (decode only — these test the policy, not capture), then
+    // rejections for diagnostic smoke, short refs, and a nonzero timing
+    // start position.
+    func gateRecordFixture(diagnostic: Bool, genTokens: Int, gatedSteps: Int,
+                           startIdx: Int, overflowRep: Int? = nil) throws
+                           -> MoEModelGateRecord {
+        func arms(_ wall: Double) -> [[String: Any]] {
+            MoEGatePolicy.productionFixtures.map { _ in
+                ["walls": [Double](repeating: wall, count: 31),
+                 "gpus": [Double](repeating: 10, count: 31),
+                 "startIdx": startIdx, "timedCount": 31] as [String: Any]
+            }
+        }
+        let reps = (0..<3).map { i in
+            ["candidateFirst": i % 2 == 1,
+             "candidate": arms(overflowRep == i ? 1e308 : 1.0),
+             "incumbent": arms(2.0)] as [String: Any]
+        }
+        let obj: [String: Any] = [
+            "gatePolicy": MoEGatePolicy.version,
+            "executionPath": MoEGatePolicy.executionPathSSA,
+            "diagnostic": diagnostic,
+            "genTokens": genTokens,
+            "timedTokens": MoEGatePolicy.productionTimedTokens,
+            "fixtures": MoEGatePolicy.productionFixtures.map {
+                ["name": $0, "promptTokenCount": 8, "gatedSteps": gatedSteps,
+                 "historyDigest": String(repeating: "a", count: 64)] as [String: Any]
+            },
+            "results": [[
+                "schedule": ["batch": 8, "rowsPerGroup": 128],
+                "fixturesPassed": 3, "fixturesFailed": 0, "worstRel": 1e-7,
+                "gateFailReason": NSNull(),
+                "wallMedPerFixture": [1.0, 1.0, 1.0],
+                "gpuMedPerFixture": [10.0, 10.0, 10.0],
+                "timingReps": reps] as [String: Any]],
+            "incumbentWallPerFixture": [2.0, 2.0, 2.0],
+            "incumbentGpuPerFixture": [20.0, 20.0, 20.0],
+            "performanceSelected": true,
+            "policyNote": "test",
+        ]
+        return try JSONDecoder().decode(MoEModelGateRecord.self,
+                                        from: JSONSerialization.data(withJSONObject: obj))
+    }
+    let sched8 = MoESchedule(batch: 8, rowsPerGroup: 128)
+    let good = try gateRecordFixture(diagnostic: false, genTokens: 32,
+                                     gatedSteps: 32, startIdx: 0)
+    check("moe policy: production shape accepted",
+          MoEGatePolicy.shapeValid(good, schedule: sched8))
+    check("moe policy: production winner recomputes",
+          MoEGatePolicy.recomputedSelection(good, schedule: sched8) == true)
+    check("moe policy: productionValid for honest winner",
+          MoEGatePolicy.productionValid(good, schedule: sched8))
+    let diagRec = try gateRecordFixture(diagnostic: true, genTokens: 32,
+                                        gatedSteps: 32, startIdx: 0)
+    check("moe policy: diagnostic smoke record rejected",
+          !MoEGatePolicy.shapeValid(diagRec, schedule: sched8))
+    let shortRec = try gateRecordFixture(diagnostic: false, genTokens: 2,
+                                         gatedSteps: 2, startIdx: 0)
+    check("moe policy: short (2-step) reference rejected",
+          !MoEGatePolicy.shapeValid(shortRec, schedule: sched8))
+    let truncRec = try gateRecordFixture(diagnostic: false, genTokens: 32,
+                                         gatedSteps: 17, startIdx: 0)
+    check("moe policy: EOS-truncated gated steps rejected",
+          !MoEGatePolicy.shapeValid(truncRec, schedule: sched8))
+    let shiftedRec = try gateRecordFixture(diagnostic: false, genTokens: 32,
+                                           gatedSteps: 32, startIdx: 5)
+    check("moe policy: nonzero timing start rejected",
+          !MoEGatePolicy.shapeValid(shiftedRec, schedule: sched8))
+    check("moe policy: wrong schedule rejected",
+          !MoEGatePolicy.shapeValid(good, schedule: MoESchedule(batch: 4, rowsPerGroup: 64)))
+    // One repetition whose individually finite walls overflow when summed
+    // (3 x 1e308 = inf) must invalidate the recompute — the median of
+    // [inf, 3, 3] would otherwise hide it.
+    let poisoned = try gateRecordFixture(diagnostic: false, genTokens: 32,
+                                         gatedSteps: 32, startIdx: 0, overflowRep: 1)
+    check("moe policy: single overflowing repetition invalidates recompute",
+          MoEGatePolicy.recomputedSelection(poisoned, schedule: sched8) == nil
+              && !MoEGatePolicy.productionValid(poisoned, schedule: sched8))
+
+    if let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() {
+        // GPU component gates at the TAIL region (topK 3, hidden 96, inter
+        // 32) with synthetic Q4_0 bytes: batched E in {1,2,4} (tails) must
+        // be BIT-IDENTICAL to the ACTUAL incumbent kernels on all slots,
+        // and both must sit inside the FP64 oracle contract.
+        let guStride = try MoEModelBinding.sliceStride(
+            inDim: tailRegion.hidden, outDim: tailRegion.gateUpOut,
+            MoELoweringError.invalidRegion)
+        let dnStride = try MoEModelBinding.sliceStride(
+            inDim: tailRegion.expertIntermediate, outDim: tailRegion.hidden,
+            MoELoweringError.invalidRegion)
+        var rng = SplitMix64(seed: 0x5A4C_4F57)
+        func syntheticBlocks(stride: Int, experts: Int) -> [UInt8] {
+            var blocks = [UInt8]()
+            blocks.reserveCapacity(stride * experts)
+            for _ in 0..<(stride * experts / 18) {
+                blocks += [UInt8(rng.next() & 0xFF), UInt8(rng.next() & 0xFF)]
+                let n = blocks.count
+                let expBits = (UInt16(blocks[n - 2]) | UInt16(blocks[n - 1]) << 8) & 0x7C00
+                if expBits == 0x7C00 { blocks[n - 2] = 0x00; blocks[n - 1] = 0x3C }
+                for _ in 0..<16 { blocks.append(UInt8(rng.next() & 0xFF)) }
+            }
+            return blocks
+        }
+        let guBlocks = syntheticBlocks(stride: guStride, experts: tailRegion.topK)
+        let dnBlocks = syntheticBlocks(stride: dnStride, experts: tailRegion.topK)
+        var xrng = SplitMix64(seed: 70_004)
+        let x = (0..<tailRegion.hidden).map { _ in xrng.nextUniform() }
+        let inc = try MoELoweringForge.runIncumbent(
+            device: device, queue: queue, region: tailRegion,
+            guBlocks: guBlocks, dnBlocks: dnBlocks, x: x)
+        let incRel = try MoELoweringForge.oracleRels(
+            region: tailRegion, guBlocks: guBlocks, dnBlocks: dnBlocks,
+            guGpu: inc.gu, actGpu: inc.act, dnGpu: inc.dn, x: x)
+        check("moe gpu: incumbent inside FP64 contract", incRel < 1e-4)
+        let caps = ForgeHardwareProfile(
+            deviceName: device.name, maxTotalThreadsPerThreadgroup: 1024,
+            threadExecutionWidth: 32,
+            recommendedMaxWorkingSetSize: Int(clamping: device.recommendedMaxWorkingSetSize))
+        for e in [1, 2, 4] {
+            // R ladder including padded-row tiles (last group partially
+            // active): the row-tile mapping must stay bit-identical.
+            for r in [32, 128, 256] {
+                let sched = MoESchedule(batch: e, rowsPerGroup: r)
+                guard sched.isLegal(region: tailRegion, hardware: caps) else { continue }
+                let kernels = try MoEEmittedKernels.compile(region: tailRegion,
+                                                            schedule: sched, device: device)
+                let out = try kernels.runComponent(region: tailRegion,
+                                                   guBlocks: guBlocks,
+                                                   dnBlocks: dnBlocks, x: x)
+                func bits(_ a: [Float], _ b: [Float]) -> Bool {
+                    a.count == b.count && zip(a, b).allSatisfy { $0.bitPattern == $1.bitPattern }
+                }
+                check("moe gpu: E\(e) R\(r) tail GU bit-identical to incumbent",
+                      bits(out.gu, inc.gu))
+                check("moe gpu: E\(e) R\(r) tail ACT bit-identical to incumbent",
+                      bits(out.act, inc.act))
+                check("moe gpu: E\(e) R\(r) tail DN bit-identical to incumbent",
+                      bits(out.dn, inc.dn))
+                let rel = try MoELoweringForge.oracleRels(
+                    region: tailRegion, guBlocks: guBlocks, dnBlocks: dnBlocks,
+                    guGpu: out.gu, actGpu: out.act, dnGpu: out.dn, x: x)
+                check("moe gpu: E\(e) R\(r) batched inside FP64 contract", rel < 1e-4)
+            }
+        }
+        // Fail-closed component guards: short weights and wrong-length x.
+        let kernels1 = try MoEEmittedKernels.compile(
+            region: tailRegion, schedule: MoESchedule(batch: 1, rowsPerGroup: 32),
+            device: device)
+        do { _ = try kernels1.runComponent(region: tailRegion,
+                                           guBlocks: Array(guBlocks.dropLast(18)),
+                                           dnBlocks: dnBlocks, x: x)
+             failed += 1; print("FAIL: moe short GU rejected") } catch {
+            check("moe component: short GU bytes rejected", true) }
+        do { _ = try kernels1.runComponent(region: tailRegion, guBlocks: guBlocks,
+                                           dnBlocks: dnBlocks, x: Array(x.dropLast()))
+             failed += 1; print("FAIL: moe short x rejected") } catch {
+            check("moe component: wrong-length x rejected", true) }
+
+        // PRE-REFACTOR vs factored g4_gelu_up bit gate: compile the OLD
+        // literal kernel (our own committed source, pre-helper form) and
+        // the CURRENT shader's kernel, compare bitPatterns on bounded,
+        // extreme, and tail inputs at the real n=704 geometry.
+        let oldGeluSource = """
+        #include <metal_stdlib>
+        using namespace metal;
+        static float g4_tanh(float x) {
+            float e = exp(-2.0f * fabs(x));
+            return copysign((1.0f - e) / (1.0f + e), x);
+        }
+        kernel void old_gelu_up(constant const uint& n [[buffer(0)]],
+                                device const float* gu [[buffer(1)]],
+                                device float* y [[buffer(2)]],
+                                uint gid [[thread_position_in_grid]]) {
+            uint i = gid;
+            if (i >= n) { return; }
+            float g = gu[i];
+            float u = gu[n + i];
+            float inner = 0.7978845608028654f * (g + 0.044715f * g * g * g);
+            float gelu = 0.5f * g * (1.0f + g4_tanh(inner));
+            y[i] = gelu * u;
+        }
+        """
+        let newLib = try device.makeLibrary(source: Gemma4Runner.shaderSource, options: nil)
+        let oldLib = try device.makeLibrary(source: oldGeluSource, options: nil)
+        let newFn = newLib.makeFunction(name: "g4_gelu_up")!
+        let oldFn = oldLib.makeFunction(name: "old_gelu_up")!
+        let newPipe = try device.makeComputePipelineState(function: newFn)
+        let oldPipe = try device.makeComputePipelineState(function: oldFn)
+        func runGelu(_ pipe: MTLComputePipelineState, _ input: [Float], n: Int) throws -> [Float] {
+            let guB = device.makeBuffer(bytes: input, length: input.count * 4,
+                                        options: .storageModeShared)!
+            let yB = device.makeBuffer(length: n * 4, options: .storageModeShared)!
+            let cmd = queue.makeCommandBuffer()!, enc = cmd.makeComputeCommandEncoder()!
+            var count = UInt32(n)
+            enc.setComputePipelineState(pipe)
+            enc.setBytes(&count, length: 4, index: 0)
+            enc.setBuffer(guB, offset: 0, index: 1)
+            enc.setBuffer(yB, offset: 0, index: 2)
+            enc.dispatchThreads(MTLSize(width: n, height: 1, depth: 1),
+                                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+            enc.endEncoding(); cmd.commit(); cmd.waitUntilCompleted()
+            guard cmd.status == .completed, cmd.error == nil else {
+                throw Gemma4Error.commandBufferFailed(
+                    "gelu bit gate kernel: \(String(describing: cmd.error))")
+            }
+            return [Float](UnsafeBufferPointer(
+                start: yB.contents().assumingMemoryBound(to: Float.self), count: n))
+        }
+        for (name, n, values) in [
+            ("bounded n=704", 704, (0..<2 * 704).map { i in
+                Float(i % 97) / 13.0 - 3.0 }),
+            ("extreme", 704, (0..<2 * 704).map { i in
+                i % 2 == 0 ? Float(1e30) : (i % 4 == 1 ? -1e30 : 1e-30) }),
+            ("tail n=3", 3, [0.5, -0.25, 8.0, -9.5, 1e20, 0.0]),
+        ] as [(String, Int, [Float])] {
+            let oldOut = try runGelu(oldPipe, values, n: n)
+            let newOut = try runGelu(newPipe, values, n: n)
+            let equal = zip(oldOut, newOut).allSatisfy { $0.bitPattern == $1.bitPattern }
+            check("moe gelu refactor bit gate: \(name)", equal)
+        }
+    } else {
+        print("SKIP: moe GPU gates (Metal unavailable)")
+    }
+} catch {
+    failed += 1; print("FAIL: moe region tests — threw \(error)")
+}
+
 // MARK: - Summary
 
 print("\(passed) passed, \(failed) failed")

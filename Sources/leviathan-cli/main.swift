@@ -1554,6 +1554,314 @@ case "forge":
             fail("q4-lower requires a mode: forge | verify | select")
         }
 
+    case "moe-lower":
+        // Phase 13 routed MoE region lowering: REAL torch.export(strict=True)
+        // region capture (tools/moe_lower/export_moe_region.py, validated
+        // and re-derived independently by the Swift importer) -> batched
+        // E in {1,2,4,8} x row-tile MSL emission (incumbent serial
+        // arithmetic, literal shared activation helpers) -> component
+        // bit-identity gates vs the ACTUAL incumbent kernels + FP64
+        // oracle -> persisted artifact with full identity binding.
+        // forge/verify run no model; select is the full bounded
+        // orchestration (see docs/MOE_BATCH_LOWERING_DESIGN.md).
+        let rest = Array(args.dropFirst())
+        let mode = rest.first ?? ""
+        switch mode {
+        case "forge":
+            let regionPath = requireValue("--region", args)
+            let outPath = requireValue("--out", args)
+            let ggufPath = requireValue("--gguf", args)
+            do {
+                let regionJSON = try Data(contentsOf: URL(fileURLWithPath: regionPath))
+                let (artifact, results, incumbentRel, region) = try MoELoweringForge.forge(
+                    regionJSON: regionJSON, ggufURL: URL(fileURLWithPath: ggufPath))
+                print(String(format: "region %@ [h %d, e %d, topK %d] incumbent rel-to-FP64: %.3e",
+                             region.region, region.hidden, region.expertIntermediate,
+                             region.topK, incumbentRel))
+                for r in results {
+                    print("  \(r.accepted ? "ACCEPT" : "REJECT") \(r.schedule.guKernelName): \(r.note)")
+                }
+                try artifact.save(to: URL(fileURLWithPath: outPath))
+                print("selected: \(artifact.schedule.guKernelName)")
+                print("artifact saved: \(outPath) (digest \(artifact.artifactDigest.prefix(16))…)")
+            } catch {
+                fail("moe-lower forge failed: \(error)")
+            }
+        case "verify":
+            let artifactPath = requireValue("--artifact", args)
+            let ggufPath = requireValue("--gguf", args)
+            do {
+                let artifact = try MoELoweringArtifact.load(
+                    from: URL(fileURLWithPath: artifactPath))
+                guard let device = MTLCreateSystemDefaultDevice() else {
+                    fail("moe-lower verify failed: Metal unavailable")
+                }
+                let ggufURL = URL(fileURLWithPath: ggufPath)
+                // Fresh binding against the ACTUAL file/device (page-
+                // rounded resident length) must equal the recorded one.
+                let fresh = try MoELoweringForge.bindRegion(
+                    region: artifact.region, file: try GGUFReader.read(ggufURL),
+                    device: device)
+                guard fresh == artifact.binding else {
+                    fail("moe-lower verify failed: recorded binding does not match this file/device")
+                }
+                try artifact.validate(region: artifact.region,
+                                      hardware: MoECurrentHardware.profile(),
+                                      ggufDigest: try GemmaForge.fileDigest(ggufURL),
+                                      executableDigest: try Gemma4Runner.executableDigest())
+                let status = artifact.modelGate == nil
+                    ? "component-only (diagnostic; not installable)"
+                    : (artifact.modelGate!.diagnostic
+                           ? "diagnostic smoke (not publicly installable)"
+                           : (artifact.modelGate!.performanceSelected
+                                  ? "production-selected"
+                                  : "gate-passed, incumbent retained (no policy win)"))
+                print("artifact VALID: \(artifact.schedule.guKernelName) "
+                    + "[h \(artifact.region.hidden), e \(artifact.region.expertIntermediate), "
+                    + "topK \(artifact.region.topK)] layers \(artifact.binding.layerCount) — \(status)")
+                print("codegen \(artifact.codegenVersion), graph sha \(artifact.region.graphSha256.prefix(16))…, "
+                    + "source sha \(artifact.sourceSha256.prefix(16))…")
+            } catch {
+                fail("moe-lower verify failed: \(error)")
+            }
+        case "select":
+            // Full bounded orchestration in ONE process (component gates +
+            // screen, per-finalist strict teacher-forced gates with
+            // dispatch/fallback proof, matched AB/BA paired timing, fixed
+            // 2% policy, persistence, reload proof). --smoke-test is the
+            // bounded PLUMBING path (raw-hello, gen 2 / timed 1): its
+            // record is tagged diagnostic and can never install publicly.
+            // The normal path is exactly 3 fixtures x 32 steps / 31 timed.
+            let regionPath = requireValue("--region", args)
+            let ggufPath = requireValue("--gguf", args)
+            let outPath = requireValue("--out", args)
+            let smokeTest = args.contains("--smoke-test")
+            let genTokens = args.firstIndex(of: "--gen-tokens").map { _ in
+                Int(requireValue("--gen-tokens", args)) ?? 0 } ?? (smokeTest ? 2 : 32)
+            let timedTokens = args.firstIndex(of: "--timed-tokens").map { _ in
+                Int(requireValue("--timed-tokens", args)) ?? 0 } ?? (smokeTest ? 1 : 31)
+            if smokeTest {
+                print("SMOKE MODE: raw-hello only, gen \(genTokens)/timed \(timedTokens) — "
+                    + "plumbing check, NOT a quality/performance proof")
+            } else {
+                guard genTokens == 32, timedTokens == 31 else {
+                    fail("production select requires --gen-tokens 32 and --timed-tokens 31")
+                }
+            }
+            let enText = args.firstIndex(of: "--text-en").map { _ in
+                requireValue("--text-en", args) } ?? "Hello, can you help me today?"
+            let krText = args.firstIndex(of: "--text-kr").map { _ in
+                requireValue("--text-kr", args) } ?? "안녕하세요, 오늘 날씨는 어떤가요?"
+            do {
+                let fileURL = URL(fileURLWithPath: ggufPath)
+                let graphPath = requireValue("--graph", args)
+                let graphHandle = try FileHandle(
+                    forReadingFrom: URL(fileURLWithPath: graphPath))
+                defer { try? graphHandle.close() }
+                guard let graphData = try graphHandle.read(upToCount: 8 << 20),
+                      !graphData.isEmpty else {
+                    fail("graph file unreadable: \(graphPath)")
+                }
+                let graph = try GemmaGraph.parse(graphData)
+                let tokenizer = try GemmaTokenizer(gguf: GGUFReader.read(fileURL))
+                func chatIds(_ text: String) throws -> [Int] {
+                    try tokenizer.encode(
+                        "<|turn>user\n" + text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>")
+                }
+                let fixtures = smokeTest
+                    ? [Q4LoweringForge.Q4Fixture(name: "raw-hello",
+                                                 tokens: try tokenizer.encode("Hello"))]
+                    : [
+                    Q4LoweringForge.Q4Fixture(name: "en-chat", tokens: try chatIds(enText)),
+                    Q4LoweringForge.Q4Fixture(name: "kr-chat", tokens: try chatIds(krText)),
+                    Q4LoweringForge.Q4Fixture(name: "raw-hello", tokens: try tokenizer.encode("Hello")),
+                ]
+                let runner = try Gemma4Runner(fileAt: fileURL)
+                let (_, log) = try MoELoweringForge.selectAndPersist(
+                    regionJSON: try Data(contentsOf: URL(fileURLWithPath: regionPath)),
+                    ggufURL: fileURL, graph: graph, runner: runner, fixtures: fixtures,
+                    genTokens: genTokens, timedTokens: timedTokens,
+                    isEndOfGeneration: { tokenizer.isEndOfGeneration($0) },
+                    diagnostic: smokeTest,
+                    saveTo: URL(fileURLWithPath: outPath))
+                for line in log { print(line) }
+                print("MOE_SELECT_COMPLETED -> \(outPath)")
+            } catch {
+                fail("moe-lower select failed: \(error)")
+            }
+        case "verify-production":
+            // FRESH-PROCESS production verification (required before any
+            // optimized default is accepted/published): identity/policy
+            // validation FIRST, then an UNOPTIMIZED incumbent reference on
+            // the actual Forge SSA path (the same engine primitives — this
+            // is not an independent semantic-quality proof; the FP64
+            // component oracle is bounded separately), then the artifact
+            // installed through the PUBLIC production path and the same
+            // histories replayed with ALL 262144 logits gated per step and
+            // per-stage dispatch DELTAS asserted. A two-token smoke record
+            // can NEVER install here; early EOS on any fixture is a FAIL.
+            let artifactPath = requireValue("--artifact", args)
+            let ggufPath = requireValue("--gguf", args)
+            let graphPath = requireValue("--graph", args)
+            do {
+                let artifact = try MoELoweringArtifact.load(
+                    from: URL(fileURLWithPath: artifactPath))
+                let fileURL = URL(fileURLWithPath: ggufPath)
+                // Identity + full production gate policy BEFORE any heavy
+                // reference work (public install enforces productionValid).
+                let ggufDigest = try GemmaForge.fileDigest(fileURL)
+                let graphHandle = try FileHandle(
+                    forReadingFrom: URL(fileURLWithPath: graphPath))
+                defer { try? graphHandle.close() }
+                guard let graphData = try graphHandle.read(upToCount: 8 << 20),
+                      !graphData.isEmpty else {
+                    fail("graph file unreadable: \(graphPath)")
+                }
+                let graph = try GemmaGraph.parse(graphData)
+                try artifact.validate(region: artifact.region,
+                                      hardware: MoECurrentHardware.profile(),
+                                      ggufDigest: ggufDigest,
+                                      executableDigest: try Gemma4Runner.executableDigest())
+                guard let gate = artifact.modelGate,
+                      MoEGatePolicy.productionValid(gate,
+                                                    schedule: artifact.schedule) else {
+                    fail("artifact is not production-valid (diagnostic/component-only "
+                         + "records never verify publicly)")
+                }
+                let tokenizer = try GemmaTokenizer(gguf: GGUFReader.read(fileURL))
+                let runner = try Gemma4Runner(fileAt: fileURL)
+                let (ssaMany, ssaOne) = LoweringSelect.ssaForwardAdapters(graph: graph)
+                // Recorded selection workloads must match EXACTLY (names,
+                // order, prompt lengths, recomputed history digests).
+                let enText = args.firstIndex(of: "--text-en").map { _ in
+                    requireValue("--text-en", args) } ?? "Hello, can you help me today?"
+                let krText = args.firstIndex(of: "--text-kr").map { _ in
+                    requireValue("--text-kr", args) } ?? "안녕하세요, 오늘 날씨는 어떤가요?"
+                func chatIds(_ text: String) throws -> [Int] {
+                    try tokenizer.encode(
+                        "<|turn>user\n" + text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>")
+                }
+                let prompts: [(String, [Int])] = [
+                    ("en-chat", try chatIds(enText)),
+                    ("kr-chat", try chatIds(krText)),
+                    ("raw-hello", try tokenizer.encode("Hello")),
+                ]
+                guard prompts.map(\.0) == gate.fixtures.map(\.name) else {
+                    fail("fixture names/order differ from the recorded selection")
+                }
+                let genTokens = MoEGatePolicy.productionGenTokens
+
+                // Unoptimized incumbent reference (SSA path, nothing installed).
+                runner.uninstallMoeGeneratedLowering()
+                var refs: [(name: String, prompt: [Int], ids: [Int], logits: [[Float]])] = []
+                for (name, prompt) in prompts {
+                    try LoweringSelect.ssaReset(runner)
+                    let (am0, lg0) = try ssaMany(runner, prompt)
+                    guard lg0.count == runner.config.vocabSize,
+                          lg0.allSatisfy({ $0.isFinite }) else {
+                        fail("incumbent reference [\(name)]: nonfinite/wrong-size logits")
+                    }
+                    var ids = [am0]
+                    var logits = [lg0]
+                    var prev = am0
+                    while ids.count < genTokens {
+                        if tokenizer.isEndOfGeneration(prev) { break }
+                        let (am, lg) = try ssaOne(runner, prev)
+                        ids.append(am); logits.append(lg); prev = am
+                    }
+                    // Early EOS is a verification FAIL: the production
+                    // record required exactly 32 gated steps.
+                    guard ids.count == genTokens else {
+                        fail("incumbent reference [\(name)]: only \(ids.count) steps "
+                             + "(EOS) — production requires exactly \(genTokens)")
+                    }
+                    refs.append((name, prompt, ids, logits))
+                    print("unoptimized incumbent reference [\(name)]: \(ids.count) steps")
+                }
+                // Recorded workload digests must match the recomputed ones.
+                for (i, ref) in refs.enumerated() {
+                    var history = ref.prompt
+                    history.append(contentsOf: ref.ids.dropLast())
+                    let digest = GemmaForge.workloadDigest(history)
+                    guard gate.fixtures[i].promptTokenCount == ref.prompt.count,
+                          gate.fixtures[i].historyDigest == digest else {
+                        fail("fixture \(ref.name): workload digest/prompt length "
+                             + "differs from the recorded selection")
+                    }
+                }
+
+                // PUBLIC production install + teacher-forced SSA replay.
+                try runner.installMoeGeneratedLowering(artifact: artifact,
+                                                       ggufDigest: ggufDigest)
+                print("production install OK: \(artifact.schedule.guKernelName)")
+                let layerCount = artifact.binding.layerCount
+                let topK = artifact.region.topK
+                let eSel = artifact.schedule.batch
+                var worstAll = 0.0
+                for ref in refs {
+                    let gu0 = runner.moeGuDispatchCount, act0 = runner.moeActDispatchCount
+                    let dn0 = runner.moeDnDispatchCount, m0 = runner.moeAxpyMergeCount
+                    let fb0 = runner.moeResidentFallbackCount
+                    var armIds = [Int]()
+                    var logits = [[Float]]()
+                    let (am0, lg0) = try ssaMany(runner, ref.prompt)
+                    armIds.append(am0); logits.append(lg0)
+                    for s in 0..<(ref.ids.count - 1) {
+                        let (am, lg) = try ssaOne(runner, ref.ids[s])
+                        armIds.append(am); logits.append(lg)
+                    }
+                    guard armIds.count == genTokens else {
+                        fail("replay [\(ref.name)]: \(armIds.count) steps (EOS) — FAIL")
+                    }
+                    for s in 0..<ref.ids.count {
+                        let lg = logits[s]
+                        let want = ref.logits[s]
+                        guard lg.count == want.count,
+                              lg.allSatisfy({ $0.isFinite }) else {
+                            fail("verify-production [\(ref.name)] step \(s): nonfinite/shape")
+                        }
+                        let argmax = lg.enumerated().max { $0.element < $1.element }!.offset
+                        guard argmax == ref.ids[s] else {
+                            fail("verify-production [\(ref.name)] step \(s): greedy mismatch")
+                        }
+                        for i in 0..<lg.count {
+                            worstAll = max(worstAll, abs(Double(lg[i] - want[i]))
+                                           / max(1.0, abs(Double(want[i]))))
+                        }
+                        if worstAll >= 1e-4 {
+                            fail(String(format: "verify-production [%@] step %d outside 1e-4 (%.3e)",
+                                        ref.name, s, worstAll))
+                        }
+                    }
+                    let forwards = ref.prompt.count + ref.ids.count - 1
+                    let wantBatched = 3 * ((topK + eSel - 1) / eSel) * layerCount * forwards
+                    let wantMerges = topK * layerCount * forwards
+                    let dGu = runner.moeGuDispatchCount - gu0
+                    let dAct = runner.moeActDispatchCount - act0
+                    let dDn = runner.moeDnDispatchCount - dn0
+                    let dM = runner.moeAxpyMergeCount - m0
+                    let dFb = runner.moeResidentFallbackCount - fb0
+                    guard dGu == wantBatched / 3, dAct == wantBatched / 3,
+                          dDn == wantBatched / 3, dM == wantMerges, dFb == 0 else {
+                        fail("verify-production [\(ref.name)]: dispatch deltas "
+                             + "GU \(dGu)/\(wantBatched / 3) ACT \(dAct) DN \(dDn) "
+                             + "merges \(dM)/\(wantMerges) fallbacks \(dFb)")
+                    }
+                    print(String(format: "SSA replay [%@]: PASS, worst rel %.3e; batched deltas %d/%d/%d, merges %d, fallbacks 0",
+                                 ref.name, worstAll, dGu, dAct, dDn, dM))
+                }
+                runner.uninstallMoeGeneratedLowering()
+                print(String(format: "MOE_VERIFY_PRODUCTION_OK worst rel %.3e artifact %@",
+                             worstAll, artifact.artifactDigest.prefix(16) + "…"))
+            } catch {
+                fail("moe-lower verify-production failed: \(error)")
+            }
+        default:
+            fail("moe-lower requires a mode: forge | verify | select")
+        }
+
     case "rms-lower":
         // Phase 10 parameterized serial-order-preserving cooperative
         // RMSNorm lowering (one family). Python op input (captured by

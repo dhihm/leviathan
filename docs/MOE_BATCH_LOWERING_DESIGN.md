@@ -1,5 +1,9 @@
 # MoE Routed-Expert Batch Lowering — Design (UNIMPLEMENTED, for root review)
 
+> Historical design record (pass-13 planning). Superseded by the
+> implemented-and-measured [MOE_BATCH_LOWERING.md](MOE_BATCH_LOWERING.md);
+> the status below was accurate at authoring time.
+
 Status: **DESIGN ONLY. Not implemented, not measured, no performance claim.**
 Authored while the frozen engine `012ff4d7…` ran the strict 32-step RMS select
 (completed: run 57271 EXIT 0, selected T32_float4 at 6.31% policy; see

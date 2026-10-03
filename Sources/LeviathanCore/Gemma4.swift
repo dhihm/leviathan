@@ -500,9 +500,10 @@ public final class Gemma4Runner {
                 throw Gemma4Error.mmapFailed(errno: errno)
             }
             let pageSize = GemmaRunner.pageSize
-            let (mapLenRaw, of) = Int(st.st_size).addingReportingOverflow(pageSize - 1)
-            guard !of else { throw Gemma4Error.mmapFailed(errno: 0) }
-            let mapLen = mapLenRaw / pageSize * pageSize
+            guard let mapLen = MoEModelBinding.residentMappingLength(
+                fileBytes: Int(st.st_size), pageSize: pageSize) else {
+                throw Gemma4Error.mmapFailed(errno: 0)
+            }
             guard let raw = mmap(nil, mapLen, PROT_READ, MAP_SHARED, fd, 0), raw != MAP_FAILED else {
                 throw Gemma4Error.mmapFailed(errno: errno)
             }
@@ -619,6 +620,10 @@ public final class Gemma4Runner {
             expertCache?.noteInitAllocated()
         }
     }
+
+    /// The ACTUAL host page size the resident mapping rounds to (shared
+    /// with the MoE model binding so forge/verify/install agree exactly).
+    public static var residentPageSize: Int { GemmaRunner.pageSize }
 
     fileprivate enum GemmaRunner {
         static let pageSize: Int = {
@@ -925,6 +930,275 @@ public final class Gemma4Runner {
         q4GeneratedBoundOutDim = nil
         q4GeneratedBoundView = nil
         q4GeneratedArtifactDigest = nil
+    }
+
+    // MARK: phase-13 generated MoE routed-region lowering
+
+    /// The installed batched routed-expert lowering (resident-GGUF mode
+    /// only). Installation goes ONLY through installMoeGeneratedLowering
+    /// (full artifact identity validation) or the internal trial installer
+    /// used by the bounded selection orchestration.
+    internal private(set) var moeGenerated: MoEInstalledLowering?
+    /// Independent dispatch counters incremented in the routed loop itself
+    /// (valid in segment-batched mode): batched math dispatches, ordered
+    /// axpy merges through the down-scratch slots, and routed iterations
+    /// that FELL BACK to the incumbent serial loop (cache mode) while a
+    /// lowering was installed — selection gates require fallback == 0.
+    public private(set) var moeGeneratedDispatchCount = 0
+    public private(set) var moeGuDispatchCount = 0
+    public private(set) var moeActDispatchCount = 0
+    public private(set) var moeDnDispatchCount = 0
+    public private(set) var moeAxpyMergeCount = 0
+    public private(set) var moeResidentFallbackCount = 0
+    /// Once-per-engine batched scratch (three separate allocations, all
+    /// topK slots retained, bounded by MoEModelBinding.scratchBudgetBytes;
+    /// cached across installs so matched arms never reallocate per layer).
+    internal var moeScratch: (gu: MTLBuffer, act: MTLBuffer, dn: MTLBuffer)?
+
+    /// PRODUCTION install of the generated MoE routed-region lowering:
+    /// full artifact identity validation plus cross-checks against THIS
+    /// runner (architecture binding via MoEModelBinding against the
+    /// runner's own mapped file and device). Any mismatch throws BEFORE
+    /// any state changes; the incumbent routed loop stays active.
+    public func installMoeGeneratedLowering(artifact: MoELoweringArtifact,
+                                            ggufDigest: String) throws {
+        guard let gate = artifact.modelGate else {
+            throw MoELoweringError.invalidArtifact(
+                "component-only artifact: no model-gate record, not installable")
+        }
+        // PUBLIC install requires the FULL production gate record for the
+        // artifact's selected schedule — the fixed 2% policy is RECOMPUTED
+        // from the paired arms, and diagnostic (smoke) records are
+        // rejected outright. A slower kernel must never auto-activate.
+        guard MoEGatePolicy.productionValid(gate, schedule: artifact.schedule) else {
+            throw MoELoweringError.invalidArtifact(
+                "gate record is not production-valid (diagnostic smoke records, "
+                    + "component-only artifacts, and non-selected candidates "
+                    + "cannot install publicly)")
+        }
+        try artifact.validate(region: artifact.region,
+                              hardware: try MoECurrentHardware.profile(),
+                              ggufDigest: ggufDigest,
+                              executableDigest: try Self.executableDigest())
+        // Fresh binding against THIS runner's resident mapping and device:
+        // must match the artifact's recorded binding EXACTLY.
+        let binding = try Self.moeBinding(for: artifact.region, runner: self)
+        guard binding == artifact.binding else {
+            throw MoELoweringError.invalidArtifact(
+                "fresh model binding differs from the artifact's recorded binding")
+        }
+        let kernels = try MoEEmittedKernels.compile(region: artifact.region,
+                                                    schedule: artifact.schedule,
+                                                    device: device)
+        guard kernels.source == artifact.emittedSource else {
+            throw MoELoweringError.invalidArtifact("compiled source differs from artifact")
+        }
+        moeGenerated = MoEInstalledLowering(
+            region: artifact.region, schedule: artifact.schedule,
+            kernels: kernels, binding: binding,
+            artifactDigest: artifact.artifactDigest)
+    }
+
+    /// TRIAL installation for the bounded selection orchestration
+    /// (component gates already run by the caller).
+    internal func installMoeTrialLowering(region: MoERegionIR,
+                                          kernels: MoEEmittedKernels) throws {
+        let binding = try Self.moeBinding(for: region, runner: self)
+        guard kernels.source == (try MoEKernelEmitter.emit(region: region,
+                                                           schedule: kernels.schedule)) else {
+            throw MoELoweringError.invalidArtifact(
+                "kernel source not the canonical emission")
+        }
+        moeGenerated = MoEInstalledLowering(
+            region: region, schedule: kernels.schedule, kernels: kernels,
+            binding: binding, artifactDigest: "trial:" + kernels.schedule.guKernelName)
+    }
+
+    /// Shared crosscheck: the validated region must bind THIS runner's
+    /// architecture exactly (metadata, every layer's expert tensors,
+    /// device caps, scratch budget) via the immutable model binding.
+    static func moeBinding(for region: MoERegionIR, runner: Gemma4Runner) throws -> MoEModelBinding {
+        guard runner.expertCache == nil else {
+            throw MoELoweringError.invalidArtifact(
+                "MoE lowering binds the resident mapping, not expert-cache mode")
+        }
+        guard let wb = runner.weightsBuffer else {
+            throw Gemma4Error.metalUnavailable
+        }
+        return try MoEModelBinding.bind(
+            region: region, file: runner.ggufFile,
+            residentBufferLength: wb.length,
+            maxBufferLength: runner.device.maxBufferLength,
+            recommendedWorkingSetSize: Int(clamping: runner.device.recommendedMaxWorkingSetSize))
+    }
+
+    /// Removes the batched lowering (matched measurement arms / fallback).
+    /// The cached scratch stays (bounded, reused by the next install).
+    public func uninstallMoeGeneratedLowering() {
+        moeGenerated = nil
+    }
+
+    /// Internal fallback-counter recording for other engine paths (the
+    /// compiled SSA interpreter's expert chain) that keep the incumbent
+    /// serial loop while a lowering is installed.
+    internal func recordMoeResidentFallback() {
+        moeResidentFallbackCount += 1
+    }
+
+    /// Allocates the three batched scratch buffers once per engine,
+    /// validated against the binding's checked sizes and checked for
+    /// non-identity with every original mutable buffer.
+    internal func ensureMoeScratch(_ binding: MoEModelBinding) throws -> (gu: MTLBuffer, act: MTLBuffer, dn: MTLBuffer) {
+        if let s = moeScratch {
+            guard s.gu.length == binding.guScratchBytes,
+                  s.act.length == binding.actScratchBytes,
+                  s.dn.length == binding.dnScratchBytes else {
+                throw Gemma4Error.badTensorGeometry("cached MoE scratch sizes disagree with binding")
+            }
+            guard s.gu !== s.act, s.gu !== s.dn, s.act !== s.dn else {
+                throw Gemma4Error.badTensorGeometry("cached MoE scratch aliases itself")
+            }
+            return s
+        }
+        guard let gu = device.makeBuffer(length: binding.guScratchBytes,
+                                         options: .storageModeShared),
+              let act = device.makeBuffer(length: binding.actScratchBytes,
+                                          options: .storageModeShared),
+              let dn = device.makeBuffer(length: binding.dnScratchBytes,
+                                         options: .storageModeShared) else {
+            throw Gemma4Error.metalUnavailable
+        }
+        for b in [gu, act, dn] {
+            guard gu !== act, gu !== dn, act !== dn else {
+                throw Gemma4Error.badTensorGeometry("MoE scratch aliases itself")
+            }
+            for orig in [bufX, bufH, bufT1, bufT2, bufT3, bufKV, bufGU, bufAct]
+            where orig != nil {
+                guard b !== orig else {
+                    throw Gemma4Error.badTensorGeometry("MoE scratch aliases an engine buffer")
+                }
+            }
+        }
+        let s = (gu, act, dn)
+        moeScratch = s
+        return s
+    }
+
+    /// The batched resident routed-expert region: chunked GU/ACT/DN
+    /// dispatches over the top-K experts (offsets as immutable setBytes
+    /// snapshots from the validated binding), then the SAME 8 original
+    /// ordered axpy merges reading each slot's down output via checked
+    /// byte offset. Fail-closed on any guard — a resident-mode guard
+    /// failure while a lowering is installed is an ERROR, never a silent
+    /// fallback (the cache-mode loop keeps the incumbent serial path).
+    /// Explicit-buffer form shared by the DIRECT forward path (bufH ->
+    /// bufT3) and the compiled SSA interpreter's expert_matvec_chain (its
+    /// own validated input/output values): x must carry exactly hidden
+    /// floats, y must hold hidden floats of accumulator, and neither may
+    /// alias the batched scratch.
+    internal func runMoeBatchedRouted(x: MTLBuffer, y: MTLBuffer,
+                                      layer: Int, topIdx: [Int],
+                                      weights: [Float],
+                                      installed: MoEInstalledLowering) throws {
+        let region = installed.region
+        let schedule = installed.schedule
+        let binding = installed.binding
+        guard expertCache == nil else {
+            moeResidentFallbackCount += 1
+            throw Gemma4Error.badTensorGeometry(
+                "batched routed region requires resident mode")
+        }
+        guard config.topKExperts == region.topK,
+              config.expertIntermediate == region.expertIntermediate,
+              config.hiddenSize == region.hidden else {
+            throw Gemma4Error.badTensorGeometry(
+                "installed MoE region dims disagree with this model")
+        }
+        guard x.length >= region.hidden * 4, y.length >= region.hidden * 4 else {
+            throw Gemma4Error.badTensorGeometry(
+                "batched routed buffers too small for hidden \(region.hidden)")
+        }
+        let scratch = try ensureMoeScratch(binding)
+        guard scratch.gu !== x, scratch.act !== x, scratch.dn !== x,
+              scratch.gu !== y, scratch.act !== y, scratch.dn !== y else {
+            throw Gemma4Error.badTensorGeometry(
+                "batched scratch aliases the routed input/accumulator")
+        }
+        let topK = region.topK
+        // Merge coefficients: exactly topK, all finite, checked BEFORE use.
+        guard weights.count == topK,
+              weights.allSatisfy({ $0.isFinite }) else {
+            throw Gemma4Error.badTensorGeometry(
+                "routed merge weights must be \(topK) finite values")
+        }
+        // Immutable per-route offsets (exact slot order, distinct checked).
+        let offs = try binding.offsets(forLayer: layer, expertIds: topIdx)
+        let guOffs = offs.gu
+        let dnOffs = offs.dn
+        let e = schedule.batch
+        let r = schedule.rowsPerGroup
+        var chunkStart = 0
+        while chunkStart < topK {
+            let chunkSlots = min(e, topK - chunkStart)
+            let slotBase = chunkStart
+            // Host-checked chunk bounds (the kernels trust p.z/p.w).
+            guard slotBase + chunkSlots <= topK, chunkSlots > 0, chunkSlots <= e else {
+                throw Gemma4Error.badTensorGeometry("chunk bounds violated")
+            }
+            var gp = SIMD4<UInt32>(UInt32(region.hidden), UInt32(region.gateUpOut),
+                                   UInt32(chunkSlots), UInt32(slotBase))
+            let guRows = chunkSlots * region.gateUpOut
+            try dispatchPipeline(installed.kernels.guPipeline,
+                                 name: schedule.guKernelName,
+                                 groups: (guRows + r - 1) / r, threads: r) { enc in
+                enc.setBytes(&gp, length: MemoryLayout<SIMD4<UInt32>>.stride, index: 0)
+                guOffs.withUnsafeBytes { raw in
+                    enc.setBytes(raw.baseAddress!, length: raw.count, index: 1)
+                }
+                enc.setBuffer(self.weightsBuffer, offset: 0, index: 2)
+                enc.setBuffer(x, offset: 0, index: 3)
+                enc.setBuffer(scratch.gu, offset: 0, index: 4)
+            }
+            moeGuDispatchCount += 1
+            var ap = SIMD3<UInt32>(UInt32(region.expertIntermediate),
+                                   UInt32(chunkSlots), UInt32(slotBase))
+            let actThreads = min(1024, installed.kernels.actPipeline.maxTotalThreadsPerThreadgroup)
+            let actCount = chunkSlots * region.expertIntermediate
+            try dispatchPipeline(installed.kernels.actPipeline,
+                                 name: schedule.actKernelName,
+                                 groups: (actCount + actThreads - 1) / actThreads,
+                                 threads: actThreads) { enc in
+                enc.setBytes(&ap, length: MemoryLayout<SIMD3<UInt32>>.stride, index: 0)
+                enc.setBuffer(scratch.gu, offset: 0, index: 1)
+                enc.setBuffer(scratch.act, offset: 0, index: 2)
+            }
+            moeActDispatchCount += 1
+            var dp = SIMD4<UInt32>(UInt32(region.expertIntermediate),
+                                   UInt32(region.hidden),
+                                   UInt32(chunkSlots), UInt32(slotBase))
+            let dnRows = chunkSlots * region.hidden
+            try dispatchPipeline(installed.kernels.dnPipeline,
+                                 name: schedule.dnKernelName,
+                                 groups: (dnRows + r - 1) / r, threads: r) { enc in
+                enc.setBytes(&dp, length: MemoryLayout<SIMD4<UInt32>>.stride, index: 0)
+                dnOffs.withUnsafeBytes { raw in
+                    enc.setBytes(raw.baseAddress!, length: raw.count, index: 1)
+                }
+                enc.setBuffer(self.weightsBuffer, offset: 0, index: 2)
+                enc.setBuffer(scratch.act, offset: 0, index: 3)
+                enc.setBuffer(scratch.dn, offset: 0, index: 4)
+            }
+            moeDnDispatchCount += 1
+            moeGeneratedDispatchCount += 3
+            chunkStart += chunkSlots
+        }
+        // The 8 ORIGINAL ordered axpy merges, unchanged arithmetic, each
+        // reading its slot's batched down output via checked byte offset.
+        for slot in 0..<topK {
+            try axpy(x: scratch.dn, xOffset: slot * region.hidden * 4,
+                     y: y, c: weights[slot], n: region.hidden)
+            moeAxpyMergeCount += 1
+        }
     }
 
     /// PRODUCTION install of the phase-10 generated RMSNorm kernel: full
@@ -1719,15 +1993,26 @@ public final class Gemma4Runner {
         }
     }
 
-    internal func axpy(x: MTLBuffer, y: MTLBuffer, c: Float, n: Int) throws {
-        guard x.length >= n * 4, y.length >= n * 4 else {
-            throw Gemma4Error.badTensorGeometry("axpy buffer too small for n=\(n)")
+    internal func axpy(x: MTLBuffer, xOffset: Int = 0,
+                       y: MTLBuffer, c: Float, n: Int) throws {
+        // Checked bounds BEFORE any dispatch: positive n within UInt32,
+        // 4-byte-aligned non-negative offset, overflow-checked span.
+        guard n > 0, n <= Int(UInt32.max), xOffset >= 0, xOffset % 4 == 0,
+              c.isFinite else {
+            throw Gemma4Error.badTensorGeometry(
+                "axpy bounds: n=\(n) xOffset=\(xOffset) c=\(c)")
+        }
+        let (n4, of1) = n.multipliedReportingOverflow(by: 4)
+        let (span, of2) = of1 ? (0, true) : n4.addingReportingOverflow(xOffset)
+        guard !of1, !of2, x.length >= span, y.length >= n4 else {
+            throw Gemma4Error.badTensorGeometry(
+                "axpy buffer too small for n=\(n) xOffset=\(xOffset)")
         }
         var count = UInt32(n)
         var cc = c
         try dispatch("g4_axpy", grid: n) { enc in
             enc.setBytes(&count, length: MemoryLayout<UInt32>.stride, index: 0)
-            enc.setBuffer(x, offset: 0, index: 1)
+            enc.setBuffer(x, offset: xOffset, index: 1)
             enc.setBuffer(y, offset: 0, index: 2)
             enc.setBytes(&cc, length: MemoryLayout<Float>.stride, index: 3)
         }
@@ -2172,6 +2457,20 @@ public final class Gemma4Runner {
         // experts (cache mode only; never evicts, no async overlap).
         try prefetchExperts(layer: layer, topIdx: topIdx)
         memset(bufT3.contents(), 0, hidden * 4)   // MoE accumulator
+        if let installed = moeGenerated, expertCache == nil {
+            // Phase-13 batched generated lowering (resident mode only):
+            // chunked GU/ACT/DN dispatches + the SAME 8 ordered axpy
+            // merges. Fail-closed on any guard — never a silent fallback.
+            try runMoeBatchedRouted(x: bufH, y: bufT3, layer: layer,
+                                    topIdx: topIdx, weights: weights,
+                                    installed: installed)
+        } else {
+        if moeGenerated != nil, expertCache != nil {
+            // A lowering is installed but this runner streams experts:
+            // the incumbent serial loop runs (safe cached fallback) and
+            // the counter makes it visible to the selection gates.
+            moeResidentFallbackCount += 1
+        }
         for (slot, expert) in topIdx.enumerated() {
             if expertCache != nil {
                 try expertMatvec(tensor: prefix + "ffn_gate_up_exps.weight",
@@ -2196,6 +2495,7 @@ public final class Gemma4Runner {
             }
             try axpy(x: bufT2, y: bufT3, c: weights[slot], n: hidden)
             expertCache?.endExpertIteration(segmentPending: openEnc != nil)
+        }
         }
         try rmsnorm(x: bufT3, y: bufT3, n: hidden, vectors: 1,
                     weightTensor: prefix + "post_ffw_norm_2.weight")
@@ -2678,10 +2978,22 @@ public final class Gemma4Runner {
     // Overflow-safe tanh: Metal's tanh() returns NaN for |x| > ~49 on this
     // driver (verified by a standalone probe, 193/400 NaN); this form uses
     // exp(-2|x|) which never overflows and is the same real-valued math.
+    // [g4-activation-helpers-begin]
     static float g4_tanh(float x) {
         float e = exp(-2.0f * fabs(x));
         return copysign((1.0f - e) / (1.0f + e), x);
     }
+
+    // Shared gelu_tanh(gate)*up value: the LITERAL incumbent expression,
+    // factored so the MoE batched lowering compiles the SAME source text
+    // (extracted between the markers) instead of a re-typed copy. Bit
+    // equality to the pre-refactor kernel is re-asserted by the suite.
+    static float g4_gelu_up_value(float g, float u) {
+        float inner = 0.7978845608028654f * (g + 0.044715f * g * g * g);
+        float gelu = 0.5f * g * (1.0f + g4_tanh(inner));
+        return gelu * u;
+    }
+    // [g4-activation-helpers-end]
 
     // y[i] = gelu_tanh(gu[i]) * gu[n+i]
     kernel void g4_gelu_up(constant const uint& n [[buffer(0)]],
@@ -2690,11 +3002,7 @@ public final class Gemma4Runner {
                            uint gid [[thread_position_in_grid]]) {
         uint i = gid;
         if (i >= n) { return; }
-        float g = gu[i];
-        float u = gu[n + i];
-        float inner = 0.7978845608028654f * (g + 0.044715f * g * g * g);
-        float gelu = 0.5f * g * (1.0f + g4_tanh(inner));
-        y[i] = gelu * u;
+        y[i] = g4_gelu_up_value(gu[i], gu[n + i]);
     }
 
     // In-place RoPE: pairs (i, i+half) with frequency inv[i] * pos

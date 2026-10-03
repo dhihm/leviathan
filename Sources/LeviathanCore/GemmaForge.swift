@@ -620,6 +620,32 @@ public enum GemmaForge {
                 // can never clobber live SSA values (gate/up/act/t2).
                 let inBuf = try vb(inst.inputs[0])
                 let inLen = byID[inst.inputs[0]]!.length
+                // Generated batched lowering (phase 13): the SAME shared
+                // implementation as the direct forward path — the serving
+                // SSA interpreter must not silently bypass it. Structured
+                // else (no return: later norms/layers/logits must run);
+                // fail-closed on any guard; cache mode keeps the incumbent
+                // serial loop below with the fallback counter.
+                var batched = false
+                if let installed = runner.moeGenerated, runner.expertCache == nil {
+                    guard n == config.hiddenSize, inLen == config.hiddenSize,
+                          inBuf !== outBuf,
+                          inst.tensors[0] == "blk.\(layer).ffn_gate_up_exps.weight",
+                          inst.tensors[1] == "blk.\(layer).ffn_down_exps.weight" else {
+                        throw GemmaForgeError.executionFailed(
+                            "SSA expert chain geometry/tensors disagree with the "
+                                + "installed batched region")
+                    }
+                    try runner.runMoeBatchedRouted(x: inBuf, y: outBuf,
+                                                   layer: layer, topIdx: topIdx,
+                                                   weights: weights,
+                                                   installed: installed)
+                    batched = true
+                }
+                if runner.moeGenerated != nil, runner.expertCache != nil {
+                    runner.recordMoeResidentFallback()
+                }
+                if !batched {
                 for (slot, expert) in topIdx.enumerated() {
                     if runner.expertCache != nil {
                         // SSD/streaming mode: slices stream through the
@@ -653,6 +679,7 @@ public enum GemmaForge {
                                     c: weights[slot], n: n)
                     runner.expertCache?.endExpertIteration(
                         segmentPending: runner.openEnc != nil)
+                }
                 }
             case "softcap":
                 var cap = Float(a(inst, "cap"))
