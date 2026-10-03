@@ -627,3 +627,5 @@ artwork.
 [MIT](LICENSE) © 2026 dhihm. Model files, if later downloaded, are governed
 by their upstream licenses and are not covered by this repository's MIT
 grant.
+
+The [bounded attention Forge experiment](docs/ATTENTION_FORGE_EXPERIMENT.md) documents the diagnostic kernel, local selection workflow, correctness gates, measured limits, and reproducibility evidence.

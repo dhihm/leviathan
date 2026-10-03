@@ -1,0 +1,51 @@
+{
+  "tests": [
+    {
+      "case": "bad-digest",
+      "exit": 3,
+      "expectedExit": 3,
+      "rejectedBeforeCandidate": true,
+      "passed": true,
+      "elapsedSeconds": 0.019812208134680986,
+      "output": "ARTIFACT REJECTED: payload digest mismatch\n{\"candidate\":\"g4_attn_par64_diag\",\"candidateKind\":\"ATTENTION\",\"label\":\"diagnostic bounded attention Forge\",\"mode\":\"--validate-artifact\",\"note\":\"diagnostic only; production default and production artifacts unchanged; a --select artifact is an experiment record that is never installed; no occupancy claims\",\"pass\":false,\"productionQualified\":false,\"stageReached\":\"artifact_rejected\",\"tool\":\"attention_qualification\"}\n"
+    },
+    {
+      "case": "bad-policy-recomputed-digest",
+      "exit": 3,
+      "expectedExit": 3,
+      "rejectedBeforeCandidate": true,
+      "passed": true,
+      "elapsedSeconds": 0.020146584138274193,
+      "output": "ARTIFACT REJECTED: schema, policy or evidence: full: pair 0 reduction does not match its walls; full: pair 0 misses the 0.98 policy; full: timing policy or median mismatch\n{\"candidate\":\"g4_attn_par64_diag\",\"candidateKind\":\"ATTENTION\",\"label\":\"diagnostic bounded attention Forge\",\"mode\":\"--validate-artifact\",\"note\":\"diagnostic only; production default and production artifacts unchanged; a --select artifact is an experiment record that is never installed; no occupancy claims\",\"pass\":false,\"productionQualified\":false,\"stageReached\":\"artifact_rejected\",\"tool\":\"attention_qualification\"}\n"
+    },
+    {
+      "case": "wrong-source-recomputed-digest",
+      "exit": 3,
+      "expectedExit": 3,
+      "rejectedBeforeCandidate": true,
+      "passed": true,
+      "elapsedSeconds": 8.259735375177115,
+      "output": "{\"artifactDigest\":\"74cfed65cc123207180c24c704dd8226dbd9a8d718ed059a689ed38dbfa2b154\",\"candidateCompiled\":false,\"label\":\"diagnostic bounded attention Forge\",\"mode\":\"--validate-artifact\",\"schemaDigestEvidenceValidation\":\"passed\",\"stage\":\"attention_forge_artifact\"}\nARTIFACT REJECTED: identity mismatch before runner init: candidateSource, sourcesRecord\n{\"candidate\":\"g4_attn_par64_diag\",\"candidateKind\":\"ATTENTION\",\"label\":\"diagnostic bounded attention Forge\",\"mode\":\"--validate-artifact\",\"note\":\"diagnostic only; production default and production artifacts unchanged; a --select artifact is an experiment record that is never installed; no occupancy claims\",\"pass\":false,\"productionQualified\":false,\"stageReached\":\"artifact_rejected\",\"tool\":\"attention_qualification\"}\n"
+    },
+    {
+      "case": "different-region",
+      "exit": 3,
+      "expectedExit": 3,
+      "rejectedBeforeCandidate": true,
+      "passed": true,
+      "elapsedSeconds": 8.516759417019784,
+      "output": "{\"artifactDigest\":\"b097a3228383135b515c1d6f70a65e5b7920c42adac8b8e120a567e34c778b90\",\"candidateCompiled\":false,\"label\":\"diagnostic bounded attention Forge\",\"mode\":\"--validate-artifact\",\"schemaDigestEvidenceValidation\":\"passed\",\"stage\":\"attention_forge_artifact\"}\nARTIFACT REJECTED: identity mismatch before runner init: region\n{\"candidate\":\"g4_attn_par64_diag\",\"candidateKind\":\"ATTENTION\",\"label\":\"diagnostic bounded attention Forge\",\"mode\":\"--validate-artifact\",\"note\":\"diagnostic only; production default and production artifacts unchanged; a --select artifact is an experiment record that is never installed; no occupancy claims\",\"pass\":false,\"productionQualified\":false,\"stageReached\":\"artifact_rejected\",\"tool\":\"attention_qualification\"}\n"
+    },
+    {
+      "case": "existing-output",
+      "exit": 2,
+      "expectedExit": 2,
+      "rejectedBeforeCandidate": true,
+      "passed": true,
+      "elapsedSeconds": 0.02032583300024271,
+      "output": "REFUSED: the --artifact path already exists; artifacts are never overwritten\n{\"artifactWritten\":false,\"candidate\":\"g4_attn_par64_diag\",\"candidateKind\":\"ATTENTION\",\"label\":\"diagnostic bounded attention Forge\",\"mode\":\"--select\",\"note\":\"diagnostic only; production default and production artifacts unchanged; a --select artifact is an experiment record that is never installed; no occupancy claims\",\"pass\":false,\"productionQualified\":false,\"stageReached\":\"artifact_path_exists\",\"tool\":\"attention_qualification\"}\n"
+    }
+  ],
+  "selectedArtifactUnchanged": true,
+  "allPassed": true
+}
