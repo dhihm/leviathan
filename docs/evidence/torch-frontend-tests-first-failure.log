@@ -1,0 +1,55 @@
+/opt/anaconda3/lib/python3.11/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+PASS: custom: export exits 0
+PASS: custom: manifest format is weights-1
+PASS: custom: torchExport block is labeled advisory-only
+PASS: custom: provenance records strict export
+PASS: custom: provenance digests bind emitted bytes
+PASS: custom: aten ops are exactly linear/relu
+PASS: custom: weights content hash matches manifest
+PASS: custom: float count matches blob
+PASS: custom: manifest reference equals independent module output
+FAIL: custom-forward: graph dense ops differ from child labels — dense 4, child linears 4
+PASS: custom-forward: first exported weight is stem.weight^T
+PASS: custom-forward: graph follows the model
+FAIL: endrelu: export exits 0 — ^^
+  File "/opt/anaconda3/lib/python3.11/site-packages/torch/fx/graph_module.py", line 108, in _method_from_src
+    _exec_with_source(src, globals_copy, co_fields)
+  File "/opt/anaconda3/lib/python3.11/site-packages/torch/fx/graph_module.py", line 94, in _exec_with_source
+    exec(compile(src, key, "exec"), globals)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<eval_with_key>.12", line 6
+    layers_in_weight = self.layers.in.weight
+                                   ^^
+SyntaxError: invalid syntax
+
+PASS: same seed is deterministic
+PASS: negative sin rejected
+PASS: negative sin message is actionable
+PASS: negative sin wrote no files
+PASS: negative residual add rejected
+PASS: negative residual add message is actionable
+PASS: negative residual add wrote no files
+PASS: negative multiple outputs rejected
+FAIL: negative multiple outputs message is actionable — missing 'multiple outputs' in: nstall nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+export_torch_graph: exactly one output is required, got 2 (OutputKind.USER_OUTPUT, OutputKind.USER_OUTPUT)
+
+PASS: negative multiple outputs wrote no files
+PASS: negative float16 dtype rejected
+PASS: negative float16 dtype message is actionable
+PASS: negative float16 dtype wrote no files
+PASS: negative hook rejected
+PASS: negative hook message is actionable
+PASS: negative hook wrote no files
+PASS: negative reshape rejected
+PASS: negative reshape message is actionable
+PASS: negative reshape wrote no files
+PASS: negative shared parameter rejected
+PASS: negative shared parameter message is actionable
+PASS: negative shared parameter wrote no files
+PASS: negative data-dependent branch rejected
+PASS: branch rejection names semantics/export failure
+PASS: negative branch wrote no files
+
+3 failure(s): custom-forward: graph dense ops differ from child labels, endrelu: export exits 0, negative multiple outputs message is actionable

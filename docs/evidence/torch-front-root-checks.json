@@ -1,0 +1,24 @@
+{
+  "runs": [
+    {
+      "stage": "python-tests",
+      "exit": 0,
+      "wallSeconds": 27.11329654091969,
+      "log": "/tmp/leviathan-forge2-tooling/torch-front-root-python-tests.log"
+    },
+    {
+      "stage": "build",
+      "exit": 0,
+      "wallSeconds": 17.47532125003636,
+      "log": "/tmp/leviathan-forge2-tooling/torch-front-root-build.log"
+    },
+    {
+      "stage": "default-tests",
+      "exit": 0,
+      "wallSeconds": 9.507497792132199,
+      "log": "/tmp/leviathan-forge2-tooling/torch-front-root-default-tests.log"
+    }
+  ],
+  "exeBefore": "8fdb03f5ec85b919e5a5a8358531fe502f0026b428f305deb698cad153f207c6",
+  "exeAfter": "8fdb03f5ec85b919e5a5a8358531fe502f0026b428f305deb698cad153f207c6"
+}

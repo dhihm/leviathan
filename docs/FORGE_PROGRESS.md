@@ -1344,3 +1344,110 @@ full 262144-logit gate |Δ|/max(1,|ref|) < 1e-4 + finite + exact greedy):
   build-p11b.log (EXIT 0), q4-op-expert-{gu,dn}.json (captured Python
   expert op inputs). Phase-9/10 logs above remain historical records of
   their own executables and are not re-claimed here.
+
+## Pass 12 (2026-10-03 UTC): torch.export(strict=True) frontend — custom nn.Module ATen graphs into the imported-weight Forge/Metal path
+
+User-priority pass: PyTorch as the MODEL FRONTEND with the original
+Swift/Metal backend unchanged (no MLX, no new dependencies; existing
+torch 2.9.1 at /opt/anaconda3/bin/python, CPU export).
+
+- Implementation: `tools/torch_frontend/export_torch_graph.py` accepts a
+  user-authored model file (`INPUT_DIM` int + `build(seed)` returning ANY
+  `nn.Module`) and captures its semantics with
+  `torch.export.export(model, (example,), strict=True)` on a static rank-2
+  `[1, INPUT_DIM]` float32 example input. The exported ATen graph is
+  validated node-by-node — this is deliberately NOT a module-label walker:
+  ModuleList/ModuleDict loops, functional `F.linear`/`torch.relu`, and
+  child modules never called in forward all export to exactly the chain
+  that runs (the root-proven sample has 4 dense ops vs 5 child Linear
+  modules — its graph is proven to follow forward semantics, not labels).
+- Supported subset (everything else FAILS CLOSED, nothing written, the
+  offending op or structure named): exactly one USER_INPUT of static rank-2
+  `[1, INPUT_DIM]` float32 (every dim a concrete int — dynamic/symint
+  shapes rejected); exactly one USER_OUTPUT spec and no parameter/buffer
+  mutation specs; FX output unpacking to exactly one value; call nodes
+  limited to `aten.linear.default` (exactly (input, weight-param,
+  bias-param), bias required, no kwargs) and `aten.relu.default`; a single
+  chain — first call consumes the user input, every later call consumes
+  exactly the previous call's value, every intermediate has exactly one
+  consumer, the final call is the sole output; per-call metadata
+  (dtype/rank/static dims) must equal the expected chain shape; parameters
+  only (buffers/constants rejected by name), float32/CPU/finite,
+  unshared modules AND parameters (checked via deduplication-FREE
+  traversal — named_modules dedups by default), no hooks or
+  parametrizations; bounded op count ≤ 64, dims ≤ 4096, weight blob
+  ≤ 16 MiB. Data-dependent control flow: a strict-export failure (unbacked
+  control flow) is itself fail-closed, and a bounded 8-probe differential
+  gate (original module vs `ep.module()` replay, exact max-abs-diff 0,
+  shape/dtype/finiteness enforced) rejects observed branch specialization —
+  BOUNDED parity evidence, explicitly not a proof every specialized branch
+  is caught.
+- Output: the SAME validated `leviathan-forge-weights-1` triple
+  (`<prefix>.graph.json/.weights.f32/.manifest.json`, weights transposed
+  to [in, out] row-major per dense op) the Sequential exporter emits, so
+  the EXISTING `forge --export-prefix` path applies unchanged: Swift-side
+  bounded reads, format/float-count/SHA-256/op-table/graph-layout
+  validation, hardware-derived candidates, fusion, correctness gates,
+  measured selection, and persisted plan replay. The manifest carries an
+  ADVISORY `torchExport` block (strict flag, torch version, aten op list,
+  recorded graph/weights content hashes, probe count): the Swift loader
+  ignores the block and NO identity or authentication claim is derived
+  from it — the recorded hashes are advisory cross-checks, not
+  identity-bound provenance. Artifact identity remains exactly the
+  validated weights-1 contract plus the Forge plan's
+  graph/weights/hardware/toolchain binding. Reference vectors are computed
+  by the ORIGINAL module on the rank-2 contract input.
+- Samples and tests: `examples/torch_export/custom_forward_mlp.py`
+  (positive, functional Linear/ReLU inside a custom forward whose graph
+  differs from child labels), `examples/torch_export/end_relu_mlp.py`
+  (positive, relu-terminated chain), and eight negatives
+  (`negatives/neg_{sin,residual,branch,multi_output,dtype,hook,shared,
+  reshape}.py`). `tools/torch_frontend/test_export.py` (stdlib asserts,
+  subprocess, true exit status preserved): 47/47 PASS exit 0 in 27.11 s
+  (root run) — positives re-verified INDEPENDENTLY (module re-evaluated
+  equals the manifest reference exactly; exported weight bytes equal
+  stem.weight^T; same-seed determinism), negatives rejected with
+  actionable messages and NO output files left behind. An earlier draft's
+  first test run failed 3 checks (stale op-id expectations, an FX-invalid
+  ModuleDict key, a message needle); preserved labeled as
+  docs/evidence/torch-frontend-tests-first-failure.log — kept as the
+  honest failure record, superseded by the passing run. A new Swift test
+  block (9 checks) runs the frontend end-to-end inside the default suite:
+  export subprocess (pipe drained before wait, safe launch, unique per-run
+  scratch directory) → WeightExport.load → Forge with real weights → GPU
+  parity vs the PyTorch module at 1e-4 → persisted plan reload, plus the
+  sin rejection with no-files-left verification.
+- Root-measured evidence (shared Mac, sequential; timing is a component
+  diagnostic, NOT an LLM-inference performance claim). FINAL
+  corrected-helper run: release build EXIT 0 (root wall 16.53 s;
+  build-reported 15.63 s) and default suite 629/0 in 10.99 s including
+  `strict torch.export parity: worst rel diff GPU vs PyTorch 4.657e-09`.
+  Two-model independent proof, each export → actual
+  `forge --export-prefix` on Metal → fresh-process cached-plan reload:
+  custom_forward_mlp (8 ops, 18,920 floats, 75,680 B weights) selected
+  width 8 fused, median 212.4 µs, parity 4.657e-9 fresh AND reused, plan
+  digest adf5dd3ad3759a4bbf3fd247413fc16e53aca6c46f9f43a84c318fefa2d85df2;
+  end_relu_mlp (4 ops, 1,092 floats, 4,368 B) selected width 12 fused,
+  median 22.6 µs, parity 7.451e-9 both, plan digest
+  229c0c59f48755ad32e55e8191f501ce97421541a21b2a0ed831d3feb4e75098.
+  Historical phase-11 real-GGUF 726/0 not repeated — the backend is
+  unchanged by this frontend pass. The CLI executable SHA-256 remains
+  8fdb03f5ec85b919e5a5a8358531fe502f0026b428f305deb698cad153f207c6
+  (test-only rebuild; historical Q4 artifact identity unchanged).
+- Honest scope: this is a PyTorch ENTRY FRONTEND for the existing
+  dense/relu imported-weight engine — NOT a general LLM frontend (no
+  attention/MoE/training/quantized-GGUF import) and NOT a performance
+  change: the Gemma path's ~2.5 tok/s decode and ~31 GB peak footprint are
+  untouched. The joint general-compiler/competitive/lightweight goal
+  remains UNMET; next actual work: small-transformer ATen lowering and
+  Gemma MoE optimization/composed bindings (not done). Model import
+  executes the user's local trusted Python file; no sandboxing is claimed.
+- Evidence (docs/evidence/): FINAL torch-front-root-final-{build,
+  default-tests,checks} (build EXIT 0 wall 16.53 s reported 15.63 s;
+  629/0 wall 10.99 s); two-model proof torch-front-root-{custom_forward_
+  mlp,end_relu_mlp}-{export,forge,reload}.log + torch-front-root-evidence.
+  json; torch-front-root-python-tests.log (47/0); pre-helperfix
+  torch-front-root-{build,checks,default-tests}.* kept as the earlier
+  intermediate record; and the labeled historical first-failure log
+  torch-frontend-tests-first-failure.log. Generated .weights.f32/
+  .plan.json outputs were NOT committed.

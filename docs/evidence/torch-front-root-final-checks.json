@@ -1,0 +1,18 @@
+{
+  "runs": [
+    {
+      "stage": "build",
+      "exit": 0,
+      "wallSeconds": 16.528281999751925,
+      "log": "/tmp/leviathan-forge2-tooling/torch-front-root-final-build.log"
+    },
+    {
+      "stage": "default-tests",
+      "exit": 0,
+      "wallSeconds": 10.987483750097454,
+      "log": "/tmp/leviathan-forge2-tooling/torch-front-root-final-default-tests.log"
+    }
+  ],
+  "exeBefore": "8fdb03f5ec85b919e5a5a8358531fe502f0026b428f305deb698cad153f207c6",
+  "exeAfter": "8fdb03f5ec85b919e5a5a8358531fe502f0026b428f305deb698cad153f207c6"
+}

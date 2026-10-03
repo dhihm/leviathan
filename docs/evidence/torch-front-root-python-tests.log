@@ -1,0 +1,53 @@
+/opt/anaconda3/lib/python3.11/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+PASS: custom: export exits 0
+PASS: custom: manifest format is weights-1
+PASS: custom: torchExport block is labeled advisory-only
+PASS: custom: provenance records strict export
+PASS: custom: provenance digests bind emitted bytes
+PASS: custom: aten ops are exactly linear/relu
+PASS: custom: weights content hash matches manifest
+PASS: custom: float count matches blob
+PASS: custom: manifest reference equals independent module output
+PASS: custom-forward: graph dense ops differ from child labels
+PASS: custom-forward: first exported weight is stem.weight^T
+PASS: custom-forward: graph follows the model
+PASS: endrelu: export exits 0
+PASS: endrelu: manifest format is weights-1
+PASS: endrelu: torchExport block is labeled advisory-only
+PASS: endrelu: provenance records strict export
+PASS: endrelu: provenance digests bind emitted bytes
+PASS: endrelu: aten ops are exactly linear/relu
+PASS: endrelu: weights content hash matches manifest
+PASS: endrelu: float count matches blob
+PASS: endrelu: manifest reference equals independent module output
+PASS: end-relu: graph terminates with a relu op
+PASS: same seed is deterministic
+PASS: negative sin rejected
+PASS: negative sin message is actionable
+PASS: negative sin wrote no files
+PASS: negative residual add rejected
+PASS: negative residual add message is actionable
+PASS: negative residual add wrote no files
+PASS: negative multiple outputs rejected
+PASS: negative multiple outputs message is actionable
+PASS: negative multiple outputs wrote no files
+PASS: negative float16 dtype rejected
+PASS: negative float16 dtype message is actionable
+PASS: negative float16 dtype wrote no files
+PASS: negative hook rejected
+PASS: negative hook message is actionable
+PASS: negative hook wrote no files
+PASS: negative reshape rejected
+PASS: negative reshape message is actionable
+PASS: negative reshape wrote no files
+PASS: negative shared parameter rejected
+PASS: negative shared parameter message is actionable
+PASS: negative shared parameter wrote no files
+PASS: negative data-dependent branch rejected
+PASS: branch rejection names semantics/export failure
+PASS: negative branch wrote no files
+
+0 failure(s)
+
+ROOT_EXIT=0

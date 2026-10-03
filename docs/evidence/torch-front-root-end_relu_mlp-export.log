@@ -1,0 +1,5 @@
+/opt/anaconda3/lib/python3.11/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+wrote /tmp/leviathan-forge2-tooling/torch-front-root-end_relu_mlp.graph.json (4 ops from torch.export strict graph: aten.linear.default -> aten.relu.default -> aten.linear.default -> aten.relu.default), /tmp/leviathan-forge2-tooling/torch-front-root-end_relu_mlp.weights.f32 (4368 bytes, sha256 bbeb22b134cad679…), /tmp/leviathan-forge2-tooling/torch-front-root-end_relu_mlp.manifest.json with module-computed reference output
+
+ROOT_EXIT=0

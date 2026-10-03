@@ -1,0 +1,80 @@
+[0/1] Planning build
+Building for production...
+[0/4] Write sources
+[1/4] Write swift-version--1AB21518FC5DEDBE.txt
+[3/4] Compiling leviathan_tests main.swift
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-tests/main.swift:1576:13: warning: variable 'types9' was never mutated; consider changing to 'let' constant
+1574 |     // Unknown token_type code (9) across the array.
+1575 |     do {
+1576 |         var types9 = [Int32](repeating: 9, count: 256 + 3 + 2)
+     |             `- warning: variable 'types9' was never mutated; consider changing to 'let' constant
+1577 |         _ = types9
+1578 |         // Reuse the fixture with an all-9 type array via a tiny builder:
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-tests/main.swift:3744:13: warning: initialization of immutable value 'wBytes' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+3742 |         let hwProfile = try RMSCurrentHardware.profile()
+3743 |         let incumbent = try RMSIncumbentKernel.compile(device: device)
+3744 |         let wBytes = try RMSComponentInputs.weightBytes(op: op, file: nil)
+     |             `- warning: initialization of immutable value 'wBytes' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+3745 |         let x = RMSComponentInputs.activation(op: op)
+3746 |         let production = incumbent.productionPipeline(n: op.n, scaled: op.scaled)
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-tests/main.swift:3257:19: warning: expression implicitly coerced from 'Any?' to 'Any'
+3255 |         "layout": "row-major-q4_0-blocks", "quant": "q4_0",
+3256 |         "accumulate": "f32", "inputPrecision": "f32",
+3257 |         "tensor": tensor, "representativeRows": rows,
+     |                   |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                   |- note: provide a default value to avoid this warning
+     |                   |- note: force-unwrap the value to avoid this warning
+     |                   `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+3258 |         "view": view,
+3259 |     ]
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-tests/main.swift:3257:49: warning: expression implicitly coerced from 'Any?' to 'Any'
+3255 |         "layout": "row-major-q4_0-blocks", "quant": "q4_0",
+3256 |         "accumulate": "f32", "inputPrecision": "f32",
+3257 |         "tensor": tensor, "representativeRows": rows,
+     |                                                 |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                                                 |- note: provide a default value to avoid this warning
+     |                                                 |- note: force-unwrap the value to avoid this warning
+     |                                                 `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+3258 |         "view": view,
+3259 |     ]
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-tests/main.swift:3258:17: warning: expression implicitly coerced from 'Any?' to 'Any'
+3256 |         "accumulate": "f32", "inputPrecision": "f32",
+3257 |         "tensor": tensor, "representativeRows": rows,
+3258 |         "view": view,
+     |                 |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                 |- note: provide a default value to avoid this warning
+     |                 |- note: force-unwrap the value to avoid this warning
+     |                 `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+3259 |     ]
+3260 |     return try JSONSerialization.data(withJSONObject: obj)
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-tests/main.swift:3629:19: warning: expression implicitly coerced from 'Any?' to 'Any'
+3627 |         "layout": "row-major-f32-vectors", "quant": "f32",
+3628 |         "reduction": "serial-order-i0..n", "inputPrecision": "f32",
+3629 |         "tensor": tensor, "representativeVectors": reps,
+     |                   |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                   |- note: provide a default value to avoid this warning
+     |                   |- note: force-unwrap the value to avoid this warning
+     |                   `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+3630 |     ]
+3631 |     return try JSONSerialization.data(withJSONObject: obj)
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-tests/main.swift:3629:52: warning: expression implicitly coerced from 'Any?' to 'Any'
+3627 |         "layout": "row-major-f32-vectors", "quant": "f32",
+3628 |         "reduction": "serial-order-i0..n", "inputPrecision": "f32",
+3629 |         "tensor": tensor, "representativeVectors": reps,
+     |                                                    |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                                                    |- note: provide a default value to avoid this warning
+     |                                                    |- note: force-unwrap the value to avoid this warning
+     |                                                    `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+3630 |     ]
+3631 |     return try JSONSerialization.data(withJSONObject: obj)
+[3/5] Write Objects.LinkFileList
+[4/5] Linking leviathan-tests
+Build complete! (14.78s)
+
+ROOT_EXIT=0

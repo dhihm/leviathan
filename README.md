@@ -22,7 +22,14 @@ imports a restricted PyTorch export (`nn.Sequential` of `nn.Linear`/`nn.ReLU`)
 with **real parameter weights** — validated, hashed, parity-checked
 against PyTorch (measured 2.2e-08) — and automatically generates, gates,
 and selects GPU pass candidates with a reusable measured plan cache; see
-[docs/FORGE.md](docs/FORGE.md). The example weights are random
+[docs/FORGE.md](docs/FORGE.md). A second PyTorch frontend captures
+user-authored custom `nn.Module` graphs with `torch.export(strict=True)`
+and validates the exported ATen graph into the same imported-weight
+Forge/Metal path (supported subset: `aten.linear.default` with bias and
+`aten.relu.default`, single static rank-2 chain; everything else fails
+closed with the offending op named). PyTorch is the model FRONTEND only —
+execution stays on the original Swift/Metal backend (no MLX, no new
+dependencies). The example weights are random
 initializations, not a trained model.
 
 **Real-model Gemma 4 26B-A4B (QAT Q4_0) now runs end-to-end through the
@@ -199,7 +206,11 @@ hit the OS page cache (no cold-SSD claim). See
   pass-generation pipeline (restricted PyTorch export or graph JSON in;
   measured hardware profile, bounded legal candidates, correctness
   gates, GPU-time selection, validated plan cache reuse; see
-  [docs/FORGE.md](docs/FORGE.md)).
+  [docs/FORGE.md](docs/FORGE.md)). PyTorch model entry: the restricted
+  `nn.Sequential` exporter (`examples/export_torch.py`) or the
+  `torch.export(strict=True)` frontend for custom `nn.Module` forwards
+  (`tools/torch_frontend/export_torch_graph.py`) — both emit the same
+  validated weights/manifest triple consumed by `forge --export-prefix`.
 
 ## Installation
 
@@ -234,6 +245,26 @@ swift run leviathan-cli run --artifact /tmp/demo.lvi --batch 2 --backend cpu-sca
 swift run leviathan-tests
 ```
 
+PyTorch custom-module frontend (`torch.export` strict capture of a
+user-authored forward; supported subset only, fail-closed otherwise):
+
+```sh
+# Model file defines INPUT_DIM and build(seed) -> nn.Module (any forward).
+# Emits <prefix>.graph.json / .weights.f32 / .manifest.json (the same
+# validated weights-1 triple as the Sequential exporter):
+/opt/anaconda3/bin/python tools/torch_frontend/export_torch_graph.py \
+    examples/torch_export/custom_forward_mlp.py /tmp/pt 0
+
+# Forge on Metal with the REAL imported weights, PyTorch parity gate, and
+# a persisted reusable plan (same command as any other export):
+.build/release/leviathan-cli forge \
+    --export-prefix /tmp/pt --plan /tmp/pt.plan.json --batch 1
+
+# Frontend test suite (positive custom-forward/end-ReLU models, negative
+# sin/residual/branch/multi-output/dtype/hook/shared/reshape rejections):
+/opt/anaconda3/bin/python tools/torch_frontend/test_export.py
+```
+
 Example graph JSON (`dense` takes an output dimension; `relu` is a string):
 
 ```json
@@ -260,6 +291,29 @@ Two engine paths share the validated-IR + measured-plan core:
   re-validation on load) → hardware/workload profiling → bounded
   legal candidates → correctness gate → measured selection → Metal
   GPU runtime → CPU-oracle comparison.
+- **torch.export(strict=True) frontend (pass 12)** — a user-authored
+  custom `nn.Module` forward (any structure: ModuleList/ModuleDict loops,
+  functional `F.linear`/`torch.relu`, modules never called in forward) is
+  captured by `torch.export.export(..., strict=True)` on the installed
+  PyTorch; the exported ATen graph is validated node-by-node against the
+  supported subset (one static rank-2 `[1, INPUT_DIM]` float32 input; one
+  user output with no mutations; a single chain of
+  `aten.linear.default`-with-bias and `aten.relu.default`; parameters
+  only, unshared, finite, hook-free; bounded op count/dims/weight bytes)
+  and lowered into the SAME GraphIR + validated weights-1 manifest the
+  Sequential exporter emits — so the existing imported-weight Forge
+  hardware-derived candidates, fusion, 1e-4 numerical gates, PyTorch
+  parity check, and persisted plan replay apply unchanged. Anything
+  outside the subset fails closed with the offending ATen op or structure
+  named (sin, residual `aten.add`, multiple outputs, dynamic shapes,
+  float16, hooks, shared parameters, view/reshape, export errors); a
+  bounded 8-probe differential gate compares the original module against
+  the exported graph before anything is written. The manifest's
+  `torchExport` block is ADVISORY metadata; artifact identity remains the
+  digest-bound weights-1 contract. PyTorch is the frontend only —
+  execution is the original Swift/Metal backend, no MLX and no new
+  dependencies. NOT a general LLM frontend: it covers linear/relu MLP
+  graphs, not attention/MoE.
 - **Real-model Gemma 4 path (runs, scoped)** — model.py capture DSL →
   graph JSON → validation against the actual GGUF → typed SSA
   schedule → gated, measured candidate selection → plan artifact
@@ -375,6 +429,17 @@ scoped limits and evidence docs):
 - Weights in this engine are synthetic (seeded) or restricted PyTorch
   exports; real quantized model weights run through the separate
   Gemma Forge path described above.
+- PyTorch frontends: the `nn.Sequential` exporter walks exact child
+  modules; the `torch.export(strict=True)` frontend validates the
+  EXPORTED GRAPH, not module labels — both are restricted to the
+  linear/relu subset and reject everything else fail-closed. Neither
+  is a general LLM frontend (no attention/MoE/training), and the
+  frontend milestone does not change Gemma throughput (~2.5 tok/s) or
+  memory profile: performance work continues on the Gemma path. The
+  8-probe differential gate is bounded parity evidence, not a proof
+  that every specialized data-dependent branch is caught (strict
+  export errors on unbacked data-dependent control flow are the
+  primary fail-closed boundary).
 - The artifact digest provides integrity, not authentication or signing.
 - Float32 only; backend comparisons use a 1e-4 absolute tolerance.
 - No benchmark suite; timings printed by `check` are indicative only.

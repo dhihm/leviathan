@@ -1186,6 +1186,122 @@ do {
     failed += 1; print("FAIL: torch exporter e2e — threw \(error)")
 }
 
+// MARK: - torch.export(strict=True) frontend -> Forge end-to-end
+// (custom-forward nn.Module, captured ATen graph, fail-closed subset)
+
+func runStrictExporter(_ modelPath: String, _ prefix: String, _ seed: String)
+        -> (ok: Bool, log: String) {
+    // Same interpreter policy as the Sequential exporter above. The pipe is
+    // drained BEFORE waitUntilExit so an exporter that floods more than the
+    // pipe capacity (e.g. a long torch traceback) cannot deadlock, and a
+    // launch failure is reported instead of crashing the suite.
+    var interpreter = "/opt/anaconda3/bin/python3"
+    if !FileManager.default.fileExists(atPath: interpreter) {
+        interpreter = "/usr/bin/python3"
+    }
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: interpreter)
+    process.currentDirectoryURL = URL(fileURLWithPath: ".")
+    process.arguments = ["tools/torch_frontend/export_torch_graph.py",
+                         modelPath, prefix, seed]
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+    do {
+        try process.run()
+    } catch {
+        return (false, "failed to launch \(interpreter): \(error)")
+    }
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    let log = String(data: data, encoding: .utf8) ?? ""
+    return (process.terminationStatus == 0, log)
+}
+
+do {
+    // Own unique scratch directory so this test never collides with a
+    // concurrent run or another suite's leftovers; cleaned up as a whole.
+    let dir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("leviathan-strict-torch-\(UUID().uuidString)",
+                                isDirectory: true)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let tmp = dir.path
+    let prefix = tmp + "/model"
+    let negPrefix = tmp + "/neg"
+    let exported = runStrictExporter(
+        "examples/torch_export/custom_forward_mlp.py", prefix, "0")
+    if !exported.ok { print(exported.log) }
+    check("strict torch.export frontend runs", exported.ok)
+
+    // Fail-closed: an unsupported ATen op (torch.sin) is rejected and
+    // leaves no output files behind.
+    let rejected = runStrictExporter(
+        "examples/torch_export/negatives/neg_sin.py", negPrefix, "0")
+    let leftBehind = ["graph.json", "weights.f32", "manifest.json"]
+        .filter { FileManager.default.fileExists(atPath: negPrefix + "." + $0) }
+    check("strict frontend rejects unsupported op (sin)", !rejected.ok)
+    check("rejected export wrote no files", leftBehind.isEmpty)
+
+    guard exported.ok else { throw StrictFailed() }
+    struct StrictFailed: Error {}
+
+    let strict = try WeightExport.load(prefix: prefix)
+    checkEqual("strict export input dim", strict.graph.inputDim, 64)
+    checkEqual("strict export dense op count",
+               strict.graph.ops.filter {
+                   if case .dense = $0 { return true }; return false
+               }.count, 4)
+    check("strict export weights finite",
+          strict.weights.allSatisfy { $0.isFinite })
+
+    // The graph is captured from forward semantics: the module owns FIVE
+    // child Linear modules (one never called in forward), the exported
+    // graph has exactly four dense ops.
+    let (plan, _, hardware, _) = try Forge.forge(
+        graph: strict.graph, batch: 1, seed: 42, weights: strict.weights)
+    check("strict torch-weight forge selected a measured candidate",
+          plan.selectedMedianGpuMicros > 0)
+    let artifactProgram = LoweredProgram(graph: strict.graph, seed: 0)
+    let realProgram = LoweredProgram(
+        inputDim: artifactProgram.inputDim, outputDim: artifactProgram.outputDim,
+        bufferCount: artifactProgram.bufferCount, steps: artifactProgram.steps,
+        weights: strict.weights)
+    let prepared = try MetalBackend.Prepared(
+        program: realProgram, batch: 1, input: strict.refInput)
+    let (gpuOut, _) = try prepared.run(
+        threadgroupWidth: plan.selected.threadgroupWidth,
+        fuseDenseRelu: plan.selected.fuseDenseRelu)
+    guard gpuOut.count == strict.refOutput.count,
+          gpuOut.allSatisfy({ $0.isFinite }) else {
+        failed += 1
+        print("FAIL: strict torch parity vector counts/finiteness")
+        throw StrictParity()
+    }
+    struct StrictParity: Error {}
+    var worstStrict: Float = 0
+    for i in 0..<gpuOut.count {
+        worstStrict = max(worstStrict,
+                          abs(gpuOut[i] - strict.refOutput[i]) / max(1, abs(strict.refOutput[i])))
+    }
+    print(String(format: "  strict torch.export parity: worst rel diff GPU vs PyTorch %.3e",
+                 worstStrict))
+    check("strict torch.export GPU output matches PyTorch module (rel 1e-4)",
+          worstStrict < 1e-4)
+
+    // Persisted plan reuse keyed on the same validated weights.
+    let planURL = URL(fileURLWithPath: tmp + "/leviathan-strict-torch.forge.json")
+    try plan.save(to: planURL)
+    let reused = try ForgePlan.loadValidated(
+        from: planURL, graph: strict.graph, seed: 42, batch: 1,
+        hardware: hardware, weights: strict.weights)
+    checkEqual("strict torch-weight plan cache hit", reused, plan)
+    try? FileManager.default.removeItem(at: planURL)
+} catch {
+    failed += 1
+    print("FAIL: strict torch.export frontend e2e — threw \(error)")
+}
+
 // MARK: - Gemma 4 math primitives (stable tanh on GPU vs scalar)
 
 do {

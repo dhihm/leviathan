@@ -1,0 +1,10 @@
+hardware: Apple M1 Max, max threads/threadgroup 1024, exec width 32, working set 26800603136 bytes
+weights: real parameters, 18920 floats
+  width 8 fused 0: correct true, median 225.1 us — valid; 11 timed runs
+  width 8 fused 1: correct true, median 212.4 us — valid; 11 timed runs
+selected: width 8 fused true, median 212.4 us
+pytorch parity (fresh): worst rel diff 4.657e-09
+plan saved: /tmp/leviathan-forge2-tooling/torch-front-root-custom_forward_mlp.plan.json, digest adf5dd3ad3759a4bbf3fd247413fc16e53aca6c46f9f43a84c318fefa2d85df2
+PASS
+
+ROOT_EXIT=0

@@ -1,0 +1,7 @@
+cache hit: plan adf5dd3ad3759a4bbf3fd247413fc16e53aca6c46f9f43a84c318fefa2d85df2
+selected: width 8 fused true
+recorded median gpu 212.4 us, this run 226.8 us
+pytorch parity (reused): worst rel diff 4.657e-09
+PASS (reused)
+
+ROOT_EXIT=0
