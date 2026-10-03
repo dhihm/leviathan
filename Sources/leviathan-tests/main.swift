@@ -4241,6 +4241,459 @@ do {
           MoEGatePolicy.recomputedSelection(poisoned, schedule: sched8) == nil
               && !MoEGatePolicy.productionValid(poisoned, schedule: sched8))
 
+    // Phase-14 diagnostic profile helpers: family classification,
+    // decode-only snapshot diffs, bounded decode-view checks, and
+    // serialization roundtrip. Meaningful bounds only — not mirrors of
+    // the run orchestration.
+    checkEqual("moe profile: moegen family classified",
+               MoELoweringProfile.family(ofKernel: "moegen_gu_E4_R32"),
+               "moe-generated")
+    checkEqual("moe profile: engine kernel family",
+               MoELoweringProfile.family(ofKernel: "g4_axpy"), "engine")
+    do {
+        let before: [String: (gpu: Double, calls: Int)] = [
+            "g4_axpy": (100, 4), "g4_rmsnorm": (50, 2), "moegen_act_E4": (10, 1)]
+        let after: [String: (gpu: Double, calls: Int)] = [
+            "g4_axpy": (250, 10), "g4_rmsnorm": (50, 2),
+            "moegen_act_E4": (70, 8), "g4_q4_matvec": (40, 3)]
+        let diff = MoELoweringProfile.kernelDiff(before: before, after: after)
+        checkEqual("moe profile: kernelDiff counts changed kernels", diff.count, 3)
+        check("moe profile: kernelDiff drops unchanged and sorts by GPU",
+              !diff.contains { $0.name == "g4_rmsnorm" }
+                  && diff[0].name == "g4_axpy"
+                  && diff.map(\.name) == ["g4_axpy", "moegen_act_E4", "g4_q4_matvec"])
+        check("moe profile: kernelDiff deltas and families",
+              diff[0].gpuMicros == 150 && diff[0].calls == 6
+                  && diff[1].family == "moe-generated"
+                  && diff[2].family == "engine")
+    }
+    do {
+        // A bounded decode view built via JSON (decode-only test of the
+        // bounds gate and the Codable roundtrip).
+        func decodeView(walls: [Double], fallback: Int) throws
+                -> MoEProfileReport.DecodeView {
+            let obj: [String: Any] = [
+                "decodeTokens": walls.count, "excludedPrefillForwards": 1,
+                "sumWallMicros": walls.reduce(0, +),
+                "medianWallMicros": LoweringSelect.median(walls),
+                "aggregateDecodeTps": Double(walls.count),
+                "sumGpuMicros": 10.0, "wallsMicros": walls,
+                "gpusMicros": walls.map { _ in 1.0 },
+                "encodeMicros": 1.0, "flushMicros": 2.0, "flushHostMicros": 1.0,
+                "readCopyMicros": 0.5, "writeCopyMicros": 0.25,
+                "residualMicros": 1.0, "submittedBufferDelta": 3,
+                "dispatchDelta": 9,
+                "stageDeltas": ["gu": 2, "act": 2, "dn": 2],
+                "mergeDelta": 8, "fallbackDelta": fallback]
+            let data = try JSONSerialization.data(withJSONObject: obj)
+            let v = try JSONDecoder().decode(MoEProfileReport.DecodeView.self,
+                                             from: data)
+            let reencoded = try JSONEncoder().encode(v)
+            let rt = try JSONDecoder().decode(
+                MoEProfileReport.DecodeView.self, from: reencoded)
+            guard rt == v else { throw NSError(
+                domain: "rt", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "roundtrip differs"]) }
+            return v
+        }
+        let good = try decodeView(walls: [1.0, 2.0, 3.0], fallback: 0)
+        let negWall = try decodeView(walls: [1.0, -0.5, 3.0], fallback: 0)
+        let withFallback = try decodeView(walls: [1.0, 2.0, 3.0], fallback: 1)
+        check("moe profile: bounded decode view accepted",
+              MoELoweringProfile.decodeViewIsBounded(good, expectedTokens: 3))
+        check("moe profile: wrong window length rejected",
+              !MoELoweringProfile.decodeViewIsBounded(good, expectedTokens: 2))
+        check("moe profile: nonpositive wall rejected",
+              !MoELoweringProfile.decodeViewIsBounded(negWall, expectedTokens: 3))
+        check("moe profile: nonzero fallback rejected",
+              !MoELoweringProfile.decodeViewIsBounded(withFallback, expectedTokens: 3))
+    }
+
+    // Phase-15 Q4 launch geometry: bounded semantic tests (no runner
+    // needed) plus a GPU tail-shape bit-identity gate across widths.
+    do {
+        let hw = ForgeHardwareProfile(deviceName: "t", maxTotalThreadsPerThreadgroup: 1024,
+                                      threadExecutionWidth: 32,
+                                      recommendedMaxWorkingSetSize: 1 << 30)
+        let ladder = try Q4LaunchDeriver.derive(hardware: hw, pipelineMaxThreads: 1024)
+        checkEqual("q4 launch: ladder widths", ladder.map(\.width), [32, 64, 128, 256, 1024])
+        check("q4 launch: control is the pipeline max",
+              Q4LaunchDeriver.control(pipelineMaxThreads: 1024).width == 1024)
+        for bad in [0, -32, 3, 2048] {
+            check("q4 launch: width \(bad) illegal",
+                  !Q4LaunchSchedule(width: bad).isLegal(pipelineMaxThreads: 1024))
+        }
+        for (name, hwp, pmax) in [
+            ("zero width", ForgeHardwareProfile(deviceName: "t",
+                                                maxTotalThreadsPerThreadgroup: 1024,
+                                                threadExecutionWidth: 0,
+                                                recommendedMaxWorkingSetSize: 1 << 30), 1024),
+            ("bad pipeline max", hw, 0),
+            ("width above pipeline max", ForgeHardwareProfile(
+                deviceName: "t", maxTotalThreadsPerThreadgroup: 64,
+                threadExecutionWidth: 128, recommendedMaxWorkingSetSize: 1 << 30), 64),
+        ] as [(String, ForgeHardwareProfile, Int)] {
+            do { _ = try Q4LaunchDeriver.derive(hardware: hwp, pipelineMaxThreads: pmax)
+                 failed += 1; print("FAIL: q4 launch derive rejects \(name)") } catch {
+                check("q4 launch: invalid caps rejected (\(name))", true) }
+        }
+        checkEqual("q4 launch: groups exact ceil", Q4LaunchForge.groups(grid: 33, width: 32), 2)
+        checkEqual("q4 launch: groups divides evenly", Q4LaunchForge.groups(grid: 64, width: 32), 2)
+        checkEqual("q4 launch: groups width one", Q4LaunchForge.groups(grid: 7, width: 1), 7)
+        check("q4 launch: groups zero grid rejected", Q4LaunchForge.groups(grid: 0, width: 32) == nil)
+        check("q4 launch: groups negative grid rejected",
+              Q4LaunchForge.groups(grid: -4, width: 32) == nil)
+        check("q4 launch: groups overflowing grid rejected",
+              Q4LaunchForge.groups(grid: Int.max, width: 32) == nil)
+        check("q4 launch: groups zero width rejected",
+              Q4LaunchForge.groups(grid: 33, width: 0) == nil)
+        check("q4 launch: huge grid no overflow",
+              Q4LaunchForge.groups(grid: Int(UInt32.max), width: 1024) == 4_194_304)
+
+        // Gate-policy shape negatives (mirror of the phase-13 contract,
+        // keyed on width). Counters are checked against the binding-
+        // derived arithmetic: prompt 8 + 32 - 1 = 39 forwards x 3
+        // fixtures = 117; chunks ceil(8/4)=2; layers 30 → stages 7020,
+        // merges 28080.
+        // A structurally VALID synthetic binding (the decoder enforces
+        // every invariant): real geometry, 128 experts, 30 layers with
+        // distinct non-overlapping tensor spans.
+        let guBytes = 2_230_272 * 128, dnBytes = 1_115_136 * 128
+        func syntheticBindingJSON(layerCount: Int) -> [String: Any] {
+            let guStarts = (0..<layerCount).map { $0 * guBytes }
+            let dnStarts = (0..<layerCount).map { layerCount * guBytes + $0 * dnBytes }
+            // Metadata-only caps sized to the computed resident extent
+            // (no allocation happens — these are decoded integers).
+            let extent = layerCount * (guBytes + dnBytes)
+            return [
+                "graphSha256": String(repeating: "b", count: 64),
+                "fileByteCount": extent,
+                "residentBufferLength": extent,
+                "maxBufferLength": extent * 2, "recommendedWorkingSetSize": extent * 4,
+                "layerCount": layerCount, "expertCount": 128, "topK": 8,
+                "hidden": 2816, "inter": 704, "gateUpOut": 1408,
+                "guStride": 2_230_272, "dnStride": 1_115_136,
+                "guTensorStarts": guStarts, "dnTensorStarts": dnStarts,
+                "guScratchBytes": 45_056, "actScratchBytes": 22_528,
+                "dnScratchBytes": 90_112, "scratchTotalBytes": 157_696]
+        }
+        let launchBindingJSON = syntheticBindingJSON(layerCount: 30)
+        let launchBinding = try JSONDecoder().decode(
+            MoEModelBinding.self,
+            from: try JSONSerialization.data(withJSONObject: launchBindingJSON))
+        func launchGate(diagnostic: Bool, gatedSteps: Int, startIdx: Int,
+                        eligible: Any = 1000, applied: Any = 1000,
+                        stages: Any = 7020, merges: Any = 28080) throws
+                -> Q4LaunchGateRecord {
+            func arms(_ wall: Double) -> [[String: Any]] {
+                Q4LaunchGatePolicy.productionFixtures.map { _ in
+                    ["walls": [Double](repeating: wall, count: 31),
+                     "gpus": [Double](repeating: 10, count: 31),
+                     "startIdx": startIdx, "timedCount": 31] as [String: Any]
+                }
+            }
+            let reps = (0..<3).map { i in
+                ["candidateFirst": i % 2 == 1,
+                 "candidate": arms(1.0), "incumbent": arms(2.0)] as [String: Any]
+            }
+            let obj: [String: Any] = [
+                "gatePolicy": Q4LaunchGateRecord.policyVersion,
+                "executionPath": Q4LaunchGateRecord.executionPathSSA,
+                "diagnostic": diagnostic, "genTokens": 32, "timedTokens": 31,
+                "fixtures": Q4LaunchGatePolicy.productionFixtures.map {
+                    ["name": $0, "promptTokenCount": 8, "gatedSteps": gatedSteps,
+                     "historyDigest": String(repeating: "a", count: 64)] as [String: Any]
+                },
+                "results": [[
+                    "schedule": ["width": 32],
+                    "fixturesPassed": 3, "fixturesFailed": 0, "worstRel": 0.0,
+                    "gateFailReason": NSNull(),
+                    "eligibleDispatches": eligible,
+                    "appliedDispatches": applied,
+                    "moeStageDispatches": stages,
+                    "mergeDispatches": merges,
+                    "timingReps": reps] as [String: Any]],
+                "baselineWallPerFixture": [2.0, 2.0, 2.0],
+                "performanceSelected": true, "policyNote": "test"]
+            return try JSONDecoder().decode(
+                Q4LaunchGateRecord.self,
+                from: try JSONSerialization.data(withJSONObject: obj))
+        }
+        let w32 = Q4LaunchSchedule(width: 32)
+        let goodGate = try launchGate(diagnostic: false, gatedSteps: 32, startIdx: 0)
+        check("q4 launch policy: production shape accepted",
+              Q4LaunchGatePolicy.shapeValid(goodGate, schedule: w32,
+                                            binding: launchBinding))
+        check("q4 launch policy: winner recomputes",
+              Q4LaunchGatePolicy.recomputedSelection(goodGate, schedule: w32,
+                                                     binding: launchBinding) == true)
+        let diagGate = try launchGate(diagnostic: true, gatedSteps: 32, startIdx: 0)
+        check("q4 launch policy: diagnostic rejected",
+              !Q4LaunchGatePolicy.shapeValid(diagGate, schedule: w32,
+                                             binding: launchBinding))
+        let shortGate = try launchGate(diagnostic: false, gatedSteps: 2, startIdx: 0)
+        check("q4 launch policy: short reference rejected",
+              !Q4LaunchGatePolicy.shapeValid(shortGate, schedule: w32,
+                                             binding: launchBinding))
+        let shiftedGate = try launchGate(diagnostic: false, gatedSteps: 32, startIdx: 3)
+        check("q4 launch policy: nonzero start rejected",
+              !Q4LaunchGatePolicy.shapeValid(shiftedGate, schedule: w32,
+                                             binding: launchBinding))
+        let zeroEligible = try launchGate(diagnostic: false, gatedSteps: 32,
+                                          startIdx: 0, eligible: 0, applied: 0)
+        check("q4 launch policy: vacuous zero eligible rejected",
+              !Q4LaunchGatePolicy.shapeValid(zeroEligible, schedule: w32,
+                                             binding: launchBinding))
+        let missingEligible = try launchGate(diagnostic: false, gatedSteps: 32,
+                                             startIdx: 0, eligible: NSNull(),
+                                             applied: NSNull())
+        check("q4 launch policy: missing counter records rejected",
+              !Q4LaunchGatePolicy.shapeValid(missingEligible, schedule: w32,
+                                             binding: launchBinding))
+        let appliedMismatch = try launchGate(diagnostic: false, gatedSteps: 32,
+                                             startIdx: 0, applied: 999)
+        check("q4 launch policy: applied != eligible rejected",
+              !Q4LaunchGatePolicy.shapeValid(appliedMismatch, schedule: w32,
+                                             binding: launchBinding))
+        let corruptStage = try launchGate(diagnostic: false, gatedSteps: 32,
+                                          startIdx: 0, stages: 6240)
+        check("q4 launch policy: corrupt stage count rejected",
+              !Q4LaunchGatePolicy.shapeValid(corruptStage, schedule: w32,
+                                             binding: launchBinding))
+        let corruptMerge = try launchGate(diagnostic: false, gatedSteps: 32,
+                                          startIdx: 0, merges: 27999)
+        check("q4 launch policy: corrupt merge count rejected",
+              !Q4LaunchGatePolicy.shapeValid(corruptMerge, schedule: w32,
+                                             binding: launchBinding))
+        // Hostile overflow inputs: out-of-bound layer/topK values must
+        // be rejected by the CHECKED expected-count arithmetic, never
+        // trap. The binding stays structurally valid apart from the one
+        // mutated field the arithmetic must bound-check.
+        var overflowObj = launchBindingJSON
+        overflowObj = syntheticBindingJSON(
+            layerCount: Q4LaunchGatePolicy.Q4LaunchBoundCheck.maxLayerCount)
+        let overflowBinding = try JSONDecoder().decode(
+            MoEModelBinding.self,
+            from: try JSONSerialization.data(withJSONObject: overflowObj))
+        checkEqual("q4 launch policy: checked stage arithmetic (hostile layers)",
+                   Q4LaunchGatePolicy.expectedStageCount(gate: goodGate,
+                                                         binding: overflowBinding),
+                   2 * 128 * 117)
+        overflowObj["layerCount"] = 30
+        overflowObj["topK"] = 8
+        overflowObj["guTensorStarts"] = (0..<30).map { $0 * guBytes }
+        overflowObj["dnTensorStarts"] = (0..<30).map { 30 * guBytes + $0 * (1_115_136 * 128) }
+        let restoredBinding = try JSONDecoder().decode(
+            MoEModelBinding.self,
+            from: try JSONSerialization.data(withJSONObject: overflowObj))
+        checkEqual("q4 launch policy: restored binding counts unchanged",
+                   Q4LaunchGatePolicy.expectedStageCount(gate: goodGate,
+                                                         binding: restoredBinding),
+                   7020)
+        // Hostile fixture prompt count (beyond the bound) yields nil
+        // expected counts — checked arithmetic, never a trap.
+        var hostileGate = goodGate
+        let hostileObj: [String: Any] = [
+            "gatePolicy": Q4LaunchGateRecord.policyVersion,
+            "executionPath": Q4LaunchGateRecord.executionPathSSA,
+            "diagnostic": false, "genTokens": 32, "timedTokens": 31,
+            "fixtures": [["name": "en-chat",
+                          "promptTokenCount":
+                              Q4LaunchGatePolicy.Q4LaunchBoundCheck.maxPromptTokens + 1,
+                          "gatedSteps": 32,
+                          "historyDigest": String(repeating: "a", count: 64)]],
+            "results": [[String: Any]](),
+            "baselineWallPerFixture": [Double](),
+            "performanceSelected": false, "policyNote": "hostile"]
+        hostileGate = try JSONDecoder().decode(
+            Q4LaunchGateRecord.self,
+            from: try JSONSerialization.data(withJSONObject: hostileObj))
+        check("q4 launch policy: hostile prompt count yields nil expected counts",
+              Q4LaunchGatePolicy.expectedStageCount(gate: hostileGate,
+                                                    binding: launchBinding) == nil
+                  && Q4LaunchGatePolicy.expectedMergeCount(gate: hostileGate,
+                                                           binding: launchBinding) == nil)
+        check("q4 launch: verification baseline hard pin accepts E4_R32",
+              Gemma4Runner.verificationBaselineIsHardPinned(
+                  schedule: MoESchedule(batch: 4, rowsPerGroup: 32),
+                  sourceSha256: Q4LaunchArtifact.baselineMoeSourceSha256))
+        check("q4 launch: hard pin rejects E2 schedule",
+              !Gemma4Runner.verificationBaselineIsHardPinned(
+                  schedule: MoESchedule(batch: 2, rowsPerGroup: 32),
+                  sourceSha256: Q4LaunchArtifact.baselineMoeSourceSha256))
+        check("q4 launch: hard pin rejects R64 schedule",
+              !Gemma4Runner.verificationBaselineIsHardPinned(
+                  schedule: MoESchedule(batch: 4, rowsPerGroup: 64),
+                  sourceSha256: Q4LaunchArtifact.baselineMoeSourceSha256))
+        check("q4 launch: hard pin rejects caller-chosen hash",
+              !Gemma4Runner.verificationBaselineIsHardPinned(
+                  schedule: MoESchedule(batch: 4, rowsPerGroup: 32),
+                  sourceSha256: String(repeating: "9", count: 64)))
+    }
+
+    if let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() {
+        // GPU tail gate: 33 rows (a NON-multiple of every width) at the
+        // real hot inDim 2816 — every width must be BIT-identical to the
+        // incumbent default width and inside the FP64 oracle contract.
+        let library = try device.makeLibrary(source: Gemma4Runner.shaderSource, options: nil)
+        let pipe = try device.makeComputePipelineState(
+            function: library.makeFunction(name: Gemma4Runner.q4LaunchKernel)!)
+        let inDim = 2816, rows = 33
+        let blocksPerRow = inDim / 32
+        var rng = SplitMix64(seed: 0x74_61_69_6C_33)
+        var blocks = [UInt8]()
+        blocks.reserveCapacity(rows * blocksPerRow * 18)
+        for _ in 0..<(rows * blocksPerRow) {
+            blocks += [UInt8(rng.next() & 0xFF), UInt8(rng.next() & 0xFF)]
+            let n = blocks.count
+            let expBits = (UInt16(blocks[n - 2]) | UInt16(blocks[n - 1]) << 8) & 0x7C00
+            if expBits == 0x7C00 { blocks[n - 2] = 0x00; blocks[n - 1] = 0x3C }
+            for _ in 0..<16 { blocks.append(UInt8(rng.next() & 0xFF)) }
+        }
+        let x = Q4LaunchForge.fixedInput(inDim: inDim, seed: 99)
+        let oracle = try Q4Oracle.matvecFP64(blocks: blocks[...], outDim: rows,
+                                             inDim: inDim, x: x)
+        let wb = device.makeBuffer(bytes: blocks, length: blocks.count,
+                                   options: .storageModeShared)!
+        let xb = device.makeBuffer(bytes: x, length: x.count * 4,
+                                   options: .storageModeShared)!
+        let yb = device.makeBuffer(length: rows * 4, options: .storageModeShared)!
+        func run(_ width: Int) throws -> [Float] {
+            try Q4LaunchForge.runMatvec(pipe: pipe, queue: queue, wb: wb, xb: xb, yb: yb,
+                                        inDim: inDim, rows: rows, width: width).out
+        }
+        let defWidth = max(1, min(rows, pipe.maxTotalThreadsPerThreadgroup))
+        // The incumbent default (33 here) is NOT a power of two — it is
+        // the UNCHANGED default geometry, allowed explicitly.
+        let incumbent = try Q4LaunchForge.runMatvec(
+            pipe: pipe, queue: queue, wb: wb, xb: xb, yb: yb,
+            inDim: inDim, rows: rows, width: defWidth,
+            requirePowerOfTwo: false).out
+        check("q4 launch gpu: incumbent finite", incumbent.allSatisfy { $0.isFinite })
+        var incRel = 0.0
+        for i in 0..<rows {
+            incRel = max(incRel, abs(Double(incumbent[i]) - oracle[i])
+                         / max(1.0, abs(oracle[i])))
+        }
+        check("q4 launch gpu: incumbent inside oracle", incRel < 1e-4)
+        for w in [32, 64, 128, 256, 1024] where w <= pipe.maxTotalThreadsPerThreadgroup {
+            let out = try run(w)
+            let bits = zip(out, incumbent).allSatisfy { $0.bitPattern == $1.bitPattern }
+            check("q4 launch gpu: w\(w) tail-33 bit-identical to incumbent", bits)
+            var rel = 0.0
+            for i in 0..<rows {
+                rel = max(rel, abs(Double(out[i]) - oracle[i]) / max(1.0, abs(oracle[i])))
+            }
+            check("q4 launch gpu: w\(w) inside oracle", rel < 1e-4)
+        }
+        do { _ = try Q4LaunchForge.runMatvec(pipe: pipe, queue: queue, wb: wb, xb: xb,
+                                             yb: yb, inDim: inDim, rows: rows, width: 0)
+             failed += 1; print("FAIL: q4 launch zero width rejected") } catch {
+            check("q4 launch gpu: zero width rejected", true) }
+        do { _ = try Q4LaunchForge.runMatvec(pipe: pipe, queue: queue, wb: wb, xb: xb,
+                                             yb: yb, inDim: inDim, rows: 0, width: 32)
+             failed += 1; print("FAIL: q4 launch zero rows rejected") } catch {
+            check("q4 launch gpu: zero rows rejected", true) }
+        do { _ = try Q4LaunchForge.runMatvec(pipe: pipe, queue: queue, wb: wb, xb: xb,
+                                             yb: yb, inDim: inDim, rows: rows, width: 48)
+             failed += 1; print("FAIL: q4 launch non-power-of-two width rejected") } catch {
+            check("q4 launch gpu: non-power-of-two width rejected", true) }
+        // Undersized/aliasing buffers are rejected BEFORE any submission.
+        let shortY = device.makeBuffer(length: 4, options: .storageModeShared)!
+        do { _ = try Q4LaunchForge.runMatvec(pipe: pipe, queue: queue, wb: wb, xb: xb,
+                                             yb: shortY, inDim: inDim, rows: rows, width: 32)
+             failed += 1; print("FAIL: q4 launch undersized y rejected") } catch {
+            check("q4 launch gpu: undersized y buffer rejected", true) }
+        let shortW = device.makeBuffer(length: 18, options: .storageModeShared)!
+        do { _ = try Q4LaunchForge.runMatvec(pipe: pipe, queue: queue, wb: shortW, xb: xb,
+                                             yb: yb, inDim: inDim, rows: rows, width: 32)
+             failed += 1; print("FAIL: q4 launch undersized w rejected") } catch {
+            check("q4 launch gpu: undersized weight buffer rejected", true) }
+        do { _ = try Q4LaunchForge.runMatvec(pipe: pipe, queue: queue, wb: wb, xb: xb,
+                                             yb: xb, inDim: inDim, rows: rows, width: 32)
+             failed += 1; print("FAIL: q4 launch aliasing x/y rejected") } catch {
+            check("q4 launch gpu: aliasing x/y buffers rejected", true) }
+        do { _ = try Q4LaunchForge.runMatvec(pipe: pipe, queue: queue, wb: wb, xb: xb,
+                                             yb: yb, inDim: inDim, rows: rows, width: 32,
+                                             weightOffset: blocks.count - 1)
+             failed += 1; print("FAIL: q4 launch weight extent rejected") } catch {
+            check("q4 launch gpu: weight-offset extent rejected", true) }
+    } else {
+        print("SKIP: q4 launch GPU gates (Metal unavailable)")
+    }
+
+    // Artifact self-digest: a tampered body must never validate as a
+    // whole (the digest is recomputed over every field except itself).
+    do {
+        let artGuBytes = 2_230_272 * 128, artDnBytes = 1_115_136 * 128
+        let artExtent = 30 * (artGuBytes + artDnBytes)
+        let binding: [String: Any] = [
+            "graphSha256": String(repeating: "b", count: 64),
+            "fileByteCount": artExtent,
+            "residentBufferLength": artExtent,
+            "maxBufferLength": artExtent * 2, "recommendedWorkingSetSize": artExtent * 4,
+            "layerCount": 30, "expertCount": 128, "topK": 8,
+            "hidden": 2816, "inter": 704, "gateUpOut": 1408,
+            "guStride": 2_230_272, "dnStride": 1_115_136,
+            "guTensorStarts": (0..<30).map { $0 * artGuBytes },
+            "dnTensorStarts": (0..<30).map { 30 * artGuBytes + $0 * artDnBytes },
+            "guScratchBytes": 45_056, "actScratchBytes": 22_528,
+            "dnScratchBytes": 90_112, "scratchTotalBytes": 157_696]
+        func artifactDict(width: Int, device: String) -> [String: Any] {
+            ["artifactSchema": 1, "codegenVersion": "q4launch-v1",
+             "schedule": ["width": width], "kernelName": "g4_q4_matvec",
+             "primitiveSourceSha256": String(repeating: "c", count: 64),
+             "baselineMoeSourceSha256": Q4LaunchArtifact.baselineMoeSourceSha256,
+             "baselineMoeSchedule": ["batch": 4, "rowsPerGroup": 32],
+             "baselineMoeBinding": binding,
+             "regionGraphSha256": String(repeating: "d", count: 64),
+             "hardware": ["deviceName": device, "maxTotalThreadsPerThreadgroup": 1024,
+                          "threadExecutionWidth": 32,
+                          "recommendedMaxWorkingSetSize": 1 << 30],
+             "toolchain": Forge.toolchainIdentifier,
+             "ggufDigest": String(repeating: "e", count: 64),
+             "executableDigest": String(repeating: "f", count: 64),
+             "graphDigest": String(repeating: "0", count: 64),
+             "hotShapes": [[String: Any]](),
+             "componentResults": [[
+                "schedule": ["width": width], "accepted": true,
+                "bitIdenticalToIncumbent": true, "worstRelToOracle": 1e-7,
+                "screenMicrosPerShape": [1.0], "note": "t"] as [String: Any]],
+             "incumbentWorstRelToOracle": 1e-7,
+             "modelGate": NSNull(), "artifactDigest": ""]
+        }
+        let dec = JSONDecoder()
+        let honest = try dec.decode(
+            Q4LaunchArtifact.self,
+            from: try JSONSerialization.data(withJSONObject: artifactDict(width: 32, device: "t")))
+        let d = try Q4LaunchArtifact.bodyDigest(honest)
+        var withDigest = artifactDict(width: 32, device: "t")
+        withDigest["artifactDigest"] = d
+        let art = try dec.decode(
+            Q4LaunchArtifact.self,
+            from: try JSONSerialization.data(withJSONObject: withDigest))
+        let artDigest = try Q4LaunchArtifact.bodyDigest(art)
+        check("q4 launch artifact: self-digest matches honest body", artDigest == d)
+        var tampered = withDigest
+        tampered["schedule"] = ["width": 64]  // body changed, digest kept
+        let bad = try dec.decode(
+            Q4LaunchArtifact.self,
+            from: try JSONSerialization.data(withJSONObject: tampered))
+        let badDigest = try Q4LaunchArtifact.bodyDigest(bad)
+        check("q4 launch artifact: tampered width fails self-digest", badDigest != d)
+        var tamperedHw = withDigest
+        tamperedHw["hardware"] = ["deviceName": "other",
+                                  "maxTotalThreadsPerThreadgroup": 1024,
+                                  "threadExecutionWidth": 32,
+                                  "recommendedMaxWorkingSetSize": 1 << 30]
+        let badHw = try dec.decode(
+            Q4LaunchArtifact.self,
+            from: try JSONSerialization.data(withJSONObject: tamperedHw))
+        let badHwDigest = try Q4LaunchArtifact.bodyDigest(badHw)
+        check("q4 launch artifact: tampered hardware fails self-digest",
+              badHwDigest != d)
+    }
+
     if let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() {
         // GPU component gates at the TAIL region (topK 3, hidden 96, inter
         // 32) with synthetic Q4_0 bytes: batched E in {1,2,4} (tails) must

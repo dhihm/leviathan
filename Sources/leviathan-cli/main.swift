@@ -1550,8 +1550,277 @@ case "forge":
             } catch {
                 fail("q4-lower select failed: \(error)")
             }
+        case "launch-select":
+            // Phase 15 Q4 LAUNCH-GEOMETRY selection (bit-exact by
+            // construction: same pipeline, same per-thread arithmetic,
+            // only the g4_q4_matvec launch width changes). Fair
+            // comparator: the ACCEPTED E4_R32 baseline in THIS binary —
+            // both arms run E4 + fresh binding; the reference is the E4
+            // old-width control over the 3 canonical prompts x 32 steps
+            // (all-logit strict gates); 3 paired AB/BA x 31 matched
+            // decode steps at the fixed 2% policy. --smoke-test is an
+            // internal diagnostic record that can never install.
+            let regionPath = requireValue("--region", args)
+            let ggufPath = requireValue("--gguf", args)
+            let outPath = requireValue("--out", args)
+            let graphPath = requireValue("--graph", args)
+            let smokeTest = args.contains("--smoke-test")
+            let genTokens = args.firstIndex(of: "--gen-tokens").map { _ in
+                Int(requireValue("--gen-tokens", args)) ?? 0 } ?? (smokeTest ? 2 : 32)
+            let timedTokens = args.firstIndex(of: "--timed-tokens").map { _ in
+                Int(requireValue("--timed-tokens", args)) ?? 0 } ?? (smokeTest ? 1 : 31)
+            if smokeTest {
+                print("SMOKE MODE: raw-hello only, gen \(genTokens)/timed \(timedTokens) — "
+                      + "plumbing check, NOT a quality/performance proof")
+            } else {
+                guard genTokens == 32, timedTokens == 31 else {
+                    fail("production launch-select requires --gen-tokens 32 and --timed-tokens 31")
+                }
+            }
+            let enText = args.firstIndex(of: "--text-en").map { _ in
+                requireValue("--text-en", args) } ?? "Hello, can you help me today?"
+            let krText = args.firstIndex(of: "--text-kr").map { _ in
+                requireValue("--text-kr", args) } ?? "안녕하세요, 오늘 날씨는 어떤가요?"
+            do {
+                let fileURL = URL(fileURLWithPath: ggufPath)
+                let graphHandle = try FileHandle(
+                    forReadingFrom: URL(fileURLWithPath: graphPath))
+                defer { try? graphHandle.close() }
+                guard let graphData = try graphHandle.read(upToCount: 8 << 20),
+                      !graphData.isEmpty else {
+                    fail("graph file unreadable: \(graphPath)")
+                }
+                let graph = try GemmaGraph.parse(graphData)
+                let tokenizer = try GemmaTokenizer(gguf: GGUFReader.read(fileURL))
+                func chatIds(_ text: String) throws -> [Int] {
+                    try tokenizer.encode(
+                        "<|turn>user\n" + text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>")
+                }
+                let fixtures = smokeTest
+                    ? [Q4LoweringForge.Q4Fixture(name: "raw-hello",
+                                                 tokens: try tokenizer.encode("Hello"))]
+                    : [
+                    Q4LoweringForge.Q4Fixture(name: "en-chat", tokens: try chatIds(enText)),
+                    Q4LoweringForge.Q4Fixture(name: "kr-chat", tokens: try chatIds(krText)),
+                    Q4LoweringForge.Q4Fixture(name: "raw-hello", tokens: try tokenizer.encode("Hello")),
+                ]
+                let runner = try Gemma4Runner(fileAt: fileURL)
+                let (_, log) = try Q4LaunchSelect.selectAndPersist(
+                    regionJSON: try Data(contentsOf: URL(fileURLWithPath: regionPath)),
+                    ggufURL: fileURL, graph: graph, runner: runner, fixtures: fixtures,
+                    genTokens: genTokens, timedTokens: timedTokens,
+                    isEndOfGeneration: { tokenizer.isEndOfGeneration($0) },
+                    diagnostic: smokeTest,
+                    saveTo: URL(fileURLWithPath: outPath))
+                for line in log { print(line) }
+                print("Q4LAUNCH_SELECT_COMPLETED -> \(outPath)")
+            } catch {
+                fail("q4-lower launch-select failed: \(error)")
+            }
+        case "launch-verify-production":
+            // FRESH-PROCESS verification of the composite Q4 launch
+            // artifact (separately launched): identity first, then an
+            // E4-baseline (default width) 3x32 reference with workload
+            // digest checks, PUBLIC composite install (E4 + width
+            // coherently), and strict 3x32 candidate gates with
+            // derived eligible-geometry and MoE counter deltas.
+            let artifactPath = requireValue("--artifact", args)
+            let ggufPath = requireValue("--gguf", args)
+            let regionPath = requireValue("--region", args)
+            let graphPath = requireValue("--graph", args)
+            do {
+                let artifact = try Q4LaunchArtifact.load(
+                    from: URL(fileURLWithPath: artifactPath))
+                let fileURL = URL(fileURLWithPath: ggufPath)
+                let region = try MoERegionIR.parse(
+                    try Data(contentsOf: URL(fileURLWithPath: regionPath)))
+                let graphHandle = try FileHandle(
+                    forReadingFrom: URL(fileURLWithPath: graphPath))
+                defer { try? graphHandle.close() }
+                guard let graphData = try graphHandle.read(upToCount: 8 << 20),
+                      !graphData.isEmpty else {
+                    fail("graph file unreadable: \(graphPath)")
+                }
+                let graph = try GemmaGraph.parse(graphData)
+                let ggufDigest = try GemmaForge.fileDigest(fileURL)
+                let graphDigest = try GemmaGraph.digest(graph)
+                let runner = try Gemma4Runner(fileAt: fileURL)
+                try artifact.validate(region: region,
+                                      pipelineMaxThreads: try runner.q4MatvecPipelineMaxThreads(),
+                                      hardware: runner.hardwareProfile(),
+                                      graphDigest: graphDigest,
+                                      ggufDigest: ggufDigest,
+                                      executableDigest: try Gemma4Runner.executableDigest())
+                guard let gate = artifact.modelGate,
+                      Q4LaunchGatePolicy.productionValid(gate, schedule: artifact.schedule,
+                                              binding: artifact.baselineMoeBinding) else {
+                    fail("artifact is not production-valid (diagnostic/no-win records "
+                         + "never verify publicly)")
+                }
+                let tokenizer = try GemmaTokenizer(gguf: GGUFReader.read(fileURL))
+                let (ssaMany, ssaOne) = LoweringSelect.ssaForwardAdapters(graph: graph)
+                let enText = args.firstIndex(of: "--text-en").map { _ in
+                    requireValue("--text-en", args) } ?? "Hello, can you help me today?"
+                let krText = args.firstIndex(of: "--text-kr").map { _ in
+                    requireValue("--text-kr", args) } ?? "안녕하세요, 오늘 날씨는 어떤가요?"
+                func chatIds(_ text: String) throws -> [Int] {
+                    try tokenizer.encode(
+                        "<|turn>user\n" + text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>")
+                }
+                let prompts: [(String, [Int])] = [
+                    ("en-chat", try chatIds(enText)),
+                    ("kr-chat", try chatIds(krText)),
+                    ("raw-hello", try tokenizer.encode("Hello")),
+                ]
+                guard prompts.map(\.0) == gate.fixtures.map(\.name) else {
+                    fail("fixture names/order differ from the recorded selection")
+                }
+                let genTokens = Q4LaunchGatePolicy.productionGenTokens
+
+                // E4 baseline reference (default launch width, E4
+                // installed, nothing else) — exact 32 steps per fixture.
+                runner.uninstallQ4LaunchGeometry()
+                runner.uninstallMoeGeneratedLowering()
+                guard MTLCreateSystemDefaultDevice() != nil else {
+                    fail("Metal unavailable")
+                }
+                try runner.installMoeBaselineForVerification(
+                    region: region, schedule: artifact.baselineMoeSchedule,
+                    expectedSourceSha256: artifact.baselineMoeSourceSha256)
+                defer {
+                    runner.uninstallQ4LaunchGeometry()
+                    runner.uninstallMoeGeneratedLowering()
+                }
+                var refs: [(name: String, prompt: [Int], ids: [Int],
+                            logits: [[Float]], baselineEligible: Int)] = []
+                for (name, prompt) in prompts {
+                    try LoweringSelect.ssaReset(runner)
+                    // Baseline eligible population: actual g4_q4_matvec
+                    // dispatches for THIS fixture's whole history — the
+                    // candidate replay's derived population must equal it.
+                    let baseEligible0 = runner.q4MatvecGenericDispatchCount
+                    let (am0, lg0) = try ssaMany(runner, prompt)
+                    guard lg0.count == runner.config.vocabSize,
+                          lg0.allSatisfy({ $0.isFinite }) else {
+                        fail("E4-baseline reference [\(name)]: nonfinite/wrong-size logits")
+                    }
+                    var ids = [am0]
+                    var logits = [lg0]
+                    var prev = am0
+                    while ids.count < genTokens {
+                        if tokenizer.isEndOfGeneration(prev) { break }
+                        let (am, lg) = try ssaOne(runner, prev)
+                        // EVERY decode step's logits are validated (full
+                        // vocab, finite) and the id range-checked before
+                        // anything is gated against them.
+                        guard lg.count == runner.config.vocabSize,
+                              lg.allSatisfy({ $0.isFinite }),
+                              am >= 0, am < runner.config.vocabSize else {
+                            fail("E4-baseline reference [\(name)] step \(ids.count): "
+                                 + "nonfinite/wrong-size logits or bad id")
+                        }
+                        ids.append(am); logits.append(lg); prev = am
+                    }
+                    guard ids.count == genTokens else {
+                        fail("E4-baseline reference [\(name)]: only \(ids.count) steps "
+                             + "(EOS) — verification requires exactly \(genTokens)")
+                    }
+                    refs.append((name, prompt, ids, logits,
+                                 runner.q4MatvecGenericDispatchCount - baseEligible0))
+                    print("E4-baseline reference [\(name)]: \(ids.count) steps "
+                          + "(eligible g4_q4_matvec dispatches "
+                          + "\(refs[refs.count - 1].baselineEligible))")
+                }
+                for (i, ref) in refs.enumerated() {
+                    var history = ref.prompt
+                    history.append(contentsOf: ref.ids.dropLast())
+                    let digest = GemmaForge.workloadDigest(history)
+                    guard gate.fixtures[i].promptTokenCount == ref.prompt.count,
+                          gate.fixtures[i].historyDigest == digest else {
+                        fail("fixture \(ref.name): workload digest/prompt length "
+                             + "differs from the recorded selection")
+                    }
+                }
+
+                // PUBLIC composite install + strict candidate gates.
+                try runner.installQ4LaunchGenerated(artifact: artifact,
+                                                    ggufDigest: ggufDigest,
+                                                    region: region,
+                                                    graphDigest: graphDigest)
+                print("composite production install OK: \(artifact.schedule.label) on E4_R32")
+                let layerCount = artifact.baselineMoeBinding.layerCount
+                let topK = region.topK
+                let moeE = artifact.baselineMoeSchedule.batch
+                var worstAll = 0.0
+                for ref in refs {
+                    // Fresh context per fixture (installs preserved — the
+                    // reset only clears KV/position).
+                    try LoweringSelect.ssaReset(runner)
+                    let eligible0 = runner.q4MatvecGenericDispatchCount
+                    let applied0 = runner.q4LaunchAppliedCount
+                    let gu0 = runner.moeGuDispatchCount, act0 = runner.moeActDispatchCount
+                    let dn0 = runner.moeDnDispatchCount, m0 = runner.moeAxpyMergeCount
+                    let fb0 = runner.q4LaunchFallbackCount
+                    let mfb0 = runner.moeResidentFallbackCount
+                    var logits = [[Float]]()
+                    let (_, lg0) = try ssaMany(runner, ref.prompt)
+                    logits.append(lg0)
+                    for s in 0..<(ref.ids.count - 1) {
+                        let (_, lg) = try ssaOne(runner, ref.ids[s])
+                        logits.append(lg)
+                    }
+                    guard logits.count == genTokens else {
+                        fail("candidate replay [\(ref.name)]: step count mismatch")
+                    }
+                    for s in 0..<ref.ids.count {
+                        let lg = logits[s], want = ref.logits[s]
+                        guard lg.count == want.count,
+                              lg.allSatisfy({ $0.isFinite }) else {
+                            fail("verify [\(ref.name)] step \(s): nonfinite/shape")
+                        }
+                        let argmax = lg.enumerated().max { $0.element < $1.element }!.offset
+                        guard argmax == ref.ids[s] else {
+                            fail("verify [\(ref.name)] step \(s): greedy mismatch")
+                        }
+                        for i in 0..<lg.count {
+                            worstAll = max(worstAll, abs(Double(lg[i] - want[i]))
+                                           / max(1.0, abs(Double(want[i]))))
+                        }
+                        if worstAll >= 1e-4 {
+                            fail(String(format: "verify [%@] step %d outside 1e-4 (%.3e)",
+                                        ref.name, s, worstAll))
+                        }
+                    }
+                    let forwards = ref.prompt.count + ref.ids.count - 1
+                    // One stage dispatch per CHUNK (E4 over topK8 = 2 per
+                    // layer per forward) — NO extra factor 2.
+                    let wantStage = ((topK + moeE - 1) / moeE) * layerCount * forwards
+                    let wantMerge = topK * layerCount * forwards
+                    let eligible = runner.q4MatvecGenericDispatchCount - eligible0
+                    let applied = runner.q4LaunchAppliedCount - applied0
+                    let geoFb = runner.q4LaunchFallbackCount - fb0
+                    let moeFb = runner.moeResidentFallbackCount - mfb0
+                    guard applied == eligible, eligible > 0,
+                          eligible == ref.baselineEligible, geoFb == 0, moeFb == 0,
+                          runner.moeGuDispatchCount - gu0 == wantStage,
+                          runner.moeActDispatchCount - act0 == wantStage,
+                          runner.moeDnDispatchCount - dn0 == wantStage,
+                          runner.moeAxpyMergeCount - m0 == wantMerge else {
+                        fail("verify [\(ref.name)]: counters wrong (applied \(applied)/"
+                             + "eligible \(eligible), geoFb \(geoFb), moeFb \(mfb0))")
+                    }
+                    print(String(format: "candidate replay [%@]: PASS, worst %.3e; geometry applied %d == eligible, MoE stages %d, merges %d, fallbacks 0",
+                                 ref.name, worstAll, applied, wantStage, wantMerge))
+                }
+                print(String(format: "Q4LAUNCH_VERIFY_PRODUCTION_OK worst rel %.3e artifact %@",
+                             worstAll, artifact.artifactDigest.prefix(16) + "…"))
+            } catch {
+                fail("q4-lower launch-verify-production failed: \(error)")
+            }
         default:
-            fail("q4-lower requires a mode: forge | verify | select")
+            fail("q4-lower requires a mode: forge | verify | select | launch-select | launch-verify-production")
         }
 
     case "moe-lower":
@@ -1689,6 +1958,51 @@ case "forge":
                 print("MOE_SELECT_COMPLETED -> \(outPath)")
             } catch {
                 fail("moe-lower select failed: \(error)")
+            }
+        case "profile":
+            // Phase 14 DIAGNOSTIC INSTRUMENTATION ONLY (no optimization,
+            // no public install, no artifact approval/rebinding): the
+            // static E4_R32 schedule is freshly compiled from the SAME
+            // deterministic emitter and installed via the INTERNAL trial
+            // path, then the canonical raw-hello 32-step history is
+            // measured on the ACTUAL Forge SSA path two ways — normal
+            // production settings (per-token wall/GPU + breakdown) and an
+            // intrusive per-kernel replay (segmentBatching OFF ONLY for
+            // GPU attribution) gated on all 262144 logits per step. An
+            // optional --expect-source-sha (the accepted phase-13
+            // artifact's sourceSha256) fails closed if emission drifted.
+            let regionPath = requireValue("--region", args)
+            let ggufPath = requireValue("--gguf", args)
+            let graphPath = requireValue("--graph", args)
+            let outPath = requireValue("--out", args)
+            let expectSha = args.firstIndex(of: "--expect-source-sha").map { _ in
+                requireValue("--expect-source-sha", args) }
+            do {
+                let fileURL = URL(fileURLWithPath: ggufPath)
+                let graphHandle = try FileHandle(
+                    forReadingFrom: URL(fileURLWithPath: graphPath))
+                defer { try? graphHandle.close() }
+                guard let graphData = try graphHandle.read(upToCount: 8 << 20),
+                      !graphData.isEmpty else {
+                    fail("graph file unreadable: \(graphPath)")
+                }
+                let graph = try GemmaGraph.parse(graphData)
+                let tokenizer = try GemmaTokenizer(gguf: GGUFReader.read(fileURL))
+                let runner = try Gemma4Runner(fileAt: fileURL)
+                let (report, log) = try MoELoweringProfile.run(
+                    regionJSON: try Data(contentsOf: URL(fileURLWithPath: regionPath)),
+                    ggufURL: fileURL, graph: graph, runner: runner,
+                    promptTokens: try tokenizer.encode("Hello"),
+                    isEndOfGeneration: { tokenizer.isEndOfGeneration($0) },
+                    expectedSourceSha256: expectSha)
+                for line in log { print(line) }
+                let enc = JSONEncoder()
+                enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+                try enc.encode(report).write(to: URL(fileURLWithPath: outPath))
+                print("MOE_PROFILE_COMPLETED -> \(outPath) (diagnostic trial only; "
+                    + "no artifact approved, nothing publicly installed)")
+            } catch {
+                fail("moe-lower profile failed: \(error)")
             }
         case "verify-production":
             // FRESH-PROCESS production verification (required before any
@@ -1859,7 +2173,7 @@ case "forge":
                 fail("moe-lower verify-production failed: \(error)")
             }
         default:
-            fail("moe-lower requires a mode: forge | verify | select")
+            fail("moe-lower requires a mode: forge | verify | select | verify-production | profile")
         }
 
     case "rms-lower":
