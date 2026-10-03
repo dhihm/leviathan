@@ -873,6 +873,20 @@ docs/evidence/gemma-diagnose-hello32.log.
 Findings (full 262144-logit gate formula |a-b|/max(1,|ref|)):
   - segment_only and vl+segment are BIT-IDENTICAL to reference over
     all 32 steps (snapshot bitPattern comparison, anyBitsDiffer=false).
+    CORRECTION (2026-10-03, pass 9): a reset-order bug in the
+    diagnostic's teacher-forced replay (runner.reset() ->
+    discardOpenSegment() clears autoSegment AFTER the axis was applied)
+    means the segment_only / vl+segment axis replays actually executed
+    WITHOUT deferred-segment batching — per-kernel submissions with
+    the plain kernels. The bit-identity result is therefore a valid
+    plain-kernel replay comparison (and segment batching is
+    numerically identical in dispatch ORDER by construction), but it
+    did NOT measure batched execution itself; the batched-mode
+    evidence for the selected configuration remains the pass-7 FORGE
+    gates (graph executor, 0.0e+00 measured drift), which are
+    unaffected by this bug. The bug is fixed in pass 9 (the axis is
+    re-applied after every reset with a fail-closed
+    segmentBatchingActive guard).
   - q4_tiled alone reproduces the pass-7 rejection digit-for-digit:
     worst rel 1.032e-04 at output step 28; per-axis composed SSA
     re-runs of the three persisted pass-7 rejections give
@@ -926,3 +940,166 @@ diagnostic, not a current batched-breakdown attribution.
 Default suite with the real GGUF on Metal: 627 passed / 0 failed
 (docs/evidence/tests-q6vl-627.log). No competitive-performance claim is
 made for this phase.
+
+## Pass 9 (2026-10-03 UTC): parameterized Q4_0 operator lowering — one operator family, emitted Metal, FP64 oracle, artifact-bound persisted execution
+
+Design first (root-reviewed before any model run):
+[docs/Q4_LOWERING_DESIGN.md](Q4_LOWERING_DESIGN.md), responding to the
+pass-8 [architecture audit](ARCHITECTURE_AUDIT.md) stages 1–4 for
+exactly ONE operator family: the dominant Q4_0 quantized matvec.
+
+What was implemented (all code/tests/docs original, this phase):
+
+- **Python op input** (`tools/q4_lower/q4_op_model.py`,
+  `export_q4_op.py`, example `model_q4_attn.py`, stdlib only): ONE
+  bounded operation with full semantics/shape/layout/quant/precision
+  metadata — `q4_0.matvec`, inDim 2816, outDim 4096, bound to
+  `blk.0.attn_q.weight` exactly as the GGUF tensor directory pins it.
+  The Swift side re-validates every field and cross-checks the
+  declared shape against the actual tensor (mismatch rejected).
+- **Operation IR + schedule derivation** (`Q4OpIR`,
+  `Q4ScheduleDeriver`): legal schedules derived from the operation
+  SHAPE (blocksPerRow = inDim/32 governs the T ladder; small
+  geometries legally admit only small T) and the MEASURED device
+  (execution width, threadgroup maximum from the compiled incumbent
+  pipeline). Parameters with real emitted-code effect: threadsPerRow,
+  rowsPerGroup, accumulation (plain f32 or Neumaier-compensated f32 —
+  Apple GPUs expose no usable FP64, so no GPU double strategy exists),
+  and scalar/float4 activation loads. Baseline (T=1, incumbent-mapping
+  serial order) always present; ≤ 8 candidates; threadgroup partials
+  bounded by the device maximum.
+- **Metal source EMISSION** (`Q4KernelEmitter`, codegen q4gen-v1):
+  the complete MSL kernel is generated from the schedule parameters —
+  contiguous block-chunk decomposition, uniform threadgroup barrier
+  with an active-row guard (inactive rows never read OOB), ascending-
+  thread ordered combine — not a table of prewritten kernels. Emission
+  is deterministic and its SHA-256 is an artifact identity input.
+- **Independent CPU FP64 oracle** (`Q4Oracle.matvecFP64`): Double
+  dequant/dot over REAL bounded weight rows read from the bound GGUF
+  tensor (256 rows) with a deterministic seeded activation; the
+  incumbent kernel is measured against the same oracle (measured, not
+  assumed exact). Component contract UNCHANGED: finite outputs and
+  rel-to-FP64 < 1e-4, the same tolerance the hand-written Q4/Q6 GPU
+  kernels are held to in the test suite. Measured on the real tensor:
+  incumbent 7.211e-07; all 8 emitted candidates accepted — the T=1
+  baseline at 7.211e-07 (same reduction order as the incumbent) and
+  the seven cooperative candidates at 1.865e-07–2.546e-07 (component
+  line of docs/evidence/q4-select-root-final.log; per-candidate
+  records in docs/evidence/q4-artifact-root-final.json).
+- **Artifact identity + persisted execution** (`Q4LoweringArtifact`):
+  binds op digest, emitted source + SHA, codegen version, schedule,
+  hardware, toolchain, GGUF content digest, and the running
+  executable's bytes (artifact JSON bounded to 1 MiB); validation
+  re-emits from the schedule and
+  requires byte equality (tamper/rule drift rejected), re-validates
+  the decoded op, requires the component record's oracle distance to
+  be finite and within 1e-4, and — whenever a model-gate record exists
+  — requires the persisted schedule to have passed EVERY fixture gate
+  even when the policy selected the incumbent. The PRODUCTION install
+  (`Gemma4Runner.installQ4GeneratedKernel`) additionally refuses
+  component-only artifacts and checks the hardware profile against the
+  actual compiled incumbent pipeline. The generated kernel serves ONLY
+  its bound tensor (exact name + inDim match); every other Q4 matvec —
+  other layers, other shapes, expert slices — keeps the incumbent
+  kernel. Dedicated dispatch counters (correct in segment-batched
+  mode) prove the emitted kernel actually executed.
+- **Bounded per-candidate orchestration** (`q4-lower select`, ONE
+  process so the executable digest is stable): component gates for
+  every derived candidate; canonical chat fixtures (the same
+  user→model template derived from the GGUF's embedded Jinja template)
+  for English AND Korean plus the raw Hello continuity fixture;
+  teacher-forced same-history replay per candidate gating the full
+  262144 logits at the UNCHANGED strict 1e-4 relative formula + exact
+  greedy argmax equality + finiteness at every step; THREE paired
+  matched-timing repetitions per passing candidate with alternating
+  incumbent-first/candidate-first order (raw per-arm samples and the
+  actual history windows recorded in the artifact); policy selection
+  only when a candidate beats ITS OWN paired incumbent beyond the
+  documented 2% threshold (GemmaForge.noiseRelWall), else the
+  incumbent stays the production selection; final persisted-execution
+  proof reloads the artifact from disk, validates, installs through
+  the production path, and gates one more fixture replay with
+  dispatch-counter evidence.
+- **Fail-closed everywhere**: artifact rejection at any check leaves
+  the incumbent kernels active; a generated replay that never
+  dispatches is an error, not a silent fallback; timing arms throw on
+  any forward failure (a failed run is never timed).
+
+Tests (root-executed on the final release binary): default suite 552
+passed / 0 failed
+(docs/evidence/tests-q4lower-root-final-default.log) and with the real
+GGUF on Metal 653 passed / 0 failed
+(docs/evidence/tests-q4lower-root-final-realgguf.log) — 627
+pre-existing plus 26 new: op-IR validation (typed error cases),
+deriver shape/hardware bounds, emitter determinism/distinctness/
+parameter baking, hand-computed FP64 oracle block, GPU component
+gates for the emitted T=1 and compensated T=8 kernels, full component
+forge round-trip, artifact tamper/hardware-mismatch rejection, and a
+deferred-segment batching regression (one batched forward after a
+reset must submit fewer command buffers than dispatched kernels — the
+reset-order bug class root measured live).
+
+Measured selection outcome (root-executed orchestration, same release
+binary, engine SHA-256 0a3aa9bdf9896dcf80d19099ee958db1f305144d0ab125bad6397d9c654e1fb4, full log docs/evidence/q4-select-root-final.log,
+artifact digest recorded in docs/evidence/q4-artifact-root-final.json;
+47.3 min wall (2839.69 s), peak memory footprint 31,226,840,192 B /
+max RSS 3,328,737,280 B — near the 32 GB hardware RAM capacity, NOT
+lightweight; the existing authorized 14,439,363,584 B GGUF was used,
+no new download; swap of 52-53 GiB and system LOAD AVERAGES of 8-17
+during the run are recorded in
+docs/evidence/q4-resource-root-final.jsonl without a causal claim):
+
+- Component (real tensor bytes, 256 rows): incumbent rel-to-FP64
+  7.211e-07; all 8 emitted candidates accepted — the T=1 baseline at
+  7.211e-07 (same reduction order as the incumbent) and the seven
+  cooperative candidates at 1.865e-07–2.546e-07.
+- Model gates (32 steps, EN chat + KO chat + raw Hello, teacher-forced
+  same-history, full 262144 logits, unchanged strict 1e-4 + exact
+  argmax + finiteness): 6/8 candidates passed 3/3 fixtures (worst
+  full-logit rel 7.04e-05–8.85e-05; the emitted T=1 baseline measured
+  0.000e+00 full-logit drift with exact argmax on these fixtures — a
+  zero measured drift, not a bitPattern-level bit-identity proof).
+  Two float4 variants (T16 compensated float4, T16 R2 compensated
+  float4) FAILED the raw-Hello fixture at step 9 (worst 1.026e-04,
+  outside the gate) — recorded as measured rejections, not retried or
+  loosened.
+- Matched timing (3 paired repetitions each, alternating
+  incumbent-first/candidate-first order, 31 timed tokens per fixture
+  arm, per-fixture sums over the three fixtures). The timings ARE
+  whole-model decode wall times over the three fixtures; what is
+  bounded is the CHANGE (one bound tensor's kernel).
+  q4gen_matvec_T8_R1_f32_scalar — the policy selection — measured
+  per-repetition candidate/incumbent sums of 1472045/1386046,
+  1388390/1444605, and 1377647/1489661 us: paired gains of −6.20%,
+  +3.89%, and +7.52% (the FIRST repetition was SLOWER than its paired
+  incumbent); the median-of-repetitions comparison (1388390 vs
+  1444605 us, +3.89%) crossed the 2% policy threshold and selected
+  it. OBSERVED 2%-policy selection with SIGN-CHANGING paired
+  repetitions: stable or competitive performance is NOT demonstrated
+  — the per-repetition spread includes a slower repetition, other
+  candidates showed similar or larger variance, and only one bound
+  tensor's kernel changed; this is not a robust general speedup and
+  not a complete whole-model compiler result.
+- Persisted execution proof: the artifact was saved, RELOADED from
+  disk, identity-validated, installed through the production path,
+  and gated one more EN-chat replay (worst rel 4.965e-05) with 52
+  generated-kernel dispatches on the bound tensor counted by the
+  dedicated counters.
+
+Fail-closed checks exercised in this run: the two gate failures were
+recorded and those candidates were excluded from timing and selection,
+and the production install path rejects any schedule without a fully
+gate-passed model-gate record.
+
+Standalone tooling in the same run: `q4-lower verify` re-validated the
+persisted artifact against the actual GGUF
+(docs/evidence/q4-verify-root-final.log); the standalone component
+`q4-lower forge` artifact (model gate nil) remains
+diagnostic-and-test-only by construction — production install refuses
+component-only artifacts.
+
+Honest scope: this is ONE parameterized operator-level lowering family
+with shape/hardware-derived schedule generation, independent numerical
+validation, artifact-bound persisted execution, and paired matched
+measurement. The broader joint goal (general Python model compiler
+with competitive performance) remains UNMET.

@@ -1,0 +1,90 @@
+Building for production...
+[0/4] Write sources
+[1/4] Write swift-version--1AB21518FC5DEDBE.txt
+[3/4] Compiling leviathan_cli main.swift
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-cli/main.swift:1089:32: warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1087 |                 }
+1088 |                 for t in history {
+1089 |                     try runner.forward(tokenIds: [t])
+     |                                `- warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1090 |                 }
+1091 |                 try afterStep(0, try runner.currentLogits())
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-cli/main.swift:1093:32: warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1091 |                 try afterStep(0, try runner.currentLogits())
+1092 |                 for s in 1..<steps {
+1093 |                     try runner.forward(tokenIds: [refIds[s]])
+     |                                `- warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1094 |                     try afterStep(s, try runner.currentLogits())
+1095 |                 }
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-cli/main.swift:351:9: warning: immutable value 'reference' was never used; consider removing it [#no-usage]
+ 349 |     let graph: GraphIR
+ 350 |     let weights: [Float]?
+ 351 |     let reference: [Float]?   // PyTorch refOutput, only with --export-prefix
+     |         `- warning: immutable value 'reference' was never used; consider removing it [#no-usage]
+ 352 |     do {
+ 353 |         if let weightExport {
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-cli/main.swift:1522:21: warning: variable 'fixtures' was never mutated; consider changing to 'let' constant
+1520 |                         + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>")
+1521 |                 }
+1522 |                 var fixtures = [
+     |                     `- warning: variable 'fixtures' was never mutated; consider changing to 'let' constant
+1523 |                     Q4LoweringForge.Q4Fixture(name: "en-chat", tokens: try chatIds(enText)),
+1524 |                     Q4LoweringForge.Q4Fixture(name: "kr-chat", tokens: try chatIds(krText)),
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-cli/main.swift:2204:23: warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+2202 |             requireValue("--prompt-ids", args) } ?? "2,9259"
+2203 |         func intArg(_ name: String, _ def: Int) -> Int {
+2204 |             guard let i = args.firstIndex(of: name) else { return def }
+     |                       `- warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+2205 |             guard let v = Int(requireValue(name, args)) else {
+2206 |                 fail("\(name) must be an integer"); return def }
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-cli/main.swift:2461:23: warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+2459 |         let planPath = requireValue("--plan", args)
+2460 |         func intArgServe(_ name: String, _ def: Int) -> Int {
+2461 |             guard let i = args.firstIndex(of: name) else { return def }
+     |                       `- warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+2462 |             guard let v = Int(requireValue(name, args)) else {
+2463 |                 fail("\(name) must be an integer"); return def }
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-cli/main.swift:2206:53: warning: will never be executed
+2204 |             guard let i = args.firstIndex(of: name) else { return def }
+2205 |             guard let v = Int(requireValue(name, args)) else {
+2206 |                 fail("\(name) must be an integer"); return def }
+     |                 |                                   `- warning: will never be executed
+     |                 `- note: a call to a never-returning function
+2207 |             return v
+2208 |         }
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-cli/main.swift:2463:53: warning: will never be executed
+2461 |             guard let i = args.firstIndex(of: name) else { return def }
+2462 |             guard let v = Int(requireValue(name, args)) else {
+2463 |                 fail("\(name) must be an integer"); return def }
+     |                 |                                   `- warning: will never be executed
+     |                 `- note: a call to a never-returning function
+2464 |             return v
+2465 |         }
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-cli/main.swift:1855:67: warning: will never be executed
+1853 |                     guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+1854 |                           id >= 0, id < preConfig.vocabSize else {
+1855 |                         fail("invalid prompt id '\($0)'"); return 0
+     |                         |                                         `- warning: will never be executed
+     |                         `- note: a call to a never-returning function
+1856 |                     }
+1857 |                     return id
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan/Sources/leviathan-cli/main.swift:2234:64: warning: will never be executed
+2232 |                 guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+2233 |                       id >= 0, id < preConfig.vocabSize else {
+2234 |                     fail("invalid prompt id '\($0)')"); return 0 }
+     |                     |                                          `- warning: will never be executed
+     |                     `- note: a call to a never-returning function
+2235 |                 return id
+2236 |             }
+[3/5] Write Objects.LinkFileList
+[4/5] Linking leviathan-cli
+Build complete! (12.33s)

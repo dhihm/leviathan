@@ -3118,6 +3118,204 @@ do {
 }
 
 
+// MARK: - Q4 parameterized operator lowering (phase 9)
+
+/// Typed Q4-lowering error-case check: passes only when the body throws
+/// EXACTLY the expected Q4LoweringError case (Equatable), so a different
+/// failure path cannot satisfy the check.
+@MainActor
+func checkQ4Throws(_ name: String, _ expected: Q4LoweringError,
+                   _ body: () throws -> Void) {
+    do {
+        try body()
+        failed += 1; print("FAIL: \(name) — expected \(expected), got no error")
+    } catch let error as Q4LoweringError {
+        if error == expected { passed += 1 }
+        else { failed += 1; print("FAIL: \(name) — expected \(expected), got \(error)") }
+    } catch {
+        failed += 1; print("FAIL: \(name) — expected \(expected), got unexpected \(error)")
+    }
+}
+
+/// Builds op JSON matching the Python capture schema.
+func q4OpJSON(op: String = "q4_0.matvec", inDim: Int = 2816, outDim: Int = 4096,
+              tensor: Any? = nil, rows: Any? = 256) throws -> Data {
+    let obj: [String: Any] = [
+        "schema": 1, "op": op, "semantics": "dot(W_row, x)",
+        "inDim": inDim, "outDim": outDim,
+        "layout": "row-major-q4_0-blocks", "quant": "q4_0",
+        "accumulate": "f32", "inputPrecision": "f32",
+        "tensor": tensor, "representativeRows": rows,
+    ]
+    return try JSONSerialization.data(withJSONObject: obj)
+}
+
+do {
+    // ---- op IR validation ----
+    let good = try Q4OpIR.parse(q4OpJSON())
+    checkEqual("q4 op IR dims", good.inDim, 2816)
+    checkEqual("q4 op IR digest stable", try good.digest(), try good.digest())
+    checkQ4Throws("q4 op IR rejects unknown op",
+                  .invalidOp("unsupported op/semantics q8.matvec/dot(W_row, x)")) {
+        _ = try Q4OpIR.parse(q4OpJSON(op: "q8.matvec"))
+    }
+    checkQ4Throws("q4 op IR rejects non-block inDim",
+                  .invalidOp("bad dims inDim 2817 outDim 4096")) {
+        _ = try Q4OpIR.parse(q4OpJSON(inDim: 2817))
+    }
+    checkQ4Throws("q4 op IR rejects representativeRows > outDim",
+                  .invalidOp("representativeRows 65 out of bounds")) {
+        _ = try Q4OpIR.parse(q4OpJSON(outDim: 64, rows: 65))
+    }
+
+    // ---- deriver: shape + hardware dependence, bounded, baseline first ----
+    let hw = ForgeHardwareProfile(deviceName: "test", maxTotalThreadsPerThreadgroup: 1024,
+                                  threadExecutionWidth: 8, recommendedMaxWorkingSetSize: 1 << 30)
+    let derived = Q4ScheduleDeriver.derive(op: good, hardware: hw)
+    check("q4 deriver bounded to 8", derived.count <= 8)
+    checkEqual("q4 deriver baseline first",
+               derived.first, Q4Schedule(threadsPerRow: 1, rowsPerGroup: 1,
+                                         accumulation: .f32, xLoads: .scalar))
+    check("q4 deriver threads depend on shape (blocksPerRow 88 admits T<=22)",
+          derived.contains { $0.threadsPerRow == 8 }
+              && !derived.contains { $0.threadsPerRow == 32 })
+    let smallOp = try Q4OpIR.parse(q4OpJSON(inDim: 128, outDim: 64, rows: 32))
+    checkEqual("q4 deriver: 4-block rows admit only the baseline",
+               Q4ScheduleDeriver.derive(op: smallOp, hardware: hw),
+               [Q4Schedule(threadsPerRow: 1, rowsPerGroup: 1,
+                           accumulation: .f32, xLoads: .scalar)])
+    let tinyHw = ForgeHardwareProfile(deviceName: "test", maxTotalThreadsPerThreadgroup: 8,
+                                      threadExecutionWidth: 4, recommendedMaxWorkingSetSize: 1 << 30)
+    check("q4 deriver respects threadgroup maximum",
+          Q4ScheduleDeriver.derive(op: good, hardware: tinyHw)
+              .allSatisfy { $0.threadsPerRow * $0.rowsPerGroup <= 8 })
+
+    // ---- emitter: deterministic, parameterized, distinct ----
+    let s1 = Q4Schedule(threadsPerRow: 8, rowsPerGroup: 1,
+                        accumulation: .f32compensated, xLoads: .float4)
+    let e1 = try Q4KernelEmitter.emit(op: good, schedule: s1)
+    checkEqual("q4 emitter deterministic", e1, try Q4KernelEmitter.emit(op: good, schedule: s1))
+    check("q4 emitter bakes thread mapping",
+          e1.contains("constexpr uint T = 8u") && e1.contains("constexpr uint R = 1u"))
+    check("q4 emitter names kernel from schedule", e1.contains(s1.kernelName))
+    let e2 = try Q4KernelEmitter.emit(op: good, schedule: Q4Schedule(
+        threadsPerRow: 4, rowsPerGroup: 2, accumulation: .f32, xLoads: .scalar))
+    check("q4 emitter distinguishes schedules", e1 != e2)
+    checkQ4Throws("q4 emitter rejects illegal schedule for shape",
+                  .emissionFailed("schedule Q4Schedule(threadsPerRow: 8, rowsPerGroup: 1, "
+                                  + "accumulation: LeviathanCore.Q4Schedule.Accumulation.f32compensated, "
+                                  + "xLoads: LeviathanCore.Q4Schedule.XLoads.float4) "
+                                  + "illegal for inDim 128")) {
+        _ = try Q4KernelEmitter.emit(op: smallOp, schedule: s1)
+    }
+
+    // ---- FP64 oracle: hand-computed known block ----
+    do {
+        var block = [UInt8](repeating: 0, count: 18)
+        block[0] = 0x00; block[1] = 0x3C   // FP16 1.0
+        for l in 0..<16 { block[2 + l] = UInt8(l) | (UInt8(16 + l) << 4) }
+        // Decoded values are nibble-8 in [-8, 7]: the packed high nibble
+        // is ((16+l) mod 16) = l, so byte l decodes to (l-8) + (l-8) and
+        // the row sum over x=1 is 2*sum(l=0...15) - 16*16 = -16.
+        let ref = try Q4Oracle.matvecFP64(blocks: block[...], outDim: 1, inDim: 32,
+                                          x: [Float](repeating: 1, count: 32))
+        checkEqual("q4 FP64 oracle hand-computed block", ref[0], -16.0)
+    }
+    do {
+        var block = [UInt8](repeating: 0, count: 18)
+        block[0] = 0xFF; block[1] = 0x7F   // FP16 NaN
+        _ = try Q4Oracle.matvecFP64(blocks: block[...], outDim: 1, inDim: 32,
+                                    x: [Float](repeating: 1, count: 32))
+        failed += 1; print("FAIL: q4 FP64 oracle rejects nonfinite scale — no error")
+    } catch let error as Q4LoweringError {
+        if case .oracleFailed = error { passed += 1 }
+        else { failed += 1; print("FAIL: q4 FP64 oracle rejects nonfinite scale — got \(error)") }
+    }
+} catch {
+    failed += 1; print("FAIL: q4 lowering IR/deriver/emitter/oracle — threw \(error)")
+}
+
+// ---- GPU component gates + artifact identity (synthetic op, no GGUF) ----
+if let device = MTLCreateSystemDefaultDevice() {
+    do {
+        // Unbound synthetic op: fast, no 14 GB model needed.
+        let op = try Q4OpIR.parse(q4OpJSON(inDim: 2048, outDim: 64, tensor: nil, rows: 32))
+        let hwProfile = try Q4CurrentHardware.profile()
+        let blocks = try Q4ComponentInputs.weightBytes(op: op, file: nil)
+        let x = Q4ComponentInputs.activation(op: op)
+        let ref64 = try Q4Oracle.matvecFP64(blocks: blocks[...], outDim: 32,
+                                            inDim: 2048, x: x)
+
+        // Emitted T=1 baseline vs the CPU FP64 oracle (existing contract).
+        let baseline = Q4Schedule(threadsPerRow: 1, rowsPerGroup: 1,
+                                  accumulation: .f32, xLoads: .scalar)
+        let k1 = try Q4EmittedKernel.compile(op: op, schedule: baseline, device: device)
+        let y1 = try k1.matvec(blocks: blocks, outDim: 32, inDim: 2048, x: x)
+        var w1 = 0.0
+        for i in 0..<y1.count {
+            w1 = max(w1, abs(Double(y1[i]) - ref64[i]) / max(1.0, abs(ref64[i])))
+        }
+        check(String(format: "q4 emitted T=1 vs FP64 oracle (worst rel %.3e)", w1), w1 < 1e-4)
+
+        // Compensated cooperative kernel vs the same oracle.
+        let coop = Q4Schedule(threadsPerRow: 8, rowsPerGroup: 1,
+                              accumulation: .f32compensated, xLoads: .float4)
+        if coop.isLegal(blocksPerRow: 2048 / 32, hardware: hwProfile) {
+            let k8 = try Q4EmittedKernel.compile(op: op, schedule: coop, device: device)
+            let y8 = try k8.matvec(blocks: blocks, outDim: 32, inDim: 2048, x: x)
+            var w8 = 0.0
+            for i in 0..<y8.count {
+                w8 = max(w8, abs(Double(y8[i]) - ref64[i]) / max(1.0, abs(ref64[i])))
+            }
+            check(String(format: "q4 emitted T=8 compensated vs FP64 oracle (worst rel %.3e)", w8),
+                  w8 < 1e-4)
+        } else {
+            print("SKIP: q4 T=8 not legal on this hardware profile")
+        }
+
+        // Full component forge on the synthetic op -> artifact identity.
+        let (artifact, results, incRel) = try Q4LoweringForge.forge(
+            opJSON: q4OpJSON(inDim: 2048, outDim: 64, tensor: nil, rows: 32), ggufURL: nil)
+        check("q4 forge incumbent within 1e-4 of FP64 oracle", incRel < 1e-4)
+        check("q4 forge produced accepted candidates",
+              !results.isEmpty && results.contains { $0.accepted })
+        check("q4 forge selected an accepted schedule",
+              results.first { $0.schedule == artifact.schedule }!.accepted)
+        // Valid identity round-trip.
+        try artifact.validate(op: artifact.op, hardware: hwProfile, ggufDigest: "",
+                              executableDigest: try Gemma4Runner.executableDigest())
+        check("q4 artifact validates round-trip", true)
+        // Tampered source is rejected (JSON-level mutation).
+        do {
+            let encoded = try JSONEncoder().encode(artifact)
+            var obj = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+            obj["emittedSource"] = (artifact.emittedSource as NSString)
+                .replacingOccurrences(of: "T = ", with: "T =  /*x*/ ")
+            let tampered = try JSONDecoder().decode(
+                Q4LoweringArtifact.self, from: JSONSerialization.data(withJSONObject: obj))
+            checkQ4Throws("q4 artifact rejects tampered source",
+                          .invalidArtifact("emitted source tampered/rule drift")) {
+                try tampered.validate(op: artifact.op, hardware: hwProfile, ggufDigest: "",
+                                      executableDigest: try Gemma4Runner.executableDigest())
+            }
+        }
+        // Stale hardware is rejected.
+        checkQ4Throws("q4 artifact rejects hardware mismatch",
+                      .invalidArtifact("hardware mismatch")) {
+            try artifact.validate(op: artifact.op,
+                                  hardware: ForgeHardwareProfile(
+                                    deviceName: "other", maxTotalThreadsPerThreadgroup: 7,
+                                    threadExecutionWidth: 7, recommendedMaxWorkingSetSize: 7),
+                                  ggufDigest: "",
+                                  executableDigest: try Gemma4Runner.executableDigest())
+        }
+    } catch {
+        failed += 1; print("FAIL: q4 lowering GPU/artifact gates — threw \(error)")
+    }
+} else {
+    print("SKIP: q4 lowering GPU gates (no Metal device)")
+}
+
 // MARK: - Gemma 4 real-model gates (opt-in via LEVIATHAN_GEMMA_GGUF)
 
 // These load the full 14.44 GB checkpoint onto the GPU (~seconds, ~2 GB
@@ -3168,6 +3366,26 @@ if let gemmaPath, !gemmaPath.isEmpty, FileManager.default.fileExists(atPath: gem
         check("applyDiagnosticAxis() restores reference flags",
               !runner.q4TiledKernel && !runner.q6TiledKernel && !runner.rmsTiledKernel
                   && !runner.f32TiledKernel && !runner.vectorizedLoads && !runner.segmentBatchingActive)
+        // Deferred-segment batching regression (pass-9 fix): reset() ->
+        // discardOpenSegment() clears autoSegment, so the axis must be
+        // RE-APPLIED after every reset. Measured regression: one batched
+        // forward must submit FEWER command buffers than dispatched
+        // kernels (per-kernel mode submits one buffer per kernel).
+        do {
+            runner.reset()
+            runner.applyDiagnosticAxis(segmentBatching: true)
+            guard runner.segmentBatchingActive else {
+                throw Gemma4Error.badTensorGeometry("axis failed to engage")
+            }
+            let bufsBefore = runner.submittedBufferTotal
+            let dispBefore = runner.dispatchTotal
+            _ = try runner.forward(tokenIds: [2])
+            let bufsDelta = runner.submittedBufferTotal - bufsBefore
+            let dispDelta = runner.dispatchTotal - dispBefore
+            check("batched forward engages after reset (buffers < dispatches)",
+                  bufsDelta < dispDelta && dispDelta > 1)
+            runner.applyDiagnosticAxis()
+        }
         let normedH = [Float](repeating: 0.01, count: 2816)
         let d1 = try runner.diagnosticMatvec(tensor: "blk.0.attn_q.weight",
                                               x: normedH, rows: 64, tiled: false)

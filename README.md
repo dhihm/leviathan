@@ -266,6 +266,25 @@ Two engine paths share the validated-IR + measured-plan core:
   (digests + embedded executable schedule) → Metal GPU runtime with
   optional bounded SSD expert cache → bounded localhost serving
   (`gemma-serve`).
+- **Parameterized Q4_0 operator lowering (pass 9, one operator
+  family)** — a Python op input (semantics/shape/layout/quant/
+  precision metadata) → operation IR validation against the bound
+  GGUF tensor → shape+hardware-derived schedule enumeration (thread
+  mapping, row/block decomposition, reduction strategy, load width)
+  → Metal source EMISSION from the parameters → independent CPU FP64
+  oracle gate under the existing 1e-4 component contract → per-
+  candidate teacher-forced model gates on EN/KR/raw fixtures → 3
+  paired matched-timing repetitions (alternating order) against the
+  incumbent → documented policy selection → artifact whose identity
+  binds emitted source/SHA, codegen version, schedule, op digest,
+  hardware, toolchain, GGUF content, and executable bytes →
+  persisted execution that reloads, re-validates, and installs
+  through the production path (component-only artifacts are not
+  installable; fail-closed incumbent fallback). Deliberately ONE
+  bound tensor (`blk.0.attn_q.weight`) — every other Q4 matvec keeps
+  the incumbent kernel. See
+  [docs/Q4_LOWERING_DESIGN.md](docs/Q4_LOWERING_DESIGN.md) and pass 9
+  of [docs/FORGE_PROGRESS.md](docs/FORGE_PROGRESS.md).
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detail and
 [docs/VALIDATION.md](docs/VALIDATION.md) for measured hardware
@@ -341,6 +360,48 @@ Gemma Forge path (measured, gated, still bounded):
   FP64 sample; no exclusive cause proven, gates unchanged); see
   [docs/FORGE_PROGRESS.md](docs/FORGE_PROGRESS.md) pass 8 and
   [docs/evidence/gemma-diagnose-hello32.log](docs/evidence/gemma-diagnose-hello32.log).
+- The pass-9 parameterized Q4 lowering is ONE operator family
+  (Q4_0 matvec) for ONE bound tensor — not a general operator
+  compiler and not a whole-model candidate combination. Its
+  generated kernels for T>1 use an explicitly reassociated
+  deterministic float32 reduction (plain or Neumaier-compensated;
+  Apple GPUs expose no usable FP64), gated against an independent
+  CPU FP64 oracle at the same 1e-4 contract as the hand-written
+  kernels and against the unchanged full-logit/exact-greedy model
+  gates; the incumbent kernel remains the stable fallback unless a
+  candidate passes every gate AND beats its own paired incumbent
+  beyond the documented 2% policy threshold. Measured outcome and
+  calibrated limits: pass 9 of
+  [docs/FORGE_PROGRESS.md](docs/FORGE_PROGRESS.md).
+
+Runnable end-to-end (measured configuration; ~47 min on M1 Max 32 GB,
+peak ~31.2 GB, using the existing authorized GGUF — no new download):
+
+```sh
+GGUF="../models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf"  # authorized checkpoint
+# 1. Capture the Python op model (semantics/shape/layout/quant metadata)
+python3 tools/q4_lower/export_q4_op.py tools/q4_lower/model_q4_attn.py /tmp/q4-op.json
+# 2. One-process orchestration: component FP64 gates for every derived
+#    candidate, per-candidate teacher-forced model gates on EN/KR chat
+#    + raw Hello fixtures, 3 paired matched-timing repetitions, policy
+#    selection, persistence, and a persisted-execution proof.
+.build/release/leviathan-cli q4-lower select --op /tmp/q4-op.json \
+    --gguf "$GGUF" --out /tmp/q4-artifact.json \
+    --text-en "Hello, can you help me today?" \
+    --text-kr "안녕하세요, 오늘 날씨는 어떤가요?" \
+    --gen-tokens 32 --timed-tokens 31
+# 3. Re-validate the persisted artifact against the GGUF
+.build/release/leviathan-cli q4-lower verify --artifact /tmp/q4-artifact.json --gguf "$GGUF"
+```
+
+Measured on that run: 6 of 8 emitted candidates passed every fixture
+gate (two float4 variants failed raw Hello at step 9 and were
+excluded); the persisted execution replay counted 52 generated-kernel
+dispatches on the bound tensor; the policy selected
+`q4gen_matvec_T8_R1_f32_scalar` on a +3.9% median paired wall gain —
+with one of its three paired repetitions SLOWER than the incumbent, so
+no stable gain is claimed. One bound tensor out of the model's many Q4
+matvec sites changed; the broader general-compiler goal remains UNMET.
 
 ## Roadmap
 

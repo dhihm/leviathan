@@ -1052,14 +1052,45 @@ case "forge":
             // ONE token per forward so probe positions align exactly with
             // the reference pass (step s logits come from position
             // history.count - 1 + s in both).
+            // The diagnostic axis currently in force — updated at EVERY
+            // applyDiagnosticAxis site so teacherForced can restore it
+            // AFTER reset (reset() -> discardOpenSegment() clears
+            // autoSegment; without the restore a segmentBatching axis
+            // would silently replay per-kernel submissions).
+            var currentAxis = (q4: false, q6: false, rms: false,
+                               f32: false, vl: false, seg: false)
+            func applyAxis(_ a: (q4: Bool, q6: Bool, rms: Bool,
+                                 f32: Bool, vl: Bool, seg: Bool)) {
+                currentAxis = a
+                runner.applyDiagnosticAxis(q4Tiled: a.q4, q6Tiled: a.q6,
+                                           rmsTiled: a.rms, f32Tiled: a.f32,
+                                           vectorizedLoads: a.vl,
+                                           segmentBatching: a.seg)
+            }
             func teacherForced(_ afterStep: (Int, [Float]) throws -> Void) throws {
                 runner.reset()
+                applyAxis(currentAxis)
+                guard currentAxis.seg == runner.segmentBatchingActive else {
+                    fail("segment batching axis lost across reset")
+                }
+                // reset() -> discardOpenSegment() clears autoSegment, so
+                // the CURRENT diagnostic axis is re-applied AFTER every
+                // reset — otherwise a segmentBatching axis would silently
+                // replay per-kernel submissions (numerically identical,
+                // but not the intended measurement mode).
+                runner.applyDiagnosticAxis(q4Tiled: currentAxis.q4, q6Tiled: currentAxis.q6,
+                                           rmsTiled: currentAxis.rms, f32Tiled: currentAxis.f32,
+                                           vectorizedLoads: currentAxis.vl,
+                                           segmentBatching: currentAxis.seg)
+                guard currentAxis.seg == runner.segmentBatchingActive else {
+                    fail("segment batching axis lost across reset")
+                }
                 for t in history {
                     try runner.forward(tokenIds: [t])
                 }
                 try afterStep(0, try runner.currentLogits())
                 for s in 1..<steps {
-                    try runner.forward(tokenIds: [refIds[s - 1]])
+                    try runner.forward(tokenIds: [refIds[s]])
                     try afterStep(s, try runner.currentLogits())
                 }
             }
@@ -1155,10 +1186,8 @@ case "forge":
                 var perLayerPost = [Double](repeating: 0, count: 30)
             }
             for axis in axes {
-                runner.applyDiagnosticAxis(q4Tiled: axis.q4, q6Tiled: axis.q6,
-                                           rmsTiled: axis.rms, f32Tiled: axis.f32,
-                                           vectorizedLoads: axis.vl,
-                                           segmentBatching: axis.seg)
+                applyAxis((q4: axis.q4, q6: axis.q6, rms: axis.rms,
+                           f32: axis.f32, vl: axis.vl, seg: axis.seg))
                 // Pass A: probe ON, layerwise comparison against refSnap.
                 // Indexed by teacher-forced POSITION (0 = first prompt
                 // token); the teacher-forced history covers exactly
@@ -1218,7 +1247,8 @@ case "forge":
                     stepWorst[s] = m.worstRel
                     passBLogits.append(lg)
                 }
-                runner.applyDiagnosticAxis()
+                applyAxis((q4: false, q6: false, rms: false, f32: false,
+                           vl: false, seg: false))
 
                 // Probe-invariance for THIS axis: the probe-on pass logits
                 // must be bit-identical to the probe-off pass logits (the
@@ -1341,7 +1371,8 @@ case "forge":
             do {
                 // Re-run the q4_tiled axis probe ON to find the worst
                 // (step, layer) post_attn checkpoint (cheap: reuse logic).
-                runner.applyDiagnosticAxis(q4Tiled: true)
+                applyAxis((q4: true, q6: false, rms: false, f32: false,
+                           vl: false, seg: false))
                 var best = (rel: 0.0, step: 0, layer: 0)
                 runner.layerProbe = { stage, layer, position, x in
                     guard stage == "post_attn",
@@ -1355,7 +1386,8 @@ case "forge":
                 }
                 try teacherForced { _, _ in }
                 runner.layerProbe = nil
-                runner.applyDiagnosticAxis()
+                applyAxis((q4: false, q6: false, rms: false, f32: false,
+                           vl: false, seg: false))
                 let (stepL, layerL) = (best.step, best.layer)
                 guard let xRef = refSnap["\(stepL):\(layerL):attn_norm_h"] else {
                     fail("missing reference attn_norm_h for attribution")
@@ -1397,6 +1429,340 @@ case "forge":
             print("DIAGNOSIS_COMPLETED")
         } catch {
             fail("gemma-diagnose failed: \(error)")
+        }
+
+    case "q4-lower":
+        // Phase 9 parameterized Q4_0 OPERATOR lowering (one family).
+        // Python op input (.py with semantics/shape/layout/quant/precision
+        // metadata, captured by tools/q4_lower/export_q4_op.py) -> op IR
+        // validation -> shape+hardware-derived schedule enumeration ->
+        // Metal source EMISSION -> independent CPU FP64 oracle gate under
+        // the existing 1e-4 component contract -> persisted artifact with
+        // full identity binding. No model run here; no performance claim.
+        // args[0] is the command itself; the subcommand follows it.
+        let rest = Array(args.dropFirst())
+        let mode = rest.first ?? ""
+        switch mode {
+        case "forge":
+            let opPath = requireValue("--op", args)
+            let outPath = requireValue("--out", args)
+            let ggufPath = args.firstIndex(of: "--gguf").map { _ in
+                requireValue("--gguf", args) }
+            do {
+                let opJSON = try Data(contentsOf: URL(fileURLWithPath: opPath))
+                let (artifact, results, incumbentRel) = try Q4LoweringForge.forge(
+                    opJSON: opJSON,
+                    ggufURL: ggufPath.map { URL(fileURLWithPath: $0) })
+                print(String(format: "incumbent g4_q4_matvec rel-to-FP64: %.3e", incumbentRel))
+                for r in results {
+                    print("  \(r.accepted ? "ACCEPT" : "REJECT") \(r.schedule.kernelName): \(r.note)")
+                }
+                try artifact.save(to: URL(fileURLWithPath: outPath))
+                print("selected: \(artifact.schedule.kernelName)")
+                print("artifact saved: \(outPath) (digest \(artifact.artifactDigest.prefix(16))…)")
+            } catch {
+                fail("q4-lower forge failed: \(error)")
+            }
+        case "verify":
+            let artifactPath = requireValue("--artifact", args)
+            let ggufPath = requireValue("--gguf", args)
+            do {
+                let artifact = try Q4LoweringArtifact.load(
+                    from: URL(fileURLWithPath: artifactPath))
+                let ggufURL = URL(fileURLWithPath: ggufPath)
+                // The op is ALSO re-validated against the actual GGUF
+                // tensor directory here — not just the artifact's own copy.
+                try artifact.op.validateAgainst(file: try GGUFReader.read(ggufURL))
+                let digest = try GemmaForge.fileDigest(ggufURL)
+                try artifact.validate(op: artifact.op,
+                                      hardware: Q4CurrentHardware.profile(),
+                                      ggufDigest: digest,
+                                      executableDigest: try Gemma4Runner.executableDigest())
+                print("artifact VALID: \(artifact.schedule.kernelName) "
+                      + "bound to \(artifact.op.tensor ?? "<synthetic>") "
+                      + "[\(artifact.op.inDim), \(artifact.op.outDim)]")
+                print("codegen \(artifact.codegenVersion), rows \(artifact.representativeRows), "
+                      + "source sha \(artifact.sourceSha256.prefix(16))…")
+            } catch {
+                fail("q4-lower verify failed: \(error)")
+            }
+        case "select":
+            // Full bounded orchestration in ONE process: component gates
+            // for every derived candidate, per-candidate teacher-forced
+            // model gates on the EN/KR chat fixtures, matched timing vs
+            // the incumbent, documented policy selection, persistence, and
+            // a persisted-execution proof (reload from disk -> validate ->
+            // production install -> gated replay with dispatch counters).
+            let opPath = requireValue("--op", args)
+            let ggufPath = requireValue("--gguf", args)
+            let outPath = requireValue("--out", args)
+            let genTokens = args.firstIndex(of: "--gen-tokens").map { _ in
+                Int(requireValue("--gen-tokens", args)) ?? 0 } ?? 32
+            let timedTokens = args.firstIndex(of: "--timed-tokens").map { _ in
+                Int(requireValue("--timed-tokens", args)) ?? 0 } ?? 5
+            guard genTokens >= 2, genTokens <= 64, timedTokens >= 1, timedTokens < genTokens else {
+                fail("--gen-tokens must be 2...64 and --timed-tokens 1...(gen-1)")
+            }
+            let enText = args.firstIndex(of: "--text-en").map { _ in
+                requireValue("--text-en", args) } ?? "Hello, can you help me today?"
+            let krText = args.firstIndex(of: "--text-kr").map { _ in
+                requireValue("--text-kr", args) } ?? "안녕하세요, 오늘 날씨는 어떤가요?"
+            do {
+                let fileURL = URL(fileURLWithPath: ggufPath)
+                let tokenizer = try GemmaTokenizer(gguf: GGUFReader.read(fileURL))
+                // Canonical chat fixtures (the SAME user→model template the
+                // existing --chat path derived from the GGUF's embedded
+                // Jinja template) for BOTH languages, plus the raw Hello
+                // fixture for continuity with the phase-7/8 evidence.
+                func chatIds(_ text: String) throws -> [Int] {
+                    try tokenizer.encode(
+                        "<|turn>user\n" + text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>")
+                }
+                var fixtures = [
+                    Q4LoweringForge.Q4Fixture(name: "en-chat", tokens: try chatIds(enText)),
+                    Q4LoweringForge.Q4Fixture(name: "kr-chat", tokens: try chatIds(krText)),
+                    Q4LoweringForge.Q4Fixture(name: "raw-hello", tokens: try tokenizer.encode("Hello")),
+                ]
+                let runner = try Gemma4Runner(fileAt: fileURL)
+                let (_, log) = try Q4LoweringForge.selectAndPersist(
+                    opJSON: try Data(contentsOf: URL(fileURLWithPath: opPath)),
+                    ggufURL: fileURL, runner: runner, fixtures: fixtures,
+                    genTokens: genTokens, timedTokens: timedTokens,
+                    isEndOfGeneration: { tokenizer.isEndOfGeneration($0) },
+                    saveTo: URL(fileURLWithPath: outPath))
+                for line in log { print(line) }
+                print("Q4_SELECT_COMPLETED -> \(outPath)")
+            } catch {
+                fail("q4-lower select failed: \(error)")
+            }
+        default:
+            fail("q4-lower requires a mode: forge | verify | select")
+        }
+
+    case "gemma-q4gen-gate":
+        // Phase 9 model-level acceptance of the generated Q4 lowering.
+        // Teacher-forced same-history replay (the gemma-diagnose pattern):
+        // the incumbent reference (pass-7 selected configuration:
+        // segment batching + vectorized-load RMSNorm) generates a greedy
+        // history; the SAME history is replayed with the artifact's
+        // emitted kernel installed for its ONE bound tensor, gating full
+        // logits at the UNCHANGED strict 1e-4 relative formula + exact
+        // greedy token equality + finiteness, per step. Then MATCHED
+        // timing: both arms, same binary/model/prompt/context, sequential
+        // GPU residency, N timed tokens, wall and GPU medians, plus
+        // per-kernel counters proving the generated kernel actually
+        // dispatched for the bound tensor. No gate is loosened; a failed
+        // gate is reported and the incumbent stays the fallback — no
+        // claim of a win from microbenchmarks.
+        let path = requireValue("--file", args)
+        let artifactPath = requireValue("--artifact", args)
+        let genTokens = args.firstIndex(of: "--gen-tokens").map { _ in
+            Int(requireValue("--gen-tokens", args)) ?? 0 } ?? 32
+        guard genTokens >= 2, genTokens <= 64 else {
+            fail("--gen-tokens must be 2...64")
+        }
+        let timedTokens = args.firstIndex(of: "--timed-tokens").map { _ in
+            Int(requireValue("--timed-tokens", args)) ?? 0 } ?? 5
+        guard timedTokens >= 1, timedTokens <= 32, timedTokens < genTokens else {
+            fail("--timed-tokens must be 1...31 below --gen-tokens")
+        }
+        do {
+            let fileURL = URL(fileURLWithPath: path)
+            let tokenizer = try GemmaTokenizer(gguf: GGUFReader.read(fileURL))
+            var history: [Int]
+            if let tokensArg = args.firstIndex(of: "--tokens").map({ _ in
+                requireValue("--tokens", args) }) {
+                history = tokensArg.split(separator: ",").map {
+                    guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+                          id >= 0, id < tokenizer.vocabSize else {
+                        fail("invalid token id '\($0)'")
+                    }
+                    return id
+                }
+            } else {
+                history = try tokenizer.encode(requireValue("--text", args))
+            }
+            guard !history.isEmpty, history.count + genTokens <= 4096 else {
+                fail("prompt + gen-tokens must fit the 4096 context")
+            }
+            print("prompt ids: \(history.map(String.init).joined(separator: " "))")
+            let artifact = try Q4LoweringArtifact.load(
+                from: URL(fileURLWithPath: artifactPath))
+            let runner = try Gemma4Runner(fileAt: fileURL)
+
+            // ---- reference arm: incumbent kernels, selected pass-7
+            // configuration (segment batching + VL RMSNorm). The axis is
+            // re-applied AFTER every reset: reset() ->
+            // discardOpenSegment() clears autoSegment, so a single
+            // up-front apply would silently disable batching. ----
+            func resetIncumbentConfig() throws {
+                runner.reset()
+                runner.applyDiagnosticAxis(vectorizedLoads: true, segmentBatching: true)
+                // Fail closed: batching must actually re-engage after the
+                // reset (reset() clears autoSegment — the reset-order bug).
+                guard runner.segmentBatchingActive else {
+                    throw GemmaForgeError.executionFailed(
+                        "segment batching failed to re-engage after reset")
+                }
+            }
+            try resetIncumbentConfig()
+            var refIds = [Int]()
+            var refLogits = [[Float]]()
+            do {
+                let prefill = try runner.forward(tokenIds: history)
+                refLogits.append(try runner.currentLogits())
+                refIds.append(prefill.argmaxToken)
+                var prev = prefill.argmaxToken
+                while refIds.count < genTokens {
+                    if tokenizer.isEndOfGeneration(prev) { break }
+                    let ev = try runner.forward(tokenIds: [prev])
+                    refLogits.append(try runner.currentLogits())
+                    refIds.append(ev.argmaxToken)
+                    prev = ev.argmaxToken
+                }
+            } catch { fail("reference pass failed: \(error)") }
+            let steps = refLogits.count
+            print("reference greedy ids (\(steps)): \(refIds.map(String.init).joined(separator: " "))")
+
+            // Install the artifact (full identity check; fail closed —
+            // an invalid artifact aborts before any generated execution).
+            let ggufDigest = try GemmaForge.fileDigest(fileURL)
+            do {
+                try runner.installQ4GeneratedKernel(artifact: artifact,
+                                                    ggufDigest: ggufDigest)
+            } catch {
+                fail("artifact rejected at install (incumbent stays active): \(error)")
+            }
+            print("generated kernel installed: \(artifact.schedule.kernelName) "
+                  + "for \(artifact.op.tensor ?? "<synthetic>")")
+
+            // Teacher-forced replay of the SAME history under the
+            // generated kernel, gated per step.
+            var gateWorst = 0.0
+            var gateFail: String? = nil
+            do {
+                try resetIncumbentConfig()
+                for t in history {
+                    _ = try runner.forward(tokenIds: [t])
+                }
+                for s in 0..<steps {
+                    let lg = try runner.currentLogits()
+                    let want = refLogits[s]
+                    guard lg.count == want.count,
+                          lg.allSatisfy({ $0.isFinite }),
+                          want.allSatisfy({ $0.isFinite }) else {
+                        gateFail = "step \(s): shape/nonfinite violation"
+                        break
+                    }
+                    // Exact greedy token equality per step (the reference
+                    // history IS the argmax of want at every step).
+                    let lgArgmax = lg.enumerated().max { $0.element < $1.element }!.offset
+                    if lgArgmax != refIds[s] {
+                        gateFail = "step \(s): argmax \(lgArgmax) != reference \(refIds[s])"
+                        break
+                    }
+                    var worst = 0.0
+                    for i in 0..<lg.count {
+                        worst = max(worst, abs(Double(lg[i] - want[i]))
+                                    / max(1.0, abs(Double(want[i]))))
+                    }
+                    gateWorst = max(gateWorst, worst)
+                    if worst >= 1e-4 {
+                        gateFail = String(format: "step %d outside 1e-4 (worst %.3e)",
+                                          s, worst)
+                        break
+                    }
+                    if s + 1 < steps {
+                        _ = try runner.forward(tokenIds: [refIds[s]])
+                    }
+                }
+            } catch { fail("generated replay failed: \(error)") }
+
+            // Execution proof via the DEDICATED dispatch counters (they are
+            // incremented in the dispatch path itself, so they are correct
+            // in segment-batched mode too, where per-kernel GPU-time
+            // attribution is deferred to the flush). A zero generated count
+            // means the artifact never actually executed.
+            let genCalls = runner.q4GeneratedDispatchCount
+            let boundIncumbentCalls = runner.q4BoundTensorIncumbentDispatchCount
+            if genCalls == 0 {
+                runner.uninstallQ4GeneratedKernel()
+                fail("generated kernel never dispatched for the bound tensor — not an execution of the artifact")
+            }
+            print("generated-kernel dispatches (bound tensor): \(genCalls); "
+                  + "bound-tensor incumbent fallback dispatches: \(boundIncumbentCalls)")
+
+            if let failMsg = gateFail {
+                print("GATE_FAIL: \(failMsg) — incumbent remains the fallback")
+                runner.uninstallQ4GeneratedKernel()
+                fail("model-level gate rejected the generated lowering")
+            }
+            print(String(format: "GATE_PASS: %d steps, worst full-logit rel %.3e (strict 1e-4, unchanged)",
+                         steps, gateWorst))
+
+            // ---- matched timing: same prompt, same history replay,
+            // sequential residency, N timed tokens per arm (generated
+            // first while installed, then the incumbent). Dispatch-counter
+            // deltas per arm prove which kernel served the bound tensor. ----
+            guard steps > timedTokens + 1 else {
+                runner.uninstallQ4GeneratedKernel()
+                fail("insufficient gate steps (\(steps)) for \(timedTokens) timed tokens")
+            }
+            var armGeneratedDelta = 0
+            func timedArm() throws -> (wallMed: Double, gpuMed: Double) {
+                try resetIncumbentConfig()
+                for t in history {
+                    _ = try runner.forward(tokenIds: [t])
+                }
+                var idx = 0
+                while idx < steps - timedTokens - 1 {
+                    _ = try runner.forward(tokenIds: [refIds[idx]])
+                    idx += 1
+                }
+                var walls = [Double]()
+                var gpus = [Double]()
+                for k in 0..<timedTokens {
+                    let tok = refIds[min(idx + k, steps - 2)]
+                    let gpuBefore = runner.totalGpuMicros
+                    let genBefore = runner.q4GeneratedDispatchCount
+                    let t0 = DispatchTime.now()
+                    _ = try runner.forward(tokenIds: [tok])
+                    walls.append(Double(DispatchTime.now().uptimeNanoseconds
+                                        - t0.uptimeNanoseconds) / 1000)
+                    gpus.append(runner.totalGpuMicros - gpuBefore)
+                    armGeneratedDelta += runner.q4GeneratedDispatchCount - genBefore
+                }
+                let sortedW = walls.sorted()
+                let sortedG = gpus.sorted()
+                let n = sortedW.count
+                let wm = n.isMultiple(of: 2)
+                    ? (sortedW[n/2 - 1] + sortedW[n/2]) / 2 : sortedW[n/2]
+                let gm = n.isMultiple(of: 2)
+                    ? (sortedG[n/2 - 1] + sortedG[n/2]) / 2 : sortedG[n/2]
+                return (wm, gm)
+            }
+            let genTiming = try timedArm()
+            let genArmDispatches = armGeneratedDelta
+            runner.uninstallQ4GeneratedKernel()
+            armGeneratedDelta = 0
+            let incTiming = try timedArm()
+            let incArmDispatches = armGeneratedDelta
+            print("timing-arm dispatch proof: generated arm bound-tensor "
+                  + "generated-kernel dispatches \(genArmDispatches) "
+                  + "(incumbent arm: \(incArmDispatches))")
+            if genArmDispatches == 0 {
+                fail("timing arm executed no generated dispatches — not a matched measurement")
+            }
+            print(String(format: "MATCHED_TIMING incumbent: wall %.0f us/token, gpu %.0f us/token",
+                         incTiming.wallMed, incTiming.gpuMed))
+            print(String(format: "MATCHED_TIMING generated: wall %.0f us/token, gpu %.0f us/token",
+                         genTiming.wallMed, genTiming.gpuMed))
+            print(String(format: "delta: generated vs incumbent wall %+.1f%%",
+                         (genTiming.wallMed / incTiming.wallMed - 1) * 100))
+            print("Q4GEN_GATE_COMPLETED")
+        } catch {
+            fail("gemma-q4gen-gate failed: \(error)")
         }
 
     case "gemma-config-export":

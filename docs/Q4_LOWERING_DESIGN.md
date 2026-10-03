@@ -1,0 +1,158 @@
+# Phase 9 design — parameterized Q4_0 operator lowering (one operator family)
+
+Written 2026-10-03 UTC (initially drafted 2026-10-03 KST / 2026-10-02 UTC
+and corrected before the measured runs), before implementation. This is the
+concrete plan responding to [ARCHITECTURE_AUDIT.md](ARCHITECTURE_AUDIT.md)
+stage 1–4 for exactly ONE operator family: the Q4_0 quantized matrix–vector
+product (`y[row] = Σ_col W[row,col]·x[col]`, W in Q4_0 blocks), the dominant
+Gemma 4 matvec. It is NOT a claim of a general arbitrary-Python compiler.
+
+## 1. Operation input (Python, real dataflow)
+
+`tools/q4_lower/q4_op_model.py` (stdlib only) defines a `Q4MatvecOp` with the
+metadata the audit demands — semantics, shape, layout, quant, precision:
+
+- `op = "q4_0.matvec"`, `semantics = "dot(W_row, x)"`,
+- `inDim`, `outDim` (must satisfy `inDim % 32 == 0`, bounded by the existing
+  `ModelWorkloadLimits`),
+- `layout = "row-major-q4_0-blocks"` (18-byte blocks, FP16 delta + 32 nibbles,
+  biased by −8),
+- `quant = "q4_0"`, `accumulate = "f32"`, `inputPrecision = "f32"`,
+- optional `tensor` binding (a real GGUF tensor name used for representative
+  weight bytes in component validation).
+
+A small export script executes the user's `.py` and emits op JSON — the same
+trusted-file capture pattern as `tools/forge_gemma/export_gemma_graph.py`.
+The Swift side re-validates every field; nothing outside the supported op is
+accepted.
+
+## 2. Operation IR (Swift)
+
+`Q4OpIR` (new, `Sources/LeviathanCore/Q4Lowering.swift`): decodes the JSON,
+validates the op name, dims, block geometry, and precision tags against the
+Q4_0 constants already used by the reference kernels. Digest
+(SHA-256 over canonical JSON) becomes an artifact identity input.
+
+## 3. Schedule derivation (shape × measured hardware — not booleans)
+
+`Q4Schedule` parameters, each with a REAL effect on emitted code:
+
+- `threadsPerRow T` — threads cooperating on one row (1 reproduces the
+  incumbent one-thread-per-row mapping and its serial summation order);
+- `rowsPerGroup R` — rows per threadgroup (grid/threadgroup geometry);
+- `accum a ∈ {f32, f32compensated}` — per-thread partial accumulation and
+  ordered ascending-thread combine, both in float32, compiled with the
+  same default Metal compiler options as the incumbent kernels. Metal on
+  Apple GPUs has no usable FP64 path, so NO GPU double strategy exists
+  here; the FP64 reference is a CPU-ONLY oracle (below). `f32compensated`
+  carries a Neumaier compensation term through the partial accumulation —
+  a documented deterministic reduction order that is NOT bit-identity
+  with the incumbent, measured against the FP64 oracle (an accuracy
+  IMPROVEMENT is measured per-case, not proven for all inputs);
+- `xLoads ∈ {scalar, float4}` — activation load width in the emitted inner
+  loop.
+
+`Q4ScheduleDeriver.derive(op, hardware)` enumerates the legal space from the
+operation SHAPE and the MEASURED device (`threadExecutionWidth w`,
+`maxTotalThreadsPerThreadgroup M`): T ∈ {1} ∪ {2,4,8,16,32} with `T·R ≤ M`
+and `blocksPerRow/T ≥ 4` — the block count per row (shape-derived
+`inDim/32`) is a hard legality input: small geometries legally admit only
+small T, and the emitted chunk loop is generated FROM that count. R ∈
+{1,2,4}. Pruning keeps at most 8 candidates: the T=1 baseline (always
+candidate 0 — the stable fallback), three R=1 combinations (plain f32,
+compensated scalar, compensated float4) for EACH of the two
+execution-width-nearest legal T values, and one R=2 cooperative row-group
+entry on the width-nearest T. The measured working-set size is a profile
+input only — no occupancy or utilization claim is derived from it. No giant buffers: the only new
+allocation is a threadgroup partials array sized T·R floats, bounded by M.
+
+The op's Python-declared shape is validated against the BOUND GGUF tensor's
+actual dimensions when `tensor` is set (e.g. attn_q reads inDim 2816 —
+hidden size — in this checkpoint); a mismatch is rejected before any
+lowering.
+
+## 4. Metal source emission
+
+`Q4KernelEmitter.emit(schedule)` generates MSL source from the parameters —
+thread mapping, block-chunk striding, reduction tree, and load width are
+EMITTED text derived from (T, R, a, xLoads) and the op shape, not a lookup
+table of prewritten kernels. Kernel name
+`q4gen_matvec_T{T}_R{R}_{a}_{xLoads}`; compiled with
+`device.makeLibrary(source:)` exactly like the incumbent path. Emission is
+deterministic; the source SHA-256 is recorded in the artifact.
+
+## 5. Independent FP64 oracle (CPU-only, component gate)
+
+`Q4Oracle.matvecFP64` — independent Swift Double dequant/dot (FP16 scale
+decoded via Float16→Double, nibble levels in Double) over REAL weight bytes
+of the bound GGUF tensor (or synthetic deterministic blocks when unbound) and
+a deterministic seeded input. Scope as MEASURED: the run validated and
+oracle-checked only the 2-D bound tensor blk.0.attn_q.weight (256 rows of
+[2816, 4096]) with the seeded input, plus synthetic unbound geometries in
+the test suite; 3-D expert-slice bindings are NOT supported by this
+family. Every generated candidate AND the incumbent kernel are compared
+to the same CPU FP64 oracle. The full-model oracle shares the incumbent
+kernel primitives — the model-level gate is a bounded 32-step,
+three-fixture equivalence proxy, not an independent full-model
+reference.
+
+Component acceptance uses the EXISTING contract, unchanged — the same one
+the current Q4/Q6 kernels are held to in the test suite: finite outputs and
+relative-to-FP64 `|gpu−ref64| / max(1, |ref64|)) < 1e-4`. No new or looser
+numerical policy is introduced; the per-candidate rel-to-FP64 values and the
+incumbent's own value are recorded as diagnostics (the incumbent f32 serial
+kernel is measured, not assumed exact).
+
+## 6. Artifact identity and persisted execution
+
+`Q4LoweringArtifact` (JSON, ≤ 1 MiB): codegen version, op digest, schedule
+parameters, EMITTED SOURCE + its SHA-256, derived hardware profile, toolchain,
+GGUF content digest, executable digest, gate records (component + model), and
+an artifact digest over all fields. Reuse re-emits from the recorded
+schedule, requires byte-identical source, and RECOMPILES the MSL on load
+(the artifact is source/schedule JSON, not a compiled binary archive;
+tamper/stale → reject, fail closed to the incumbent kernel). Execution
+genuinely dispatches the emitted, compiled pipeline — asserted by the
+dedicated generated-kernel dispatch counters (> 0 on the generated path
+for the bound tensor; the incumbent kernel continues to serve every
+other Q4 matvec).
+
+## 7. Model-level gates (unchanged strictness) and matched measurement
+
+One-process orchestration (`q4-lower select`, mirrors the
+gemma-diagnose teacher-forcing pattern): the incumbent reference
+(pass-7 selected batching+RMS-VL configuration) generates greedy
+histories per fixture; EVERY component-accepted candidate is then
+teacher-forced replayed on the SAME histories over length-32
+generations on bounded representative fixtures (canonical-template
+English AND Korean chat prompts plus the raw Hello continuity
+fixture), gating full 262144 logits at the UNCHANGED strict 1e-4
+relative formula + exact greedy token equality + finiteness at every
+step. Matched performance: same binary, same GGUF, same prompt,
+sequential GPU residency, THREE paired repetitions per passing
+candidate with alternating incumbent-first/candidate-first order,
+raw per-arm samples and actual history windows recorded in the
+artifact; selection only beyond the documented 2% policy threshold.
+If the generated path fails the gate or shows no win, that is
+REPORTED HONESTLY; the incumbent remains the stable fallback and the
+artifact records the failure. No claim of a win from microbenchmarks
+alone, and the measured paired repetitions can be (and in the actual
+run, were) sign-changing — a median-based selection is not a claim of
+stable speedup.
+
+## 8. Bounds
+
+≤ 8 emitted candidates per forge; component validation reads bounded weight
+slices (≤ a few MB per shape, never the whole matrix set resident twice);
+model gates bounded to the existing 4096-context limit with 2...64
+generation tokens accepted by the CLI (the measured run used 32
+generation / 31 timed tokens); no new dependencies (Python stdlib
+only; Swift stdlib + Metal + CryptoKit only).
+
+## 9. Honest scope statement
+
+This adds ONE real parameterized operator-level lowering family (Q4_0 matvec)
+with shape/hardware-derived schedule generation, independent numerical
+validation, artifact-bound persisted execution, and matched measurement. The
+broader joint goal (general Python model compiler, competitive performance)
+remains UNMET until demonstrated; nothing here asserts it.

@@ -1,0 +1,1 @@
+captured q4_0.matvec op inDim=2816 outDim=4096 tensor=blk.0.attn_q.weight -> /tmp/leviathan-forge2-tooling/q4/op-root-final.json

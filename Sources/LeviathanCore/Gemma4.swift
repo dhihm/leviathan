@@ -713,6 +713,24 @@ public final class Gemma4Runner {
     /// (a Forge candidate — gated against the FP64 oracle and measured
     /// on real hardware before selection). Public so the profiling CLI
     /// can measure the selected kernels with exact per-kernel attribution.
+    /// Phase-9 parameterized Q4 lowering: when set, Q4_0 matvecs for the
+    /// ONE bound tensor (exact name AND inDim match) dispatch the EMITTED,
+    /// artifact-validated kernel; every other Q4_0 matvec — different
+    /// tensors, other shapes, expert slices — keeps the incumbent
+    /// hand-written kernel. Private(set): installation goes ONLY through
+    /// installQ4GeneratedKernel (full artifact identity check — tampered
+    /// or stale artifacts throw and nothing changes; fail closed).
+    private(set) var q4GeneratedKernel: Q4EmittedKernel?
+    private(set) var q4GeneratedBoundTensor: String?
+    private(set) var q4GeneratedBoundInDim: Int?
+    private(set) var q4GeneratedArtifactDigest: String?
+    /// Independent dispatch counters incremented in matvecDispatch itself
+    /// (correct in segment-batched mode too, where per-kernel GPU-time
+    /// attribution is deferred to the flush): generated-kernel dispatches
+    /// for the bound tensor, and bound-tensor dispatches that FELL BACK to
+    /// the incumbent kernels.
+    public private(set) var q4GeneratedDispatchCount = 0
+    public private(set) var q4BoundTensorIncumbentDispatchCount = 0
     public var q4TiledKernel = false
     /// Same for Q6_K matvecs (tied embedding / LM head).
     public var q6TiledKernel = false
@@ -771,6 +789,91 @@ public final class Gemma4Runner {
     /// Read-only view of the deferred-segment mode (diagnostics/tests —
     /// the setter stays applyDiagnosticAxis/executeToken only).
     public var segmentBatchingActive: Bool { autoSegment }
+
+    /// Installs the persisted lowering artifact's emitted kernel for its
+    /// ONE bound tensor. Validates the artifact against the CURRENT op,
+    /// measured hardware, toolchain, GGUF content digest, executable
+    /// bytes, codegen rules (re-emitted source must match byte-for-byte),
+    /// the component gate record, and the self digest — AND cross-checks
+    /// the op's bound tensor name/shape against THIS runner's mapped GGUF
+    /// (ref geometry + quant type) before installing. Any mismatch throws
+    /// BEFORE any state changes: the incumbent kernels stay active.
+    public func installQ4GeneratedKernel(artifact: Q4LoweringArtifact,
+                                         ggufDigest: String) throws {
+        guard let bound = artifact.op.tensor else {
+            throw Q4LoweringError.invalidArtifact(
+                "artifact op binds no tensor — nothing to install for")
+        }
+        // Crosscheck against THIS runner's mapped file: the digest binds
+        // content, the ref-map check binds the runner's actual geometry.
+        guard let r = ref[bound], r.type == .q4_0,
+              r.inDim == artifact.op.inDim, r.outDim == artifact.op.outDim else {
+            throw Q4LoweringError.invalidArtifact(
+                "bound tensor \(bound) geometry mismatch vs this runner")
+        }
+        // PRODUCTION install requires the model-gate record: a
+        // component-only artifact (nil modelGate) is diagnostic-only and
+        // must not activate a generated kernel here. The hardware profile
+        // is taken from the ACTUAL compiled incumbent pipeline
+        // (Q4CurrentHardware.profile) — the same source the artifact was
+        // forged with — not the runner's min-over-all-pipelines profile.
+        guard let gate = artifact.modelGate else {
+            throw Q4LoweringError.invalidArtifact(
+                "component-only artifact: no model-gate record, not installable")
+        }
+        guard let sel = gate.results.first(where: { $0.schedule == artifact.schedule }),
+              sel.fixturesPassed == gate.fixtures.count, sel.fixturesFailed == 0 else {
+            throw Q4LoweringError.invalidArtifact(
+                "artifact schedule did not pass all model-gate fixtures")
+        }
+        try artifact.validate(op: artifact.op,
+                              hardware: try Q4CurrentHardware.profile(),
+                              ggufDigest: ggufDigest,
+                              executableDigest: try Self.executableDigest())
+        let kernel = try Q4EmittedKernel.compile(op: artifact.op,
+                                                 schedule: artifact.schedule,
+                                                 device: device)
+        guard kernel.source == artifact.emittedSource else {
+            throw Q4LoweringError.invalidArtifact("compiled source differs from artifact")
+        }
+        q4GeneratedKernel = kernel
+        q4GeneratedBoundTensor = bound
+        q4GeneratedBoundInDim = artifact.op.inDim
+        q4GeneratedArtifactDigest = artifact.artifactDigest
+    }
+
+    /// TRIAL installation for the bounded per-candidate model-gate
+    /// orchestration (internal): installs an emitted candidate kernel for
+    /// its bound tensor after the runner-geometry crosscheck. The caller
+    /// is responsible for having component-gated the candidate — the
+    /// persisted-artifact production path remains
+    /// installQ4GeneratedKernel, which additionally requires the model
+    /// gate record to have accepted the schedule.
+    internal func installQ4TrialKernel(op: Q4OpIR, kernel: Q4EmittedKernel) throws {
+        guard let bound = op.tensor else {
+            throw Q4LoweringError.invalidArtifact("op binds no tensor — nothing to install")
+        }
+        guard let r = ref[bound], r.type == .q4_0,
+              r.inDim == op.inDim, r.outDim == op.outDim else {
+            throw Q4LoweringError.invalidArtifact(
+                "bound tensor \(bound) geometry mismatch vs this runner")
+        }
+        guard kernel.source == (try Q4KernelEmitter.emit(op: op, schedule: kernel.schedule)) else {
+            throw Q4LoweringError.invalidArtifact("kernel source not the canonical emission")
+        }
+        q4GeneratedKernel = kernel
+        q4GeneratedBoundTensor = bound
+        q4GeneratedBoundInDim = op.inDim
+        q4GeneratedArtifactDigest = "trial:" + kernel.schedule.kernelName
+    }
+
+    /// Removes the generated kernel (matched measurement arms / fallback).
+    public func uninstallQ4GeneratedKernel() {
+        q4GeneratedKernel = nil
+        q4GeneratedBoundTensor = nil
+        q4GeneratedBoundInDim = nil
+        q4GeneratedArtifactDigest = nil
+    }
 
     /// Diagnostic-only bounded matvec probe: writes `x` into the normed-
     /// activation buffer and evaluates the FIRST `rows` output rows of
@@ -938,6 +1041,21 @@ public final class Gemma4Runner {
             throw Gemma4Error.badTensorGeometry(
                 "illegal cooperative tile width \(threads) for \(name)")
         }
+        try dispatchPipeline(pipeline, name: name, groups: groups, threads: threads, bind)
+    }
+
+    /// Core explicit-geometry dispatch against an already-compiled
+    /// pipeline (the generated Q4 lowering passes its emitted pipeline
+    /// here). The thread count must fit the pipeline's device maximum —
+    /// illegal geometry is REJECTED, never clamped.
+    internal func dispatchPipeline(_ pipeline: MTLComputePipelineState, name: String,
+                                   groups: Int, threads: Int,
+                                   _ bind: (MTLComputeCommandEncoder) -> Void) throws {
+        guard threads > 0, groups > 0,
+              threads <= pipeline.maxTotalThreadsPerThreadgroup else {
+            throw Gemma4Error.badTensorGeometry(
+                "illegal threadgroup size \(threads) for \(name)")
+        }
         let width = threads
         if openEnc == nil, autoSegment { try beginSegment() }
         if let deferredEnc = openEnc {
@@ -1056,9 +1174,24 @@ public final class Gemma4Runner {
             enc.setBuffer(x, offset: 0, index: 3)
             enc.setBuffer(y, offset: yByteOffset, index: 4)
         }
-        if type == .q4_0 && q4TiledKernel {
+        if type == .q4_0, let gen = q4GeneratedKernel,
+               tensor == q4GeneratedBoundTensor, inDim == q4GeneratedBoundInDim {
+            q4GeneratedDispatchCount += 1
+            // The generated lowering serves ONLY its bound tensor shape;
+            // every other Q4_0 matvec falls through to the kernels below.
+            let groups = (outRows + gen.schedule.rowsPerGroup - 1)
+                / gen.schedule.rowsPerGroup
+            try dispatchPipeline(gen.pipeline, name: gen.schedule.kernelName,
+                                 groups: groups,
+                                 threads: gen.schedule.threadsPerRow
+                                    * gen.schedule.rowsPerGroup,
+                                 bind)
+        } else if type == .q4_0 && q4TiledKernel {
             // Tiled cooperative dispatch: one threadgroup per row with an
             // explicit hardware-derived width.
+            if tensor == q4GeneratedBoundTensor {
+                q4BoundTensorIncumbentDispatchCount += 1
+            }
             try dispatchExplicit("g4_q4_matvec_tiled", groups: outRows,
                                  threads: q4TileWidth, bind)
         } else if type == .q6_K && q6TiledKernel {
@@ -1068,6 +1201,9 @@ public final class Gemma4Runner {
             try dispatchExplicit("g4_f32_matvec_tiled", groups: outRows,
                                  threads: f32TileWidth, bind)
         } else {
+            if type == .q4_0, tensor == q4GeneratedBoundTensor {
+                q4BoundTensorIncumbentDispatchCount += 1
+            }
             try dispatch(kernel, grid: outRows, bind)
         }
         // Per-tensor GPU attribution (exact in per-kernel mode; in
@@ -1497,6 +1633,14 @@ public final class Gemma4Runner {
         try read(bufLogits, config.vocabSize)
     }
 
+    /// Read-only cumulative GPU-busy microseconds (matched-timing arms).
+    public var totalGpuMicros: Double { gpuMicrosTotal }
+    /// Read-only submission/dispatch counters (regression evidence that
+    /// deferred-segment batching actually engaged: submitted command
+    /// buffers grow slower than dispatched kernels in batched mode).
+    public var submittedBufferTotal: Int { submittedBuffers }
+    public var dispatchTotal: Int { dispatchCountTotal }
+
     /// Snapshot of the per-KERNEL GPU-time attribution (per-kernel mode).
     public func kernelGpuProfile() -> [(kernel: String, gpuMicros: Double, calls: Int)] {
         kernelGpuMicrosByName
@@ -1519,7 +1663,7 @@ public final class Gemma4Runner {
     /// invalidate automatically on engine rebuilds. FAILS CLOSED: if the
     /// real binary bytes cannot be resolved/hashed, an error propagates
     /// and no plan identity is produced (no placeholder digest).
-    static func executableDigest() throws -> String {
+    public static func executableDigest() throws -> String {
         guard let exec = Bundle.main.executableURL else {
             throw Gemma4Error.metalUnavailable
         }
@@ -1556,6 +1700,7 @@ public final class Gemma4Runner {
             + "|mslOptions=default"
             + "|expertCacheBudget=\(expertCache?.budgetBytes ?? 0)"
             + "|expertPrefetch=\(expertCache != nil && expertPrefetch ? "free-only" : "none")"
+            + "|q4gen=\(q4GeneratedArtifactDigest ?? "none")"
     }
 
     /// Measured hardware profile of the device this runner holds.
