@@ -1023,6 +1023,117 @@ public final class Gemma4Runner {
         try q4MatvecPipeline().maxTotalThreadsPerThreadgroup
     }
 
+    /// DIAGNOSTIC ONLY. Runs `body` with the generic Q4 matvec launch width set to
+    /// `width` through the existing installQ4LaunchTrial path.
+    /// - The width is validated first: positive, a multiple of the 32-lane SIMD
+    ///   group, and within the cached Q4 pipeline's thread limit.
+    /// - On every return and throw, restores the cached Q4 pipeline object and
+    ///   the previous q4LaunchWidth.
+    /// - Never a serving default and never artifact-bound. Used so both
+    ///   attention qualification arms share the same Q4 geometry baseline.
+    public func withQ4DiagnosticReferenceWidth<T>(_ width: Int,
+                                                  _ body: () throws -> T) throws -> T {
+        let maxThreads = try q4MatvecPipelineMaxThreads()
+        guard width > 0, width % 32 == 0, width <= maxThreads else {
+            throw Gemma4Error.badTensorGeometry("Q4 diagnostic reference width \(width) is invalid")
+        }
+        guard let original = pipelines[Self.q4LaunchKernel] else {
+            throw Gemma4Error.metalUnavailable
+        }
+        let savedWidth = q4LaunchWidth
+        defer {
+            pipelines[Self.q4LaunchKernel] = original
+            q4LaunchWidth = savedWidth
+        }
+        try installQ4LaunchTrial(width: width)
+        let result = try body()
+        guard let current = pipelines[Self.q4LaunchKernel], current === original,
+              q4LaunchWidth == width else {
+            throw Gemma4Error.badTensorGeometry("Q4 diagnostic reference width was displaced during the run")
+        }
+        return result
+    }
+
+    /// DIAGNOSTIC ONLY: true while an attention diagnostic candidate occupies
+    /// the separate diagnostic slot `AttentionDiagnostic.slotKey`. The cached
+    /// incumbent g4_attn entry itself is never replaced.
+    public var attentionDiagnosticActive: Bool {
+        pipelines[AttentionDiagnostic.slotKey] != nil
+    }
+
+    /// The runner's CACHED incumbent g4_attn pipeline: the exact object the
+    /// generic attention dispatch launches. Attention components measure
+    /// THIS pipeline, never a separately compiled mirror.
+    internal func attentionIncumbentPipeline() throws -> MTLComputePipelineState {
+        guard let p = pipelines["g4_attn"] else {
+            throw Gemma4Error.metalUnavailable
+        }
+        return p
+    }
+
+    /// DIAGNOSTIC ONLY. Never production-qualified, never artifact-bound,
+    /// never a serving default.
+    /// - Places a label-prefixed attention candidate in the diagnostic slot.
+    ///   The candidate must be compiled on THIS runner's device by
+    ///   `AttentionDiagnostic.compile`.
+    /// - Resets the diagnostic counters, then runs `body`.
+    /// - On every exit, including throws, clears the slot and restores the
+    ///   cached incumbent g4_attn object.
+    /// - Nesting is refused.
+    public func withAttentionDiagnostic<T>(candidate: MTLComputePipelineState,
+                                           _ body: () throws -> T) throws -> T {
+        guard !attentionDiagnosticActive else {
+            throw Gemma4Error.badTensorGeometry("attention diagnostic refused (already active)")
+        }
+        guard let incumbent = pipelines["g4_attn"] else {
+            throw Gemma4Error.metalUnavailable
+        }
+        guard candidate.label?.hasPrefix(AttentionDiagnostic.labelPrefix) == true,
+              candidate !== incumbent,
+              candidate.device === device,
+              AttentionDiagnostic.threads <= candidate.maxTotalThreadsPerThreadgroup,
+              candidate.staticThreadgroupMemoryLength <= device.maxThreadgroupMemoryLength else {
+            throw Gemma4Error.badTensorGeometry("attention diagnostic candidate rejected (label, identity, device, width or threadgroup memory)")
+        }
+        AttentionDiagnostic.counters.reset()
+        defer {
+            pipelines[AttentionDiagnostic.slotKey] = nil
+            pipelines["g4_attn"] = incumbent
+        }
+        pipelines[AttentionDiagnostic.slotKey] = candidate
+        let result = try body()
+        guard let current = pipelines[AttentionDiagnostic.slotKey], current === candidate,
+              let cached = pipelines["g4_attn"], cached === incumbent else {
+            throw Gemma4Error.badTensorGeometry("attention diagnostic install was displaced during the run")
+        }
+        return result
+    }
+
+    /// DIAGNOSTIC ONLY. The one shared attention dispatch hook, used by BOTH
+    /// the standard forward path and the SSA (GemmaForge) executor path.
+    /// - The caller passes the exact incumbent g4_attn bindings (indices
+    ///   0...5), so the binding ABI stays identical.
+    /// - No candidate installed: returns false and counts nothing; the caller
+    ///   runs the unchanged incumbent dispatch.
+    /// - Geometry not eligible: records a fallback and returns false; the
+    ///   caller again runs the incumbent.
+    /// - Otherwise: records applied, dispatches one threadgroup per query head
+    ///   with AttentionDiagnostic.threads lanes, and returns true.
+    internal func attentionDiagnosticDispatch(qHeads: Int, kvHeads: Int, headDim: Int, position: Int, window: Int,
+                                              bind: (MTLComputeCommandEncoder) -> Void) throws -> Bool {
+        guard let candidate = pipelines[AttentionDiagnostic.slotKey] else { return false }
+        guard AttentionDiagnostic.eligible(qHeads: qHeads, kvHeads: kvHeads, headDim: headDim,
+                                           position: position, window: window,
+                                           maxThreads: candidate.maxTotalThreadsPerThreadgroup) else {
+            AttentionDiagnostic.counters.recordFallback()
+            return false
+        }
+        AttentionDiagnostic.counters.recordApplied()
+        try dispatchPipeline(candidate, name: AttentionDiagnostic.kernelName, groups: qHeads,
+                             threads: AttentionDiagnostic.threads, bind)
+        return true
+    }
+
     /// FRESH-PROCESS VERIFICATION baseline setup (the phase-15 composite
     /// verifier's E4 reference arm): HARD-PINNED to the accepted
     /// E4_R32 schedule and its recorded phase-13 source SHA — arbitrary
@@ -2518,13 +2629,29 @@ public final class Gemma4Runner {
                               UInt32(kvHeads), UInt32(headDim))
         var q = SIMD2<UInt32>(UInt32(config.qHeads),
                               UInt32(isGlobal ? 0 : config.slidingWindow))
-        try dispatch("g4_attn", grid: config.qHeads) { enc in
-            enc.setBytes(&p, length: MemoryLayout<SIMD4<UInt32>>.stride, index: 0)
-            enc.setBytes(&q, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 1)
-            enc.setBuffer(bufT1, offset: 0, index: 2)
-            enc.setBuffer(kCaches[layer], offset: 0, index: 3)
-            enc.setBuffer(vCaches[layer], offset: 0, index: 4)
-            enc.setBuffer(bufT3, offset: 0, index: 5)
+        // DIAGNOSTIC ONLY: the shared attention diagnostic hook, also used by the
+        // SSA path. With no candidate installed it returns false without
+        // counting, and the unchanged incumbent dispatch below runs.
+        let attentionDiagnosticHandled = try attentionDiagnosticDispatch(
+            qHeads: Int(config.qHeads), kvHeads: Int(kvHeads), headDim: Int(headDim),
+            position: Int(position), window: Int(isGlobal ? 0 : config.slidingWindow),
+            bind: { enc in
+                enc.setBytes(&p, length: MemoryLayout<SIMD4<UInt32>>.stride, index: 0)
+                enc.setBytes(&q, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 1)
+                enc.setBuffer(bufT1, offset: 0, index: 2)
+                enc.setBuffer(kCaches[layer], offset: 0, index: 3)
+                enc.setBuffer(vCaches[layer], offset: 0, index: 4)
+                enc.setBuffer(bufT3, offset: 0, index: 5)
+            })
+        if !attentionDiagnosticHandled {
+            try dispatch("g4_attn", grid: config.qHeads) { enc in
+                enc.setBytes(&p, length: MemoryLayout<SIMD4<UInt32>>.stride, index: 0)
+                enc.setBytes(&q, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 1)
+                enc.setBuffer(bufT1, offset: 0, index: 2)
+                enc.setBuffer(kCaches[layer], offset: 0, index: 3)
+                enc.setBuffer(vCaches[layer], offset: 0, index: 4)
+                enc.setBuffer(bufT3, offset: 0, index: 5)
+            }
         }
         try matvec(tensor: prefix + "attn_output.weight", x: bufT3, xCount: qWidth,
                    y: bufT2, yCapacity: max(hidden, 2048))

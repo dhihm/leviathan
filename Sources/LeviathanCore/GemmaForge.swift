@@ -568,13 +568,29 @@ public enum GemmaForge {
                 var q = SIMD2<UInt32>(UInt32(a(inst, "heads")), UInt32(a(inst, "window")))
                 let qBuf = try vb(inst.inputs[0])
                 let outBuf = try vb(inst.output)
-                try runner.dispatch("g4_attn", grid: a(inst, "heads")) { enc in
-                    enc.setBytes(&p, length: MemoryLayout<SIMD4<UInt32>>.stride, index: 0)
-                    enc.setBytes(&q, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 1)
-                    enc.setBuffer(qBuf, offset: 0, index: 2)
-                    enc.setBuffer(runner.kCaches[layer], offset: 0, index: 3)
-                    enc.setBuffer(runner.vCaches[layer], offset: 0, index: 4)
-                    enc.setBuffer(outBuf, offset: 0, index: 5)
+                // DIAGNOSTIC ONLY: the SSA path reaches the shared attention diagnostic hook with the exact incumbent
+                // bindings. When no candidate is installed, or the geometry falls back, the unchanged incumbent runs.
+                let attentionDiagnosticHandled = try runner.attentionDiagnosticDispatch(
+                    qHeads: Int(a(inst, "heads")), kvHeads: Int(a(inst, "kvHeads")),
+                    headDim: Int(a(inst, "headDim")), position: Int(position),
+                    window: Int(a(inst, "window")),
+                    bind: { enc in
+                        enc.setBytes(&p, length: MemoryLayout<SIMD4<UInt32>>.stride, index: 0)
+                        enc.setBytes(&q, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 1)
+                        enc.setBuffer(qBuf, offset: 0, index: 2)
+                        enc.setBuffer(runner.kCaches[layer], offset: 0, index: 3)
+                        enc.setBuffer(runner.vCaches[layer], offset: 0, index: 4)
+                        enc.setBuffer(outBuf, offset: 0, index: 5)
+                    })
+                if !attentionDiagnosticHandled {
+                    try runner.dispatch("g4_attn", grid: a(inst, "heads")) { enc in
+                        enc.setBytes(&p, length: MemoryLayout<SIMD4<UInt32>>.stride, index: 0)
+                        enc.setBytes(&q, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 1)
+                        enc.setBuffer(qBuf, offset: 0, index: 2)
+                        enc.setBuffer(runner.kCaches[layer], offset: 0, index: 3)
+                        enc.setBuffer(runner.vCaches[layer], offset: 0, index: 4)
+                        enc.setBuffer(outBuf, offset: 0, index: 5)
+                    }
                 }
             case "router_topk":
                 guard let layer = inst.layer, layer >= 0,
