@@ -62,11 +62,21 @@ public struct Q4OpIR: Codable, Equatable, Sendable {
     /// GGUF dimensions (dims[0]=inDim, dims[1]=outDim) or lowering is
     /// rejected.
     public let tensor: String?
+    /// Optional view over the bound tensor: nil = the 2-D tensor itself;
+    /// "expert-row-slice" = ONE expert's contiguous row-major
+    /// [outDim, inDim] slice of a 3-D expert-family tensor
+    /// blk.&lt;L&gt;.ffn_{gate_up,down}_exps.weight (dims
+    /// [inDim, outDim, experts]; every expert shares the slice shape,
+    /// the runtime slice byte offset addresses the expert).
+    public let view: String?
     /// Bounded representative row count for component validation reads
     /// (1...outDim; defaults to a bounded slice when nil).
     public let representativeRows: Int?
 
     public static let supportedSchema = 1
+    public static let expertView = "expert-row-slice"
+    public static let expertFamilySuffixes =
+        [".ffn_gate_up_exps.weight", ".ffn_down_exps.weight"]
 
     public static func parse(_ data: Data) throws -> Q4OpIR {
         guard data.count <= 1 << 16 else {
@@ -92,6 +102,16 @@ public struct Q4OpIR: Codable, Equatable, Sendable {
         guard accumulate == "f32", inputPrecision == "f32" else {
             throw Q4LoweringError.invalidOp("unsupported accumulate/inputPrecision")
         }
+        guard view == nil || view == Self.expertView else {
+            throw Q4LoweringError.invalidOp("unsupported view \(view ?? "nil")")
+        }
+        if view == Self.expertView {
+            guard let tensor,
+                  Self.expertFamilySuffixes.contains(where: { tensor.hasSuffix($0) }) else {
+                throw Q4LoweringError.invalidOp(
+                    "\(Self.expertView) binds a blk.<L>.ffn_{gate_up,down}_exps.weight tensor")
+            }
+        }
         guard inDim > 0, outDim > 0, inDim % Q4_0.valuesPerBlock == 0,
               inDim <= ModelWorkloadLimits.maxQ4InputDim,
               outDim <= ModelWorkloadLimits.maxQ4OutputDim else {
@@ -106,6 +126,9 @@ public struct Q4OpIR: Codable, Equatable, Sendable {
 
     /// Cross-checks the declared shape against the BOUND tensor's actual
     /// GGUF dimensions and quant type. Fail-closed on any mismatch.
+    /// view nil: the tensor must be 2-D [inDim, outDim].
+    /// view "expert-row-slice": the tensor must be a 3-D expert family
+    /// [inDim, outDim, experts] with experts > 0.
     public func validateAgainst(file: GGUFFile) throws {
         guard let tensor else { return }
         guard let info = try? file.tensor(tensor) else {
@@ -115,9 +138,17 @@ public struct Q4OpIR: Codable, Equatable, Sendable {
             throw Q4LoweringError.invalidOp(
                 "bound tensor \(tensor) ggmlType \(info.ggmlType) is not Q4_0")
         }
-        guard info.dims.count == 2, info.dims[0] == inDim, info.dims[1] == outDim else {
-            throw Q4LoweringError.invalidOp(
-                "bound tensor \(tensor) dims \(info.dims) != declared [\(inDim), \(outDim)]")
+        if view == Self.expertView {
+            guard info.dims.count == 3, info.dims[0] == inDim,
+                  info.dims[1] == outDim, info.dims[2] > 0 else {
+                throw Q4LoweringError.invalidOp(
+                    "expert-view tensor \(tensor) dims \(info.dims) != expert family [\(inDim), \(outDim), experts>0]")
+            }
+        } else {
+            guard info.dims.count == 2, info.dims[0] == inDim, info.dims[1] == outDim else {
+                throw Q4LoweringError.invalidOp(
+                    "bound tensor \(tensor) dims \(info.dims) != declared [\(inDim), \(outDim)]")
+            }
         }
     }
 
@@ -176,14 +207,19 @@ public struct Q4Schedule: Codable, Equatable, Hashable, Sendable {
     }
 
     /// Legality against the operation shape and the measured device:
-    /// power-of-two T, bounded threadgroup occupancy, and — the SHAPE
+    /// power-of-two T (one serial-order row per T threads) or — the
+    /// phase-11 row-tile family — power-of-two R up to 1024 with T=1
+    /// (R consecutive rows per threadgroup, one thread per row: the
+    /// per-row term order is unchanged from the incumbent, no dot
+    /// reassociation), bounded threadgroup occupancy, and — the SHAPE
     /// input — at least `minWorkBlocks` Q4 blocks per thread so small
     /// geometries legally admit only small T.
     public func isLegal(blocksPerRow: Int, hardware: ForgeHardwareProfile,
                         minWorkBlocks: Int = 4) -> Bool {
         let t = threadsPerRow
         guard t > 0, t & (t - 1) == 0, t <= 64,
-              rowsPerGroup > 0, [1, 2, 4].contains(rowsPerGroup),
+              rowsPerGroup > 0, rowsPerGroup & (rowsPerGroup - 1) == 0,
+              rowsPerGroup <= 1024,
               t * rowsPerGroup <= hardware.maxTotalThreadsPerThreadgroup,
               blocksPerRow / t >= minWorkBlocks else { return false }
         return true
@@ -193,7 +229,7 @@ public struct Q4Schedule: Codable, Equatable, Hashable, Sendable {
 // MARK: - Schedule derivation (shape × measured hardware)
 
 public enum Q4ScheduleDeriver {
-    public static let maxCandidates = 8
+    public static let maxCandidates = 13
 
     /// Derives the bounded legal schedule set from the operation SHAPE and
     /// the MEASURED hardware. Candidate 0 is always the incumbent-mapping
@@ -239,6 +275,29 @@ public enum Q4ScheduleDeriver {
                 result.append(s)
             }
         }
+        // Phase-11 ROW-TILE family (T=1, one thread per row, R
+        // consecutive rows per threadgroup): the incumbent generic
+        // dispatch clamps the threadgroup to the pipeline's 1024-thread
+        // LEGAL MAXIMUM, which leaves few threadgroups on wide GPUs at
+        // the dominant expert shapes (GU outDim 1408 -> 2 threadgroups,
+        // DN 2816 -> 3; actual core occupancy is UNMEASURED — the
+        // component screen and matched model timing decide, never this
+        // list). These candidates keep each row's serial term order
+        // UNCHANGED from the incumbent (no dot reassociation; bit-level
+        // equality to the incumbent is measured by the component bit
+        // gate) while emitting R = w, 2w, 4w, 8w (executionWidth-derived
+        // 32/64/128/256 on M1 Max) rows per threadgroup, plus the
+        // cap-width control (min(1024, cap) — the incumbent geometry).
+        let rowTiles = [w, w * 2, w * 4, w * 8,
+                        min(1024, hardware.maxTotalThreadsPerThreadgroup)]
+        for r in rowTiles where r > 0 {
+            let s = Q4Schedule(threadsPerRow: 1, rowsPerGroup: r,
+                               accumulation: .f32, xLoads: .scalar)
+            if s.isLegal(blocksPerRow: blocksPerRow, hardware: hardware),
+               !result.contains(s) {
+                result.append(s)
+            }
+        }
         return Array(result.prefix(maxCandidates))
     }
 }
@@ -247,7 +306,11 @@ public enum Q4ScheduleDeriver {
 
 public enum Q4KernelEmitter {
     /// Bumped whenever emission rules change; part of artifact identity.
-    public static let codegenVersion = "q4gen-v1"
+    /// v2: T=1 schedules emit the ROW-TILE direct mapping (one thread per
+    /// row, row = threadgroup_position * R + thread_index, per-row serial
+    /// summation order EXACTLY the incumbent's, no threadgroup partials
+    /// or barrier).
+    public static let codegenVersion = "q4gen-v2"
 
     /// Emits the complete MSL source for one schedule. The thread mapping,
     /// block-chunk decomposition, reduction structure, and load width are
@@ -369,6 +432,58 @@ public enum Q4KernelEmitter {
             y[row] = acc;
             """
         }
+        let blockLoop = """
+            for (uint b = 0; b < blocksPerRow; b++) {
+                device const uchar* blk = rowBytes + b * 18u;
+                ushort dbits = ushort(blk[0]) | (ushort(blk[1]) << 8u);
+                float d = float(as_type<half>(dbits));
+        \(inner)
+            }
+        """
+        if t == 1 {
+            // ROW-TILE direct mapping: one thread per row, R consecutive
+            // rows per threadgroup, no partials and no barrier. The
+            // per-thread arithmetic sequence over the row's blocks
+            // matches the incumbent g4_q4_matvec's (ascending blocks,
+            // low then high nibble, same term expressions) — the tile
+            // only changes which threadgroup computes which row;
+            // bit-level equality is MEASURED by the component bit gate,
+            // never assumed here.
+            let write = kahan ? "y[row] = sum + comp;" : "y[row] = sum;"
+            return """
+            #include <metal_stdlib>
+            using namespace metal;
+
+            // \(schedule.kernelName) — EMITTED by LeviathanForge Q4 lowering
+            // (\(codegenVersion)) from schedule \(schedule) and op shape
+            // inDim=\(op.inDim) (blocksPerRow=\(blocksPerRow)).
+            // T=1 ROW-TILE mapping: R=\(r) consecutive rows per threadgroup,
+            // row = threadgroup_position * R + thread_index; one thread
+            // computes each row's full serial dot in the incumbent's
+            // summation order (no dot reassociation; bit-level equality
+            // measured by the component bit gate);
+            // accumulation=\(schedule.accumulation.rawValue);
+            // xLoads=\(schedule.xLoads.rawValue); no dot reassociation.
+            kernel void \(schedule.kernelName)(constant const uint2& p [[buffer(0)]],
+                                                constant const ulong& wOff [[buffer(1)]],
+                                                device const uchar* wbase [[buffer(2)]],
+                                                device const float* x [[buffer(3)]],
+                                                device float* y [[buffer(4)]],
+                                                uint lid [[thread_position_in_threadgroup]],
+                                                uint wid [[threadgroup_position_in_grid]]) {
+                constexpr uint R = \(r)u;
+                uint row = wid * R + lid;
+                bool active = row < p.y;
+                uint blocksPerRow = p.x / 32u;
+                device const uchar* rowBytes = wbase + wOff + (ulong)row * blocksPerRow * 18u;
+            \(accumulationDecls)
+                if (active) {
+            \(blockLoop)
+                    \(write)
+                }
+            }
+            """
+        }
         return """
         #include <metal_stdlib>
         using namespace metal;
@@ -477,6 +592,11 @@ public struct Q4ComponentResult: Codable, Equatable, Sendable {
     /// Worst |gpu - incumbentGpu| / max(1, |incumbentGpu|): the emitted
     /// kernel's distance from the incumbent kernel's own outputs.
     public let worstRelToIncumbent: Double?
+    /// MEASURED bit-level equality (bitPattern) against the ACTUAL
+    /// incumbent g4_q4_matvec output on the same representative inputs:
+    /// true only when every row's float bits match. Recorded for every
+    /// evaluated candidate; never assumed from the source alone.
+    public let bitIdenticalToIncumbent: Bool?
     /// Sum of |products| at the worst-oracle row (FP64) —
     /// cancellation context for a small result with large terms.
     public let worstRowSumAbsProducts: Double?
@@ -487,8 +607,18 @@ public struct Q4ComponentResult: Codable, Equatable, Sendable {
 /// when the op binds a tensor (pread, never the whole tensor set), or a
 /// deterministic synthetic Q4_0 matrix when unbound.
 public enum Q4ComponentInputs {
-    public static func weightBytes(op: Q4OpIR, file: GGUFFile?) throws -> [UInt8] {
-        let rows = op.componentRows
+    /// Bounded representative weight bytes for the op: real GGUF tensor
+    /// rows when the op binds a tensor (pread, never the whole tensor
+    /// set; `overrideRows` reads a larger bounded slice — e.g. the FULL
+    /// outDim for the performance screen, a few MB — still within the
+    /// tensor extent), or a deterministic synthetic Q4_0 matrix when
+    /// unbound.
+    public static func weightBytes(op: Q4OpIR, file: GGUFFile?,
+                                   overrideRows: Int? = nil) throws -> [UInt8] {
+        let rows = overrideRows ?? op.componentRows
+        guard rows > 0, rows <= op.outDim else {
+            throw Q4LoweringError.invalidOp("row read \(rows) out of bounds")
+        }
         let blocksPerRow = op.inDim / Q4_0.valuesPerBlock
         if let file, let tensor = op.tensor {
             try op.validateAgainst(file: file)
@@ -609,6 +739,62 @@ public struct Q4EmittedKernel: Sendable {
         let out = [Float](UnsafeBufferPointer(
             start: yb.contents().assumingMemoryBound(to: Float.self), count: rows))
         return out
+    }
+
+    /// Component-level performance screen at a representative hot shape:
+    /// builds the buffers ONCE, then times whole submit->complete
+    /// dispatches (warmup excluded) and returns the MEDIAN microseconds
+    /// per call. Record/prune only — never a numerical gate.
+    public func timedMatvecMedianUs(blocks: [UInt8], outDim: Int, inDim: Int,
+                                    x: [Float], warmup: Int = 5,
+                                    reps: Int = 30) throws -> Double {
+        let rows = outDim
+        guard blocks.count == rows * (inDim / 32) * 18, x.count == inDim else {
+            throw Q4LoweringError.componentGateFailed("component geometry mismatch")
+        }
+        guard let wb = device.makeBuffer(bytes: blocks, length: blocks.count,
+                                         options: .storageModeShared),
+              let xb = device.makeBuffer(bytes: x, length: x.count * 4,
+                                         options: .storageModeShared),
+              let yb = device.makeBuffer(length: rows * 4, options: .storageModeShared) else {
+            throw Q4LoweringError.hardwareUnavailable("screen buffer allocation")
+        }
+        var p = SIMD2<UInt32>(UInt32(inDim), UInt32(rows))
+        var off = UInt64(0)
+        let threads = schedule.threadsPerRow * schedule.rowsPerGroup
+        let groups = (rows + schedule.rowsPerGroup - 1) / schedule.rowsPerGroup
+        func oneCall() throws {
+            guard let cmd = queue.makeCommandBuffer(),
+                  let enc = cmd.makeComputeCommandEncoder() else {
+                throw Q4LoweringError.hardwareUnavailable("screen encoder")
+            }
+            enc.setComputePipelineState(pipeline)
+            enc.setBytes(&p, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
+            enc.setBytes(&off, length: MemoryLayout<UInt64>.stride, index: 1)
+            enc.setBuffer(wb, offset: 0, index: 2)
+            enc.setBuffer(xb, offset: 0, index: 3)
+            enc.setBuffer(yb, offset: 0, index: 4)
+            enc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
+                                     threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1))
+            enc.endEncoding()
+            cmd.commit()
+            cmd.waitUntilCompleted()
+            guard cmd.status == .completed, cmd.error == nil else {
+                throw Q4LoweringError.componentGateFailed(
+                    "screen status \(cmd.status.rawValue), \(String(describing: cmd.error))")
+            }
+        }
+        for _ in 0..<warmup { try oneCall() }
+        var samples = [Double]()
+        samples.reserveCapacity(reps)
+        for _ in 0..<reps {
+            let t0 = DispatchTime.now()
+            try oneCall()
+            samples.append(Double(DispatchTime.now().uptimeNanoseconds
+                                  - t0.uptimeNanoseconds) / 1000.0)
+        }
+        let s = samples.sorted()
+        return s.count.isMultiple(of: 2) ? (s[s.count/2 - 1] + s[s.count/2]) / 2 : s[s.count/2]
     }
 }
 
@@ -1001,24 +1187,48 @@ public enum Q4LoweringForge {
                     worstInc = max(worstInc, abs(Double(out[i] - incumbentOut[i]))
                                    / max(1.0, abs(Double(incumbentOut[i]))))
                 }
+                // MEASURED bit-level comparison against the actual
+                // incumbent kernel output (recorded, not gated on — the
+                // gates stay the 1e-4 oracle contract and the unchanged
+                // model-level strict gates).
+                let bitIdentical = out.count == incumbentOut.count
+                    && zip(out, incumbentOut).allSatisfy {
+                        $0.bitPattern == $1.bitPattern }
                 // EXISTING component contract, unchanged: finite outputs
                 // and rel-to-FP64 < 1e-4 (same tolerance the Q4/Q6 GPU
-                // kernels are held to in the test suite).
+                // kernels are held to in the test suite). The phase-11
+                // T=1 f32/scalar row-tile candidates must additionally
+                // be MEASURED bit-identical to the incumbent — they
+                // claim to preserve the per-row serial arithmetic, so
+                // anything short of bit equality fails closed. Other
+                // strategies (T>1, compensated, float4) keep the oracle
+                // contract above.
+                let isRowTile = schedule.threadsPerRow == 1
+                    && schedule.accumulation == .f32
+                    && schedule.xLoads == .scalar
                 let accepted = worstOracle < 1e-4
+                    && (!isRowTile || bitIdentical)
                 results.append(Q4ComponentResult(
                     schedule: schedule, accepted: accepted,
                     worstRelToOracle: worstOracle, worstRelToIncumbent: worstInc,
+                    bitIdenticalToIncumbent: bitIdentical,
                     worstRowSumAbsProducts: sumAbs,
                     note: accepted
-                        ? String(format: "rel64 %.3e relInc %.3e", worstOracle, worstInc)
-                        : String(format: "outside 1e-4 FP64 contract (rel64 %.3e)", worstOracle)))
+                        ? String(format: "rel64 %.3e relInc %.3e bits %@",
+                                 worstOracle, worstInc,
+                                 bitIdentical ? "identical" : "differ")
+                        : isRowTile
+                            ? String(format: "row tile not bit-identical to incumbent (rel64 %.3e)",
+                                     worstOracle)
+                            : String(format: "outside 1e-4 FP64 contract (rel64 %.3e)", worstOracle)))
                 if accepted, best == nil || worstOracle < best!.rel {
                     best = (schedule, kernel.source, worstOracle)
                 }
             } catch {
                 results.append(Q4ComponentResult(
                     schedule: schedule, accepted: false, worstRelToOracle: nil,
-                    worstRelToIncumbent: nil, worstRowSumAbsProducts: nil,
+                    worstRelToIncumbent: nil, bitIdenticalToIncumbent: nil,
+                    worstRowSumAbsProducts: nil,
                     note: "rejected: \(error)"))
             }
         }
@@ -1144,7 +1354,64 @@ public enum Q4LoweringForge {
                           incumbentRel,
                           componentResults.filter(\.accepted).count, componentResults.count))
 
-        // ---- 2. reference arm per fixture (incumbent, pass-7 config,
+        // ---- 2. component performance screen BEFORE the costly model
+        // gates: every component-accepted candidate is compiled and
+        // timed at the REAL hot shape — the full outDim output rows
+        // (e.g. GU 1408 / DN 2816; the weight read stays bounded to one
+        // tensor's rows, a few MB, never the tensor set) — median
+        // whole-dispatch µs/call, prebuilt buffers. The T=1 R=1
+        // baseline is a SANITY anchor and is EXCLUDED from finalist
+        // eligibility; every other component winner can qualify. Only
+        // the fastest 2 finalists advance to the full 3-fixture x
+        // 32-step model gates and the matched timing. The screen PRUNES
+        // only — it never selects and never replaces a numerical gate.
+        let baselineSchedule = Q4Schedule(threadsPerRow: 1, rowsPerGroup: 1,
+                                          accumulation: .f32, xLoads: .scalar)
+        let screenBlocks = try Q4ComponentInputs.weightBytes(op: op, file: runner.ggufFile,
+                                                             overrideRows: op.outDim)
+        let screenX = Q4ComponentInputs.activation(op: op)
+        var compiled = [Q4Schedule: Q4EmittedKernel]()
+        var screenMed = [Q4Schedule: Double]()
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw Q4LoweringError.hardwareUnavailable("Metal unavailable")
+        }
+        for result in componentResults where result.accepted {
+            do {
+                let kernel = try Q4EmittedKernel.compile(op: op,
+                                                         schedule: result.schedule,
+                                                         device: device)
+                compiled[result.schedule] = kernel
+                screenMed[result.schedule] = result.schedule == baselineSchedule
+                    ? .infinity   // sanity anchor: screened for the record only
+                    : try kernel.timedMatvecMedianUs(
+                        blocks: screenBlocks, outDim: op.outDim,
+                        inDim: op.inDim, x: screenX)
+            } catch {
+                screenMed[result.schedule] = .infinity
+                log.append("screen \(result.schedule.kernelName): compile/screen failed: \(error)")
+            }
+        }
+        let finalists = Set(
+            screenMed.filter { $0.key != baselineSchedule && $0.value.isFinite }
+                .sorted {
+                    $0.value < $1.value
+                        || ($0.value == $1.value && $0.key.kernelName < $1.key.kernelName)
+                }.prefix(2).map(\.key))
+        if finalists.isEmpty {
+            throw Q4LoweringError.componentGateFailed(
+                "component screen left no eligible finalists "
+                + "(accepted: \(componentResults.filter(\.accepted).count))")
+        }
+        for result in componentResults where result.accepted {
+            let med = screenMed[result.schedule] ?? .infinity
+            log.append(String(format: "screen %@: %@ %.1f us/call%@",
+                              result.schedule.kernelName,
+                              finalists.contains(result.schedule) ? "finalist" : "pruned",
+                              med,
+                              result.schedule == baselineSchedule ? " (T1R1 sanity anchor)" : ""))
+        }
+
+        // ---- 3. reference arm per fixture (incumbent, pass-7 config,
         // re-applied after each reset — see resetIncumbentConfig) ----
         struct RefArm {
             var ids: [Int]
@@ -1215,21 +1482,26 @@ public enum Q4LoweringForge {
             }
         }
 
-        // ---- 3. per-candidate model gates ----
-        let device = MTLCreateSystemDefaultDevice()
+        // ---- 4. per-finalist model gates (only the <=2 screen finalists
+        // pay the full 3-fixture x 32-step replay cost) ----
         var modelResults = [Q4ModelCandidateResult]()
         var passingKernels = [Q4Schedule: Q4EmittedKernel]()
         for result in componentResults where result.accepted {
-            guard let device else { break }
-            let kernel: Q4EmittedKernel
-            do {
-                kernel = try Q4EmittedKernel.compile(op: op, schedule: result.schedule,
-                                                     device: device)
-            } catch {
+            // Accepted-but-pruned candidates are recorded WITHOUT gate
+            // results — the screen prune is not a gate failure.
+            guard finalists.contains(result.schedule) else {
+                modelResults.append(Q4ModelCandidateResult(
+                    schedule: result.schedule, fixturesPassed: 0, fixturesFailed: 0,
+                    worstRel: nil,
+                    gateFailReason: "component screen prune (not a gate failure)",
+                    wallMedPerFixture: nil, gpuMedPerFixture: nil))
+                continue
+            }
+            guard let kernel = compiled[result.schedule] else {
                 modelResults.append(Q4ModelCandidateResult(
                     schedule: result.schedule, fixturesPassed: 0,
                     fixturesFailed: fixtures.count, worstRel: nil,
-                    gateFailReason: "compile: \(error)",
+                    gateFailReason: "compile: missing after screen",
                     wallMedPerFixture: nil, gpuMedPerFixture: nil))
                 continue
             }
@@ -1278,15 +1550,18 @@ public enum Q4LoweringForge {
         // Fail closed when NO candidate passed every fixture gate: an
         // artifact whose schedule failed a gate must never be persisted
         // as installable (production install would reject it anyway).
+        // Gate-failing entries (fixturesFailed > 0) must be present in
+        // the message; pruned entries are not gate failures.
         guard modelResults.contains(where: { $0.fixturesFailed == 0 && $0.worstRel != nil })
         else {
             throw Q4LoweringError.componentGateFailed(
                 "no generated candidate passed all fixture gates: "
-                + modelResults.map { "\($0.schedule.kernelName): \($0.gateFailReason ?? "?")" }
-                    .joined(separator: "; "))
+                + modelResults.compactMap { r -> String? in
+                    r.fixturesFailed > 0 ? "\(r.schedule.kernelName): \(r.gateFailReason ?? "?")" : nil
+                }.joined(separator: "; "))
         }
 
-        // ---- 4. matched timing: 3 PAIRED repetitions per fully passing
+        // ---- 5. matched timing: 3 PAIRED repetitions per fully passing
         // candidate, alternating order (incumbent-first / candidate-first
         // / incumbent-first) so drift affects both arms equally. Raw
         // per-arm samples and the actual history window are kept in the
@@ -1426,7 +1701,7 @@ public enum Q4LoweringForge {
             incGpus = []
         }
 
-        // ---- 5. policy ----
+        // ---- 6. policy ----
         let performanceSelected: Bool
         let selectedSchedule: Q4Schedule
         if let best = bestTiming,
@@ -1496,7 +1771,7 @@ public enum Q4LoweringForge {
             modelGate: gateRecord, artifactDigest: digest)
         try artifact.save(to: url)
 
-        // ---- 6. persisted-execution proof: reload from disk, validate,
+        // ---- 7. persisted-execution proof: reload from disk, validate,
         // install through the PRODUCTION path, one gated fixture replay ----
         let reloaded = try Q4LoweringArtifact.load(from: url)
         try reloaded.validate(op: op, hardware: componentArtifact.hardware,

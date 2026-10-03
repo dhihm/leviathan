@@ -1234,3 +1234,113 @@ sources and binary independently frozen): `rms-lower select` completed —
   rms-select-root-p10-FAILED-boolformat-segv.log +
   rms-resource-root-p10-failedrun-snapshot.jsonl (the failed 951.31 s
   predecessor run, preserved and labeled as failure).
+
+## Pass 11 (2026-10-03 UTC): hardware-derived Q4 expert row geometry —
+expert 3-D view/family binding, codegen v2; GU and DN separately
+SELECTED at 19.71% and 5.74% policy margins; joint goal still UNMET
+
+Motivation: the production `matvecDispatch` clamps every threadgroup to
+`min(grid, pipeline.maxTotalThreadsPerThreadgroup)` — on this M1 Max
+(cap 1024) the generic geometry gave the dominant 3-D expert matvecs
+only 2 threadgroups for gate_up (1408 rows) and 3 for down (2816 rows).
+Phase 11 derives ROW-TILE geometry from the measured hardware instead:
+T=1 one-thread-per-row kernels with R consecutive rows per threadgroup
+(R ∈ {32, 64, 128, 256} derived from the execution width 32, plus the
+1024 cap as a control), emitting the actual row mapping
+`row = threadgroup_position * R + thread_index` with a direct
+`y[row] = sum;` store — no threadgroup partials or barriers — while
+keeping the incumbent's exact per-row serial term order (ascending
+blocks, low then high nibble). Cooperative T>1 schedules keep the
+existing partials+barrier structure. Apple's public Metal guidance
+(thread-execution-width multiples / tuned threadgroup sizes) motivates
+the ladder; the selection here is measured, not assumed.
+
+Implementation (all GLM-authored, original; codegen "q4gen-v2"):
+- Q4OpIR gained an expert view (`"expert-row-slice"`): the op binds a
+  3-D expert tensor family (`.ffn_gate_up_exps.weight` /
+  `.ffn_down_exps.weight`), declared shape = ONE expert's
+  [outDim, inDim] slice, validated against the GGUF's actual 3-D dims
+  ([inDim, outDim, experts]); 2-D bindings validate exactly as before.
+- Q4Schedule legality widened to R ∈ powers of two ≤ 1024 (was
+  {1,2,4}); the deriver now emits up to 13 candidates: baseline T1R1,
+  the width-nearest cooperative T ladder ×3 variants, one R=2
+  cooperative entry, and the row tiles [w, 2w, 4w, 8w, min(1024, cap)].
+- Component forge: T=1/f32/scalar row-tile candidates are accepted ONLY
+  if MEASURED bitPattern-identical to the ACTUAL incumbent
+  `g4_q4_matvec` output (in addition to the unchanged FP64-oracle 1e-4
+  contract); other strategies keep the oracle contract only. Screen
+  timing runs at the REAL hot-row count (1408/2816 rows via a bounded
+  few-MB weight read) BEFORE the model gates, T1R1 sanity excluded,
+  at most the 2 fastest finalists reach the full gates; pruned
+  candidates are recorded as "component screen prune (not a gate
+  failure)". `q4-lower select --smoke-test` (raw fixture, 2 gen /
+  1 timed) is a plumbing check only.
+- Gemma4.swift: install validates the op against the actual GGUF rank
+  (via `op.validateAgainst(file:)` — NOT `r.experts`, which defaults
+  to 1 for 2-D tensors), and a pure static predicate routes the bound
+  tensor PLUS every same-family same-shape expert slice across all 30
+  layers through the generated pipeline; every other Q4 matvec keeps
+  the incumbent kernel.
+
+Root long runs (one process each, executable SHA-256
+8fdb03f5ec85b919e5a5a8358531fe502f0026b428f305deb698cad153f207c6,
+sources and binary frozen before and after; all 3 fixtures × actual 32
+steps: EN 21-prompt / KR 23-prompt chat + raw Hello; unchanged strict
+full 262144-logit gate |Δ|/max(1,|ref|) < 1e-4 + finite + exact greedy):
+- GU (blk.0.ffn_gate_up_exps.weight family, [2816→1408] per expert),
+  913.78 s EXIT 0: 13 candidates accepted at the component gates, the
+  screen at 1408 real rows pruned to 2 finalists (251.1 / 229.5 µs;
+  row-tile R64 378.2 µs vs R1024 control 706.0 µs — bounded component
+  evidence only, not an occupancy counter). BOTH finalists passed all
+  gates, worst rel 8.4497e-05. Policy SELECTED
+  `q4gen_matvec_T16_R1_f32compensated_float4` at 19.712769% median
+  paired margin (raw paired gains 13.817 / 22.036 / 19.713% — all
+  positive); the R2 finalist also passed but won at only 5.821% and was
+  not selected. Persisted reload + public install replay worst rel
+  4.745e-05 with 12,480 generated dispatches (52 positions × 30 layers
+  × 8 experts). Artifact
+  5c959806d02d5a6622ed5a6f0562c37f2821b15aaadc645f17fe03a8e83c659f
+  (48,368 bytes); separate fresh verify process: VALID.
+- DN (blk.0.ffn_down_exps.weight family, [704→2816] per expert),
+  993.74 s EXIT 0: screen at 2816 real rows, 2 finalists, both passed
+  (cooperative worst 8.5175e-05; serial T1_R128 worst rel 0 — numerics
+  only: full-logit BIT identity was not tested at the model level;
+  bitPattern identity is gated at the component level). Policy SELECTED
+  `q4gen_matvec_T4_R2_f32compensated_float4` at 5.736976% (raw paired
+  gains 5.085 / 5.769 / 5.737% — all positive). The serial T1_R128 was
+  CORRECTLY NOT selected: its paired policy margin was −1.197557%
+  (raw −0.337 / −1.198 / +6.544% — sign-changing), a numerically
+  strongest candidate losing the measured performance policy.
+  Persisted replay worst rel 4.864e-05, 12,480 dispatches. Artifact
+  bcef0d39b560a60f0c06bfea7b7ea39a88580c04eabe6223027879a9aa2abdae
+  (48,301 bytes); fresh verify: VALID.
+- Honest scope: the runner stores ONE Q4 generated binding at a time —
+  GU and DN are TWO separate independently selected artifacts, each
+  measured against its own paired incumbent; combined GU+DN(+RMS)
+  execution is NOT implemented or measured, and the two gains are NOT
+  additive-claimable. The phase-10 RMS artifact cannot rebind to this
+  executable (identity binds exe bytes; a composed bundle would need a
+  fresh full-gate run). The full-32 selected cooperative kernels are
+  NOT bit-identical (compensated reductions) — they pass the unchanged
+  strict gate; bit identity is a component-level gate for serial row
+  tiles only. Per-decode-token wall medians (GU run): EN 389.250 ms /
+  KR 397.703 ms / raw 318.685 ms per token (inverse medians 2.57 / 2.51
+  / 3.14 TPS — per-fixture, not whole-run throughput). 3 paired reps
+  on a shared Mac: bounded evidence, no stable/universal claims. Peak
+  footprints 31,154,619,328 B (GU, maxRSS 4,572,856,320) and
+  31,153,963,904 B (DN, maxRSS 4,437,491,712) — still heavy; the joint
+  general-compiler/competitive/lightweight goal remains UNMET. Model
+  quality remains bounded equivalence to the engine's own unoptimized
+  primitives (FP64 independent at the component level only) — not an
+  independent full-model semantic proof. Default test suite 620/0;
+  real-GGUF opt-in 726/0 (no skips). Release build 13.35 s EXIT 0.
+  Next work (UNIMPLEMENTED): composed multi-binding execution and/or
+  the MoE routed-expert batch lowering
+  (docs/MOE_BATCH_LOWERING_DESIGN.md).
+- Evidence (docs/evidence/): q4-p11-smoke-{gu,dn}-root.log (plumbing),
+  q4-p11-full-{gu,dn}-root.log + .json (full selects with time/RSS/
+  footprint), q4-p11-verify-{gu,dn}-root.log (fresh-process VALID),
+  tests-p11-default-2.log (620/0), tests-p11-realgguf-root.log (726/0),
+  build-p11b.log (EXIT 0), q4-op-expert-{gu,dn}.json (captured Python
+  expert op inputs). Phase-9/10 logs above remain historical records of
+  their own executables and are not re-claimed here.

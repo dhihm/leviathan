@@ -285,6 +285,32 @@ Two engine paths share the validated-IR + measured-plan core:
   the incumbent kernel. See
   [docs/Q4_LOWERING_DESIGN.md](docs/Q4_LOWERING_DESIGN.md) and pass 9
   of [docs/FORGE_PROGRESS.md](docs/FORGE_PROGRESS.md).
+- **Hardware-derived Q4 expert row geometry (pass 11, expert 3-D
+  families)** — the same pipeline extended to the dominant MoE expert
+  matvec families via an `expert-row-slice` op view binding ONE
+  expert's [outDim, inDim] slice of the 3-D
+  `ffn_{gate_up,down}_exps.weight` tensors (validated against the
+  actual GGUF rank/dims): schedule space widened to row tiles
+  {32, 64, 128, 256, 1024-control} derived from the measured execution
+  width; codegen "q4gen-v2" emits the actual row mapping for T=1
+  row tiles (direct store, no barriers, incumbent serial term order —
+  component-gated bitPattern-identical to the ACTUAL incumbent kernel)
+  while cooperative T>1 schedules keep the partials+barrier structure;
+  a component timing screen at the REAL hot-row count (1408/2816)
+  prunes ≤13 candidates to 2 finalists BEFORE the unchanged full
+  model gates; the installed binding serves the bound tensor AND every
+  same-family same-shape expert slice across all 30 layers. Measured
+  separately per family on the frozen executable: gate_up SELECTED
+  `q4gen_matvec_T16_R1_f32compensated_float4` at a 19.71% median
+  paired policy margin (all raw reps positive, worst gate rel
+  8.45e-05, 12,480 dispatches); down SELECTED
+  `q4gen_matvec_T4_R2_f32compensated_float4` at 5.74% (worst 8.52e-05,
+  12,480 dispatches); a bit-identical serial down tile was correctly
+  rejected at −1.20% paired margin. TWO SEPARATE single-binding
+  artifacts — combined GU+DN(+RMS) execution is NOT implemented and
+  the gains are not additive-claimable. See
+  [docs/Q4_LOWERING_DESIGN.md](docs/Q4_LOWERING_DESIGN.md) §10 and
+  pass 11 of [docs/FORGE_PROGRESS.md](docs/FORGE_PROGRESS.md).
 - **Serial-order-preserving cooperative RMSNorm lowering (pass 10, one
   operator family)** — the same pipeline applied to the production RMSNorm
   bottleneck: a Python op input → operation IR validated against the
@@ -408,6 +434,20 @@ Gemma Forge path (measured, gated, still bounded):
   binds toolchain + executable bytes so any rebuild re-gates. No
   performance claim exists until the pass-10 matched whole-model
   measurement completes; the incumbent kernel stays selected otherwise.
+- The pass-11 expert lowerings are TWO SEPARATE single-binding
+  profiles (gate_up, down): the runner stores one Q4 generated binding
+  at a time, combined GU+DN(+RMS) execution is NOT implemented or
+  measured, and the 19.71% / 5.74% margins are NOT additive-claimable.
+  The pass-10 RMS artifact cannot rebind to the current executable.
+  The full-32 selected kernels are compensated-reduction cooperative
+  schedules that pass the unchanged strict 1e-4/exact-greedy gate but
+  are NOT bit-identical at the model level; bitPattern identity is a
+  component-level gate for the serial row tiles only (the serial DN
+  tile that passed numerics everywhere was rejected on its measured
+  −1.20% paired margin). All timing is 3 paired repetitions on one
+  shared Mac — bounded evidence, not a stable or universal speedup
+  claim, and the peak ~31.15 GB footprint keeps the lightweight goal
+  UNMET.
 
 Runnable end-to-end (measured configuration; ~47 min on M1 Max 32 GB,
 peak ~31.2 GB, using the existing authorized GGUF — no new download):
@@ -437,6 +477,33 @@ dispatches on the bound tensor; the policy selected
 with one of its three paired repetitions SLOWER than the incumbent, so
 no stable gain is claimed. One bound tensor out of the model's many Q4
 matvec sites changed; the broader general-compiler goal remains UNMET.
+(The numbers above are the historical pass-9 run on its own
+executable.)
+
+The pass-11 expert-family selects run identically, with the expert op
+models and a `--smoke-test` plumbing mode:
+
+```sh
+GGUF="../models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf"  # authorized checkpoint
+# gate_up family (one expert slice [2816→1408] of the 3-D tensor)
+python3 tools/q4_lower/export_q4_op.py tools/q4_lower/model_q4_expert_gu.py /tmp/q4-op-gu.json
+# down family (one expert slice [704→2816])
+python3 tools/q4_lower/export_q4_op.py tools/q4_lower/model_q4_expert_dn.py /tmp/q4-op-dn.json
+# plumbing check only (raw fixture, 2 gen / 1 timed):
+.build/release/leviathan-cli q4-lower select --smoke-test --op /tmp/q4-op-gu.json \
+    --gguf "$GGUF" --out /tmp/q4-artifact-gu-smoke.json
+# full select (component screen at real 1408/2816 rows → ≤2 finalists →
+# unchanged 3×32 strict gates → 3 paired reps → 2% policy → persistence):
+.build/release/leviathan-cli q4-lower select --op /tmp/q4-op-gu.json \
+    --gguf "$GGUF" --out /tmp/q4-artifact-gu.json \
+    --text-en "Hello, can you help me today?" \
+    --text-kr "안녕하세요, 오늘 날씨는 어떤가요?" \
+    --gen-tokens 32 --timed-tokens 31
+```
+
+Each select produces ONE binding: GU and DN are separate artifacts and
+separate full runs (~15–16 min each on M1 Max, peak ~31.15 GB); the
+runner does not hold both at once.
 
 ## Roadmap
 

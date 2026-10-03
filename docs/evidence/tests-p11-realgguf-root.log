@@ -1,0 +1,33 @@
+metal device: Apple M1 Max
+  q6_k worst rel vs FP64 reference: gpu 2.424e-05, scalar 5.719e-08
+  q6_k worst row 60: ref64 -15.704554 gpu -15.704173 sumAbsProducts 195570.4 (|result| 15.7)
+  q6_k known block: ref -315.000000 gpu -315.000000 hand -315.000000
+  torch parity: worst rel diff GPU vs PyTorch 2.235e-08 (scalar 2.235e-08)
+q4 tiled numerical gates completed
+f32 tiled numerical gates completed
+q6 tiled numerical gates completed
+rms tiled numerical gates completed
+DIAGNOSTIC q4 matvec vl (inDim 32): 46/64 rows not bit-equal, worst rel vs plain 8.345e-07, worst of FP64 magnitude bound 0.001
+DIAGNOSTIC q4 matvec vl (inDim 704): 55/64 rows not bit-equal, worst rel vs plain 1.003e-05, worst of FP64 magnitude bound 0.000
+DIAGNOSTIC q4 matvec vl (inDim 2816): 57/64 rows not bit-equal, worst rel vs plain 5.328e-06, worst of FP64 magnitude bound 0.000
+q4 matvec per-call, dedicated-buffer submit (record only): plain 614 us, vectorized 371 us
+726 passed, 0 failed
+ALL TESTS PASSED
+       51.97 real        12.86 user        11.88 sys
+          2019147776  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              560343  page reclaims
+              394733  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                4918  voluntary context switches
+              222110  involuntary context switches
+         83079604499  instructions retired
+         53868350257  cycles elapsed
+         16451966592  peak memory footprint

@@ -1,0 +1,1 @@
+{"accumulate": "f32", "inDim": 2816, "inputPrecision": "f32", "layout": "row-major-q4_0-blocks", "op": "q4_0.matvec", "outDim": 1408, "quant": "q4_0", "representativeRows": 256, "schema": 1, "semantics": "dot(W_row, x)", "tensor": "blk.0.ffn_gate_up_exps.weight", "view": "expert-row-slice"}

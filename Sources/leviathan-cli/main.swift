@@ -1488,20 +1488,31 @@ case "forge":
             }
         case "select":
             // Full bounded orchestration in ONE process: component gates
-            // for every derived candidate, per-candidate teacher-forced
-            // model gates on the EN/KR chat fixtures, matched timing vs
-            // the incumbent, documented policy selection, persistence, and
-            // a persisted-execution proof (reload from disk -> validate ->
-            // production install -> gated replay with dispatch counters).
+            // for every derived candidate, component performance screen
+            // at the real hot shape (phase 11), per-finalist teacher-
+            // forced model gates on the EN/KR chat fixtures, matched
+            // timing vs the incumbent, documented policy selection,
+            // persistence, and a persisted-execution proof (reload from
+            // disk -> validate -> production install -> gated replay with
+            // dispatch counters).
+            // --smoke-test: bounded END-TO-END plumbing check (raw-hello
+            // only, gen 2 / timed 1 by default) — validates that the new
+            // pipeline paths run; NEVER a numerical-quality or
+            // performance claim. The regular path retains all 3 fixtures.
             let opPath = requireValue("--op", args)
             let ggufPath = requireValue("--gguf", args)
             let outPath = requireValue("--out", args)
+            let smokeTest = args.contains("--smoke-test")
             let genTokens = args.firstIndex(of: "--gen-tokens").map { _ in
-                Int(requireValue("--gen-tokens", args)) ?? 0 } ?? 32
+                Int(requireValue("--gen-tokens", args)) ?? 0 } ?? (smokeTest ? 2 : 32)
             let timedTokens = args.firstIndex(of: "--timed-tokens").map { _ in
-                Int(requireValue("--timed-tokens", args)) ?? 0 } ?? 5
+                Int(requireValue("--timed-tokens", args)) ?? 0 } ?? (smokeTest ? 1 : 31)
             guard genTokens >= 2, genTokens <= 64, timedTokens >= 1, timedTokens < genTokens else {
                 fail("--gen-tokens must be 2...64 and --timed-tokens 1...(gen-1)")
+            }
+            if smokeTest {
+                print("SMOKE MODE: raw-hello only, gen \(genTokens)/timed \(timedTokens) — "
+                      + "plumbing check, NOT a quality/performance proof")
             }
             let enText = args.firstIndex(of: "--text-en").map { _ in
                 requireValue("--text-en", args) } ?? "Hello, can you help me today?"
@@ -1519,7 +1530,10 @@ case "forge":
                         "<|turn>user\n" + text.trimmingCharacters(in: .whitespacesAndNewlines)
                         + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>")
                 }
-                var fixtures = [
+                var fixtures = smokeTest
+                    ? [Q4LoweringForge.Q4Fixture(name: "raw-hello",
+                                                 tokens: try tokenizer.encode("Hello"))]
+                    : [
                     Q4LoweringForge.Q4Fixture(name: "en-chat", tokens: try chatIds(enText)),
                     Q4LoweringForge.Q4Fixture(name: "kr-chat", tokens: try chatIds(krText)),
                     Q4LoweringForge.Q4Fixture(name: "raw-hello", tokens: try tokenizer.encode("Hello")),

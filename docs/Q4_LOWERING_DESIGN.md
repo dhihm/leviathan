@@ -156,3 +156,55 @@ with shape/hardware-derived schedule generation, independent numerical
 validation, artifact-bound persisted execution, and matched measurement. The
 broader joint goal (general Python model compiler, competitive performance)
 remains UNMET until demonstrated; nothing here asserts it.
+
+## 10. Pass-11 as-built update — expert 3-D view, row-tile geometry,
+codegen v2, screen-first funnel (2026-10-03 UTC)
+
+Sections 1–9 above are the phase-9 design as written then; this section
+records what phase 11 changed in the ACTUAL code (frozen executable
+SHA-256
+8fdb03f5ec85b919e5a5a8358531fe502f0026b428f305deb698cad153f207c6):
+
+- Operation input / IR: `Q4MatvecOp` and `Q4OpIR` gained a `view` field;
+  `view = "expert-row-slice"` binds a 3-D expert tensor family
+  (`.ffn_gate_up_exps.weight` / `.ffn_down_exps.weight`) whose declared
+  shape is ONE expert's [outDim, inDim] slice, validated against the
+  GGUF's actual 3-D dims [inDim, outDim, experts] by
+  `op.validateAgainst(file:)`. The Python models
+  `tools/q4_lower/model_q4_expert_{gu,dn}.py` capture the two families
+  (GU [2816→1408], DN [704→2816]). 2-D bindings validate exactly as in
+  phase 9 (section 2).
+- Schedule space: `rowsPerGroup` legality widened to powers of two
+  ≤ 1024; the deriver emits up to 13 candidates — the T1R1 baseline,
+  the execution-width-nearest cooperative T ladder × {f32 scalar,
+  compensated scalar, compensated float4}, one R=2 cooperative entry,
+  and the T=1 row tiles [w, 2w, 4w, 8w, min(1024, cap)] derived from
+  the measured execution width w = 32 with the 1024 threadgroup cap as
+  a measured control.
+- Emission (codegen "q4gen-v2"): T=1 emits a direct row-tile kernel —
+  `row = threadgroup_position * R + thread_index`, one thread per row,
+  direct `y[row] = sum;` (or `sum + comp` compensated) store, no
+  threadgroup partials or barriers — with the incumbent's per-row
+  serial term order (ascending blocks, low then high nibble) unchanged.
+  T>1 keeps the phase-9 partials+barrier cooperative structure.
+- Component gates: T=1/f32/scalar row-tile candidates additionally
+  REQUIRE measured bitPattern identity to the ACTUAL incumbent
+  `g4_q4_matvec` output; every candidate keeps the section-5 FP64
+  oracle 1e-4 contract. The section-5 statement that expert-slice
+  bindings are unsupported is superseded by the expert view.
+- Selection funnel: a component timing screen at the REAL hot-row count
+  (outDim rows; bounded few-MB weight slice) runs BEFORE the model
+  gates; the T1R1 baseline is excluded from finalists and at most the
+  2 fastest candidates reach the full section-7 gates (3 fixtures × 32
+  steps, unchanged strictness). Pruned candidates are recorded as a
+  screen prune, not a gate failure. `--smoke-test` is a raw-fixture
+  plumbing mode (2 gen / 1 timed) only.
+- Runtime: install validates the actual GGUF rank; a pure predicate
+  (`Gemma4Runner.q4GeneratedServesTensor`) serves the bound tensor AND
+  every same-family, same-shape expert slice in all 30 layers; all
+  other Q4 matvecs keep the incumbent kernels. The runner holds ONE Q4
+  generated binding at a time — the measured GU and DN artifacts are
+  SEPARATE single bindings; combined/composed execution (GU + DN + RMS
+  in one process) is NOT implemented, and the measured gains are not
+  additive-claimable. Measured outcomes: pass 11 of
+  [FORGE_PROGRESS.md](FORGE_PROGRESS.md).

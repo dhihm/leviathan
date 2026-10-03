@@ -723,6 +723,8 @@ public final class Gemma4Runner {
     private(set) var q4GeneratedKernel: Q4EmittedKernel?
     private(set) var q4GeneratedBoundTensor: String?
     private(set) var q4GeneratedBoundInDim: Int?
+    private(set) var q4GeneratedBoundOutDim: Int?
+    private(set) var q4GeneratedBoundView: String?
     private(set) var q4GeneratedArtifactDigest: String?
     /// Independent dispatch counters incremented in matvecDispatch itself
     /// (correct in segment-batched mode too, where per-kernel GPU-time
@@ -802,6 +804,32 @@ public final class Gemma4Runner {
     /// the setter stays applyDiagnosticAxis/executeToken only).
     public var segmentBatchingActive: Bool { autoSegment }
 
+    /// PURE routing predicate (the production decision, tested
+    /// directly): the generated Q4 lowering serves its exact bound
+    /// tensor, and — the phase-11 family binding — when the bound op is
+    /// an expert-row-slice view of one of the two dominant 3-D Q4_0
+    /// expert families (blk.<L>.ffn_gate_up_exps.weight /
+    /// ffn_down_exps.weight) it serves that family in EVERY layer: all
+    /// layers share the identical (inDim, outDim) per-expert slice
+    /// shape, and the emitted kernel is shape-generic (runtime p.x/p.y
+    /// plus the slice byte offset wOff address each expert's own bytes
+    /// — the slice extent checks stay in matvec/expertMatvec). Any name,
+    /// view, or shape deviation falls through to the incumbent kernels.
+    public static func q4GeneratedServesTensor(boundTensor: String?, boundInDim: Int?,
+                                               boundOutDim: Int?, boundView: String?,
+                                               tensor: String,
+                                               inDim: Int, outRows: Int) -> Bool {
+        guard let bound = boundTensor, let bi = boundInDim, let bo = boundOutDim,
+              inDim == bi, outRows == bo else { return false }
+        if tensor == bound { return true }
+        guard boundView == Q4OpIR.expertView else { return false }
+        for family in Q4OpIR.expertFamilySuffixes
+        where bound.hasSuffix(family) && tensor.hasSuffix(family) {
+            return true
+        }
+        return false
+    }
+
     /// Installs the persisted lowering artifact's emitted kernel for its
     /// ONE bound tensor. Validates the artifact against the CURRENT op,
     /// measured hardware, toolchain, GGUF content digest, executable
@@ -817,7 +845,10 @@ public final class Gemma4Runner {
                 "artifact op binds no tensor — nothing to install for")
         }
         // Crosscheck against THIS runner's mapped file: the digest binds
-        // content, the ref-map check binds the runner's actual geometry.
+        // content, and validateAgainst binds the runner's ACTUAL tensor
+        // rank/shape/quant (2-D [inDim, outDim] for a nil view, 3-D
+        // [inDim, outDim, experts] for the expert-row-slice view).
+        try artifact.op.validateAgainst(file: ggufFile)
         guard let r = ref[bound], r.type == .q4_0,
               r.inDim == artifact.op.inDim, r.outDim == artifact.op.outDim else {
             throw Q4LoweringError.invalidArtifact(
@@ -851,6 +882,8 @@ public final class Gemma4Runner {
         q4GeneratedKernel = kernel
         q4GeneratedBoundTensor = bound
         q4GeneratedBoundInDim = artifact.op.inDim
+        q4GeneratedBoundOutDim = artifact.op.outDim
+        q4GeneratedBoundView = artifact.op.view
         q4GeneratedArtifactDigest = artifact.artifactDigest
     }
 
@@ -865,6 +898,9 @@ public final class Gemma4Runner {
         guard let bound = op.tensor else {
             throw Q4LoweringError.invalidArtifact("op binds no tensor — nothing to install")
         }
+        // Actual rank/shape/quant check against the runner's mapped file
+        // (2-D for a nil view, 3-D expert family for the expert view).
+        try op.validateAgainst(file: ggufFile)
         guard let r = ref[bound], r.type == .q4_0,
               r.inDim == op.inDim, r.outDim == op.outDim else {
             throw Q4LoweringError.invalidArtifact(
@@ -876,6 +912,8 @@ public final class Gemma4Runner {
         q4GeneratedKernel = kernel
         q4GeneratedBoundTensor = bound
         q4GeneratedBoundInDim = op.inDim
+        q4GeneratedBoundOutDim = op.outDim
+        q4GeneratedBoundView = op.view
         q4GeneratedArtifactDigest = "trial:" + kernel.schedule.kernelName
     }
 
@@ -884,6 +922,8 @@ public final class Gemma4Runner {
         q4GeneratedKernel = nil
         q4GeneratedBoundTensor = nil
         q4GeneratedBoundInDim = nil
+        q4GeneratedBoundOutDim = nil
+        q4GeneratedBoundView = nil
         q4GeneratedArtifactDigest = nil
     }
 
@@ -1281,9 +1321,15 @@ public final class Gemma4Runner {
             enc.setBuffer(y, offset: yByteOffset, index: 4)
         }
         if type == .q4_0, let gen = q4GeneratedKernel,
-               tensor == q4GeneratedBoundTensor, inDim == q4GeneratedBoundInDim {
+               Self.q4GeneratedServesTensor(boundTensor: q4GeneratedBoundTensor,
+                                            boundInDim: q4GeneratedBoundInDim,
+                                            boundOutDim: q4GeneratedBoundOutDim,
+                                            boundView: q4GeneratedBoundView,
+                                            tensor: tensor, inDim: inDim,
+                                            outRows: outRows) {
             q4GeneratedDispatchCount += 1
-            // The generated lowering serves ONLY its bound tensor shape;
+            // The generated lowering serves its bound tensor shape (and,
+            // for the expert families, every layer's same-shaped slices);
             // every other Q4_0 matvec falls through to the kernels below.
             let groups = (outRows + gen.schedule.rowsPerGroup - 1)
                 / gen.schedule.rowsPerGroup

@@ -3139,13 +3139,14 @@ func checkQ4Throws(_ name: String, _ expected: Q4LoweringError,
 
 /// Builds op JSON matching the Python capture schema.
 func q4OpJSON(op: String = "q4_0.matvec", inDim: Int = 2816, outDim: Int = 4096,
-              tensor: Any? = nil, rows: Any? = 256) throws -> Data {
+              tensor: Any? = nil, rows: Any? = 256, view: Any? = nil) throws -> Data {
     let obj: [String: Any] = [
         "schema": 1, "op": op, "semantics": "dot(W_row, x)",
         "inDim": inDim, "outDim": outDim,
         "layout": "row-major-q4_0-blocks", "quant": "q4_0",
         "accumulate": "f32", "inputPrecision": "f32",
         "tensor": tensor, "representativeRows": rows,
+        "view": view,
     ]
     return try JSONSerialization.data(withJSONObject: obj)
 }
@@ -3172,23 +3173,54 @@ do {
     let hw = ForgeHardwareProfile(deviceName: "test", maxTotalThreadsPerThreadgroup: 1024,
                                   threadExecutionWidth: 8, recommendedMaxWorkingSetSize: 1 << 30)
     let derived = Q4ScheduleDeriver.derive(op: good, hardware: hw)
-    check("q4 deriver bounded to 8", derived.count <= 8)
+    check("q4 deriver bounded to 13", derived.count <= 13)
     checkEqual("q4 deriver baseline first",
                derived.first, Q4Schedule(threadsPerRow: 1, rowsPerGroup: 1,
                                          accumulation: .f32, xLoads: .scalar))
     check("q4 deriver threads depend on shape (blocksPerRow 88 admits T<=22)",
           derived.contains { $0.threadsPerRow == 8 }
               && !derived.contains { $0.threadsPerRow == 32 })
+    // Phase-11 row-tile family: executionWidth-derived T=1 tiles plus the
+    // 1024-cap control are derived candidates for the full-shape op.
+    for r in [8, 16, 32, 64, 1024] {
+        check("q4 deriver emits row tile R=\(r) (w=8 cap=1024)",
+              derived.contains { $0.threadsPerRow == 1 && $0.rowsPerGroup == r })
+    }
     let smallOp = try Q4OpIR.parse(q4OpJSON(inDim: 128, outDim: 64, rows: 32))
-    checkEqual("q4 deriver: 4-block rows admit only the baseline",
-               Q4ScheduleDeriver.derive(op: smallOp, hardware: hw),
-               [Q4Schedule(threadsPerRow: 1, rowsPerGroup: 1,
-                           accumulation: .f32, xLoads: .scalar)])
+    checkEqual("q4 deriver: 4-block rows admit the baseline first",
+               Q4ScheduleDeriver.derive(op: smallOp, hardware: hw).first,
+               Q4Schedule(threadsPerRow: 1, rowsPerGroup: 1,
+                          accumulation: .f32, xLoads: .scalar))
+    check("q4 deriver: 4-block rows admit no cooperative T (only T=1 row tiles)",
+          Q4ScheduleDeriver.derive(op: smallOp, hardware: hw)
+              .allSatisfy { $0.threadsPerRow == 1 })
     let tinyHw = ForgeHardwareProfile(deviceName: "test", maxTotalThreadsPerThreadgroup: 8,
                                       threadExecutionWidth: 4, recommendedMaxWorkingSetSize: 1 << 30)
     check("q4 deriver respects threadgroup maximum",
           Q4ScheduleDeriver.derive(op: good, hardware: tinyHw)
               .allSatisfy { $0.threadsPerRow * $0.rowsPerGroup <= 8 })
+    check("q4 deriver row tiles respect the threadgroup maximum (w=4 cap=8 -> R<=8)",
+          Q4ScheduleDeriver.derive(op: good, hardware: tinyHw)
+              .filter { $0.threadsPerRow == 1 }
+              .allSatisfy { $0.rowsPerGroup <= 8 })
+
+    // ---- row-tile schedule legality ----
+    check("q4 row tile R=256 legal at cap 1024",
+          Q4Schedule(threadsPerRow: 1, rowsPerGroup: 256,
+                     accumulation: .f32, xLoads: .scalar)
+              .isLegal(blocksPerRow: 88, hardware: hw))
+    check("q4 row tile R=2048 illegal (above 1024 bound)",
+          !Q4Schedule(threadsPerRow: 1, rowsPerGroup: 2048,
+                      accumulation: .f32, xLoads: .scalar)
+              .isLegal(blocksPerRow: 88, hardware: hw))
+    check("q4 row tile R=96 illegal (not a power of two)",
+          !Q4Schedule(threadsPerRow: 1, rowsPerGroup: 96,
+                      accumulation: .f32, xLoads: .scalar)
+              .isLegal(blocksPerRow: 88, hardware: hw))
+    check("q4 row tile R=256 illegal at cap 8",
+          !Q4Schedule(threadsPerRow: 1, rowsPerGroup: 256,
+                      accumulation: .f32, xLoads: .scalar)
+              .isLegal(blocksPerRow: 88, hardware: tinyHw))
 
     // ---- emitter: deterministic, parameterized, distinct ----
     let s1 = Q4Schedule(threadsPerRow: 8, rowsPerGroup: 1,
@@ -3208,6 +3240,72 @@ do {
                                   + "illegal for inDim 128")) {
         _ = try Q4KernelEmitter.emit(op: smallOp, schedule: s1)
     }
+
+    // ---- emitter v2: T=1 ROW-TILE direct mapping ----
+    let tile = Q4Schedule(threadsPerRow: 1, rowsPerGroup: 128,
+                          accumulation: .f32, xLoads: .scalar)
+    let et = try Q4KernelEmitter.emit(op: good, schedule: tile)
+    check("q4 emitter row tile bakes R",
+          et.contains("constexpr uint R = 128u"))
+    check("q4 emitter row tile emits the row mapping",
+          et.contains("uint row = wid * R + lid;"))
+    check("q4 emitter row tile writes rows directly (no barrier/partials)",
+          !et.contains("threadgroup_barrier")
+              && !et.contains("threadgroup float partials")
+              && et.contains("y[row] = sum;"))
+    check("q4 emitter row tile codegen is v2",
+          et.contains("q4gen-v2"))
+    check("q4 emitter T>1 keeps the cooperative barrier structure",
+          e1.contains("threadgroup_barrier")
+              && e1.contains("threadgroup float partials"))
+    checkEqual("q4 emitter row tile deterministic", et,
+               try Q4KernelEmitter.emit(op: good, schedule: tile))
+
+    // ---- op IR expert view validation ----
+    let expertOp = try Q4OpIR.parse(q4OpJSON(inDim: 2816, outDim: 1408,
+                                             tensor: "blk.0.ffn_gate_up_exps.weight",
+                                             view: "expert-row-slice"))
+    checkEqual("q4 expert view op dims", expertOp.inDim, 2816)
+    checkQ4Throws("q4 op IR rejects unknown view",
+                  .invalidOp("unsupported view bogus")) {
+        _ = try Q4OpIR.parse(q4OpJSON(view: "bogus"))
+    }
+    checkQ4Throws("q4 op IR rejects expert view without a tensor",
+                  .invalidOp("expert-row-slice binds a blk.<L>.ffn_{gate_up,down}_exps.weight tensor")) {
+        _ = try Q4OpIR.parse(q4OpJSON(view: "expert-row-slice"))
+    }
+    checkQ4Throws("q4 op IR rejects expert view on a non-family tensor",
+                  .invalidOp("expert-row-slice binds a blk.<L>.ffn_{gate_up,down}_exps.weight tensor")) {
+        _ = try Q4OpIR.parse(q4OpJSON(tensor: "blk.0.attn_q.weight",
+                                       view: "expert-row-slice"))
+    }
+
+    // ---- family routing predicate (pure production decision) ----
+    func serves(_ bound: String, _ bi: Int, _ bo: Int, _ bv: String?,
+                _ tensor: String, _ inDim: Int, _ outRows: Int) -> Bool {
+        Gemma4Runner.q4GeneratedServesTensor(boundTensor: bound, boundInDim: bi,
+                                             boundOutDim: bo, boundView: bv,
+                                             tensor: tensor, inDim: inDim,
+                                             outRows: outRows)
+    }
+    check("q4 family routing: bound tensor exact match",
+          serves("blk.0.ffn_gate_up_exps.weight", 2816, 1408, "expert-row-slice",
+                 "blk.0.ffn_gate_up_exps.weight", 2816, 1408))
+    check("q4 family routing: every layer's same-shaped GU slice served",
+          serves("blk.0.ffn_gate_up_exps.weight", 2816, 1408, "expert-row-slice",
+                 "blk.29.ffn_gate_up_exps.weight", 2816, 1408))
+    check("q4 family routing: DN family NOT served by a GU binding",
+          !serves("blk.0.ffn_gate_up_exps.weight", 2816, 1408, "expert-row-slice",
+                  "blk.0.ffn_down_exps.weight", 2816, 1408))
+    check("q4 family routing: shape deviation falls through",
+          !serves("blk.0.ffn_gate_up_exps.weight", 2816, 1408, "expert-row-slice",
+                  "blk.1.ffn_gate_up_exps.weight", 2816, 1410))
+    check("q4 family routing: 2-D binding never serves other tensors",
+          !serves("blk.0.attn_q.weight", 2816, 4096, nil,
+                  "blk.1.attn_q.weight", 2816, 4096))
+    check("q4 family routing: expert view required for family spread",
+          !serves("blk.0.ffn_gate_up_exps.weight", 2816, 1408, nil,
+                  "blk.29.ffn_gate_up_exps.weight", 2816, 1408))
 
     // ---- FP64 oracle: hand-computed known block ----
     do {
@@ -3256,6 +3354,80 @@ if let device = MTLCreateSystemDefaultDevice() {
             w1 = max(w1, abs(Double(y1[i]) - ref64[i]) / max(1.0, abs(ref64[i])))
         }
         check(String(format: "q4 emitted T=1 vs FP64 oracle (worst rel %.3e)", w1), w1 < 1e-4)
+
+        // Phase-11 ROW-TILE component bit gates against the ACTUAL
+        // incumbent g4_q4_matvec (compiled from the runner's embedded
+        // MSL, incumbent dispatch geometry): every T=1 row tile must be
+        // MEASURED bit-identical (bitPattern) on the same inputs,
+        // including a ragged tail group (rows 48, R=32 -> 2 groups, the
+        // second covers only 16 rows).
+        let incLib = try device.makeLibrary(source: Gemma4Runner.shaderSource, options: nil)
+        let incFn = incLib.makeFunction(name: "g4_q4_matvec")!
+        let incPipe = try device.makeComputePipelineState(function: incFn)
+        func incumbentMatvec(blocks: [UInt8], outDim: Int, inDim: Int,
+                             x: [Float]) throws -> [Float] {
+            let queue = device.makeCommandQueue()!
+            let wb = device.makeBuffer(bytes: blocks, length: blocks.count,
+                                       options: .storageModeShared)!
+            let xb = device.makeBuffer(bytes: x, length: x.count * 4,
+                                       options: .storageModeShared)!
+            let yb = device.makeBuffer(length: outDim * 4, options: .storageModeShared)!
+            var param = SIMD2<UInt32>(UInt32(inDim), UInt32(outDim))
+            var off = UInt64(0)
+            let cmd = queue.makeCommandBuffer()!
+            let enc = cmd.makeComputeCommandEncoder()!
+            enc.setComputePipelineState(incPipe)
+            enc.setBytes(&param, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
+            enc.setBytes(&off, length: MemoryLayout<UInt64>.stride, index: 1)
+            enc.setBuffer(wb, offset: 0, index: 2)
+            enc.setBuffer(xb, offset: 0, index: 3)
+            enc.setBuffer(yb, offset: 0, index: 4)
+            let width = incPipe.maxTotalThreadsPerThreadgroup
+            let groups = (outDim + width - 1) / width
+            enc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
+                                     threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+            enc.endEncoding()
+            cmd.commit()
+            cmd.waitUntilCompleted()
+            guard cmd.status == .completed, cmd.error == nil else {
+                throw Q4LoweringError.componentGateFailed("incumbent command buffer")
+            }
+            return [Float](UnsafeBufferPointer(
+                start: yb.contents().assumingMemoryBound(to: Float.self), count: outDim))
+        }
+        do {
+            let tileOp = try Q4OpIR.parse(q4OpJSON(inDim: 2048, outDim: 64, tensor: nil,
+                                                   rows: 48))
+            let tileBlocks = try Q4ComponentInputs.weightBytes(op: tileOp, file: nil)
+            let tileX = Q4ComponentInputs.activation(op: tileOp)
+            let tileRef = try Q4Oracle.matvecFP64(blocks: tileBlocks[...], outDim: 48,
+                                                  inDim: 2048, x: tileX)
+            let incOut = try incumbentMatvec(blocks: tileBlocks, outDim: 48,
+                                             inDim: 2048, x: tileX)
+            for r in [8, 32] {   // 6 groups, and ragged tail (48 = 32 + 16)
+                let sched = Q4Schedule(threadsPerRow: 1, rowsPerGroup: r,
+                                       accumulation: .f32, xLoads: .scalar)
+                guard sched.isLegal(blocksPerRow: 2048 / 32, hardware: hwProfile) else {
+                    print("SKIP: q4 row tile R=\(r) not legal on this hardware")
+                    continue
+                }
+                let k = try Q4EmittedKernel.compile(op: tileOp, schedule: sched,
+                                                    device: device)
+                let out = try k.matvec(blocks: tileBlocks, outDim: 48, inDim: 2048,
+                                       x: tileX)
+                check("q4 row tile R=\(r) MEASURED bit-identical to incumbent g4_q4_matvec",
+                      out.count == incOut.count
+                          && zip(out, incOut).allSatisfy { $0.bitPattern == $1.bitPattern })
+                var wrel = 0.0
+                for i in 0..<out.count {
+                    wrel = max(wrel, abs(Double(out[i]) - tileRef[i]) / max(1.0, abs(tileRef[i])))
+                }
+                check(String(format: "q4 row tile R=%d vs FP64 oracle (worst rel %.3e)", r, wrel),
+                      wrel < 1e-4)
+            }
+        } catch {
+            failed += 1; print("FAIL: q4 row-tile incumbent bit gates — threw \(error)")
+        }
 
         // Compensated cooperative kernel vs the same oracle.
         let coop = Q4Schedule(threadsPerRow: 8, rowsPerGroup: 1,

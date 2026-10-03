@@ -1,0 +1,42 @@
+component: incumbent rel-to-FP64 5.867e-07; 13/13 candidates accepted
+screen q4gen_matvec_T1_R1_f32_scalar: pruned inf us/call (T1R1 sanity anchor)
+screen q4gen_matvec_T16_R1_f32_scalar: pruned 328.9 us/call
+screen q4gen_matvec_T16_R1_f32compensated_scalar: pruned 334.1 us/call
+screen q4gen_matvec_T16_R1_f32compensated_float4: finalist 251.1 us/call
+screen q4gen_matvec_T8_R1_f32_scalar: pruned 318.0 us/call
+screen q4gen_matvec_T8_R1_f32compensated_scalar: pruned 324.9 us/call
+screen q4gen_matvec_T8_R1_f32compensated_float4: pruned 288.8 us/call
+screen q4gen_matvec_T16_R2_f32compensated_float4: finalist 229.5 us/call
+screen q4gen_matvec_T1_R32_f32_scalar: pruned 383.0 us/call
+screen q4gen_matvec_T1_R64_f32_scalar: pruned 378.2 us/call
+screen q4gen_matvec_T1_R128_f32_scalar: pruned 416.8 us/call
+screen q4gen_matvec_T1_R256_f32_scalar: pruned 488.4 us/call
+screen q4gen_matvec_T1_R1024_f32_scalar: pruned 706.0 us/call
+reference [en-chat]: 32 greedy steps
+reference [kr-chat]: 32 greedy steps
+reference [raw-hello]: 32 greedy steps
+gate PASS q4gen_matvec_T16_R1_f32compensated_float4: 3/3 fixtures, worst rel 8.450e-05
+gate PASS q4gen_matvec_T16_R2_f32compensated_float4: 3/3 fixtures, worst rel 8.450e-05
+matched timing q4gen_matvec_T16_R1_f32compensated_float4: rep sums 1137952,1097963,1105511 vs paired incumbent 1320387,1408286,1376945 (median 1105511 vs 1376945 us/token)
+matched timing q4gen_matvec_T16_R2_f32compensated_float4: rep sums 1342627,1401590,1124115 vs paired incumbent 1339806,1456508,1425618 (median 1342627 vs 1425618 us/token)
+policy: selected q4gen_matvec_T16_R1_f32compensated_float4 beats its own paired incumbent matched-repeat median summed wall by 19.7% (> 2% policy threshold)
+persisted execution: reloaded+validated+installed from disk; en-chat replay worst rel 4.745e-05; generated dispatches 12480 (bound tensor blk.0.ffn_gate_up_exps.weight)
+Q4_SELECT_COMPLETED -> /tmp/leviathan-forge2-tooling/q4-p11-full-gu-root.json
+      913.78 real        82.47 user        35.84 sys
+          4572856320  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+             2287468  page reclaims
+               34693  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               14957  voluntary context switches
+             2038369  involuntary context switches
+        411603771450  instructions retired
+        353693700282  cycles elapsed
+         31154619328  peak memory footprint
