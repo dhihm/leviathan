@@ -1103,3 +1103,134 @@ with shape/hardware-derived schedule generation, independent numerical
 validation, artifact-bound persisted execution, and paired matched
 measurement. The broader joint goal (general Python model compiler
 with competitive performance) remains UNMET.
+
+## Pass 10 (2026-10-03 UTC): serial-order-preserving cooperative RMSNorm
+lowering — SELECTED at 6.31% policy margin after a clean full root run;
+bounded evidence, joint goal still UNMET
+
+Motivation: the production RMSNorm (`g4_rmsnorm_vl`, one thread per vector,
+bit-identical vectorized loads) serially reduces n = 2816 floats on a
+single lane; pass 3's cooperative `g4_rmsnorm_tiled` was faster but
+REASSOCIATES the sum and was correctly rejected by the strict gate
+(2.882e-04). Phase 10 tests the audit's untried structure: PARALLEL staging
+of exact input copies into threadgroup memory, a SERIAL lane-0 sum of
+squares in the ORIGINAL scalar order, then a PARALLEL strided output apply
+whose per-element arithmetic is identical to the incumbent's. Design:
+docs/RMS_LOWERING_DESIGN.md (root-approved with corrections folded in:
+`--vectorized-loads` profile flag; n=512 global head norms documented;
+per-dispatch eps/span/alignment/alias checks; T ladder derived from the
+measured execution width with the proximity rule stated; bitPattern-level
+equality; warmed component GPU timing screen; exact Float-bitPattern eps
+install guard).
+
+Implementation (all GLM-authored, original):
+- Sources/LeviathanCore/RMSLowering.swift — RMSOpIR (Python-captured op
+  JSON validated into IR; capture-time vector batch vs per-call runtime
+  dispatch documented), RMSSchedule (threadsPerVector + staging width;
+  legality includes the ACTUAL static threadgroup memory n*4+4 bytes —
+  the staged array plus the invShared slot), hardware-derived deriver
+  (powers of two ranked by log2 proximity to the measured
+  threadExecutionWidth; an over-cap shape derives an EMPTY set, never an
+  illegal baseline), deterministic MSL emitter (codegen "rmsgen-v1"), CPU
+  FP64 oracle, component inputs (real 11 KB tensor pread or synthetic),
+  RMSEmittedKernel (+ warmed GPU timing screen at the PRODUCTION vector
+  count, ranking/pruning only), RMSIncumbentKernel (standalone
+  g4_rmsnorm / g4_rmsnorm_vl runner defining the bit-equality reference),
+  artifact with full identity binding, component forge (accept =
+  bitPattern-identical to the incumbent production kernel in BOTH
+  out-of-place and in-place modes AND rel-to-FP64 < 1e-4), and the
+  phase-9-style selectAndPersist orchestration (screen funnel: at most the
+  two fastest non-baseline candidates reach the model gates; 3 paired
+  matched-timing repetitions; 2% policy; persisted-execution proof).
+- Gemma4.swift — rmsnorm() routes the bound (n, scaled) family through the
+  generated pipeline after per-dispatch checks (eps validated at install by
+  Float bitPattern equality — a one-ULP-off eps is rejected; span bounds
+  already in rmsnorm(); float4 staging passes rmsVectorLoadGuards);
+  installRmsGeneratedKernel (requires the model-gate record + full
+  artifact identity; internal trial installer plus a public
+  diagnostic-only wrapper mirroring diagnosticMatvec), uninstall,
+  dedicated rmsGeneratedDispatchCount, engineIdentity gains
+  "|rmsgen=<digest|none>".
+- CLI — `rms-lower forge|verify|select`, `gemma-rmsgen-gate`,
+  `gemma-profile --vectorized-loads`.
+- tools/rms_lower/ — rms_op_model.py / model_rms_norm.py /
+  export_rms_op.py (real .py input demonstrated: the captured op JSON in
+  docs/evidence/rms-op-p10.json came from the .py, not hand-written).
+
+Measured so far (this pass; the COMPONENT forge reads real GGUF weight
+bytes with bounded reads only — the opt-in real-GGUF test suite and the
+select/gate runs of course instantiate the full resident engine):
+- Component forge on the real n = 2816 scaled op bound to
+  blk.0.attn_norm.weight: incumbent rel-to-FP64 1.057e-06; ALL 5 emitted
+  candidates (T1 baseline, T16/T32 × scalar/float4 staging) ACCEPTED as
+  bitPattern-identical to the incumbent production kernel in both
+  out-of-place and in-place modes (docs/evidence/rms-forge-p10.log). The
+  serial-order-preservation structure reproduced the incumbent's bits
+  exactly on these bounded inputs — synthetic activations plus the real
+  weight bytes — which is BOUNDED evidence, not a universal FMA/real-
+  activation proof; the artifact binds toolchain + executable bytes so
+  any rebuild re-gates.
+- Test suites (historical, pre-format-fix; current counts below): default
+  585/0 (was 552; includes per-schedule hardware
+  bit-identity, in-place staging safety, the n*4+4 threadgroup memory cap
+  deriving an EMPTY schedule set, oracle hand case, artifact
+  tamper/hardware rejection); real-GGUF opt-in 691/0 (was 653; includes
+  the real-op forge bit-identity, trial-install dispatch-counter proof
+  via the diagnostic wrapper, and one-ULP-off eps rejection with
+  behavioral no-install verification).
+
+Root long run (run 57271, one process, 893.76 s wall, executable SHA-256
+012ff4d7a99be8a98d8e8843401cebf434ae81bcff91fb6b3eefa74b0e3ca890 with
+sources and binary independently frozen): `rms-lower select` completed —
+- Component screen (warmed, production vector count, pruning only):
+  T32_float4 65.6 µs/call, T32_scalar 72.1 µs/call, T16_float4 98.9,
+  T16_scalar 134.6; the two fastest reached the model gates.
+- Model gates: BOTH candidates passed all 3 fixtures × 32 steps with
+  worst measured numerical drift 0 (relative), exact greedy agreement,
+  and finiteness — the full unchanged strict gate, not bit identity
+  (component gates are the ones that check bits).
+- Matched timing (3 paired repetitions, no sampled arms): T32_float4
+  fixture rep sums 1,187,450 / 1,211,788 / 1,251,922 µs vs paired
+  incumbent 1,387,527 / 1,293,425 / 1,292,686 — all three positive;
+  T32_scalar gains 8.295 / 4.852 / 4.644%. Policy: SELECTED
+  rmsgen_rms_T32_float4 at 6.31% median-ratio margin (> 2% threshold).
+  This is a bounded 3-rep measurement on a shared Mac — evidence of a
+  real paired win on this machine, NOT a universal or stable-occupancy
+  claim.
+- Persistence: artifact
+  digest 65be14e564af17b20d4d9e2cb6caf208ab1d53d2d84b7c0ac085c16712696748
+  (40,603 bytes) saved, reloaded, identity-validated, publicly installed;
+  EN 32-step replay worst rel 0; 10,972 actual generated dispatches
+  (52 positions × 211 bound scaled n = 2816 norms each). A separate root
+  verification process (fresh model/hardware/toolchain/executable check)
+  re-validated the artifact: VALID.
+- Honest scope and cost: maxRSS 2,888,663,040 B; peak footprint
+  31,156,126,720 B (~31.156 GB decimal) — the engine is NOT lightweight.
+  The failed predecessor run (SIGSEGV in the final Bool-%@ formatter,
+  951.31 s, log preserved) is NOT success: the crash hit at the FINAL log
+  line, after that run had already reloaded and publicly installed its own
+  artifact and replayed the gate — the run is still counted FAILED, and its
+  artifact was NOT reused or re-bound after the formatter fix and
+  executable change (the successful fixed run produced and bound a fresh
+  artifact). The `--smoke-test` EXIT 0 run proves end-to-end
+  plumbing only (2 steps, raw fixture), not quality or performance.
+  Current test suites: default 589/0; historical real-GGUF opt-in 691/0
+  before the format-only fix (not re-run since — the current code's
+  gates were exercised by the full 32-step run and the smoke run above).
+  The broader joint goal (general Python model compiler with competitive
+  performance) remains UNMET; next hypothesis is the MoE routed-expert
+  batch lowering (docs/MOE_BATCH_LOWERING_DESIGN.md, root-corrected,
+  UNIMPLEMENTED).
+- Evidence (docs/evidence/): rms-select-root-p10-fixed.log (full select,
+  time/maxRSS/footprint; SHA-256 3f8aa9b9…), rms-artifact-root-p10-fixed.json
+  (persisted artifact; file SHA-256 5d598925…, internal artifact digest
+  65be14e5…), rms-select-root-p10-fixed-source-snapshot.json,
+  rms-verify-root-p10-fixed.log (separate-process VALID, b90b3527…),
+  tests-rmsfix-default-2.log (589/0, 1f2eb8db…), tests-rmslower-realgguf-2.log
+  (historical pre-format-fix real 691/0, 129d8e17…),
+  rms-profile-root-vl-p10.log (2-token unbatched VL diagnostic: RMS VL
+  kernels 19.1% / 147.6 ms / 662 calls, expert gate_up+down 49.1% within
+  matvec total 74% — ranking only, not occupancy attribution),
+  rms-select-root-p10-FAILED-boolformat-segv.log +
+  rms-resource-root-p10-failedrun-snapshot.jsonl (the failed 951.31 s
+  predecessor run, preserved and labeled as failure).

@@ -731,6 +731,18 @@ public final class Gemma4Runner {
     /// the incumbent kernels.
     public private(set) var q4GeneratedDispatchCount = 0
     public private(set) var q4BoundTensorIncumbentDispatchCount = 0
+    /// Phase-10 generated RMSNorm lowering: installed only through
+    /// installRmsGeneratedKernel (full artifact identity check) or the
+    /// internal trial installer; binds the (n, scaled) call family after
+    /// per-dispatch eps/alignment/span checks in rmsnorm().
+    private(set) var rmsGeneratedKernel: RMSEmittedKernel?
+    private(set) var rmsGeneratedBoundN: Int?
+    private(set) var rmsGeneratedBoundScaled: Bool?
+    private(set) var rmsGeneratedArtifactDigest: String?
+    /// Independent dispatch counter incremented in rmsnorm() itself (valid
+    /// in segment-batched mode, where GPU-time attribution defers to the
+    /// flush).
+    public private(set) var rmsGeneratedDispatchCount = 0
     public var q4TiledKernel = false
     /// Same for Q6_K matvecs (tied embedding / LM head).
     public var q6TiledKernel = false
@@ -873,6 +885,100 @@ public final class Gemma4Runner {
         q4GeneratedBoundTensor = nil
         q4GeneratedBoundInDim = nil
         q4GeneratedArtifactDigest = nil
+    }
+
+    /// PRODUCTION install of the phase-10 generated RMSNorm kernel: full
+    /// artifact identity validation (op, codegen, re-emitted source bytes,
+    /// hardware, toolchain, GGUF, executable, component gates incl. bit-
+    /// identity to the incumbent, model-gate record) plus cross-checks
+    /// against THIS runner: the op's eps must equal this config's
+    /// rmsNormEps, and the bound weight tensor (when scaled) must map to
+    /// an F32 tensor of length n in this runner's file. Any mismatch
+    /// throws BEFORE any state changes: the incumbent kernels stay active.
+    public func installRmsGeneratedKernel(artifact: RMSLoweringArtifact,
+                                          ggufDigest: String) throws {
+        guard let gate = artifact.modelGate else {
+            throw RMSLoweringError.invalidArtifact(
+                "component-only artifact: no model-gate record, not installable")
+        }
+        guard let sel = gate.results.first(where: { $0.schedule == artifact.schedule }),
+              sel.fixturesPassed == gate.fixtures.count, sel.fixturesFailed == 0 else {
+            throw RMSLoweringError.invalidArtifact(
+                "artifact schedule did not pass all model-gate fixtures")
+        }
+        // EXACT runtime eps semantics: the op's eps must round-trip to the
+        // very Float this config uses (a 1e-12 tolerance would accept ~8
+        // distinct neighboring Float eps values).
+        guard Float(artifact.op.eps).bitPattern == config.rmsNormEps.bitPattern else {
+            throw RMSLoweringError.invalidArtifact(
+                "op eps \(artifact.op.eps) != config rmsNormEps \(config.rmsNormEps)")
+        }
+        if artifact.op.scaled, let tensor = artifact.op.tensor {
+            guard let r = ref[tensor], r.type == .float32, r.inDim == artifact.op.n,
+                  r.end - r.offset == artifact.op.n * 4 else {
+                throw RMSLoweringError.invalidArtifact(
+                    "bound tensor \(tensor) geometry mismatch vs this runner")
+            }
+        }
+        try artifact.validate(op: artifact.op,
+                              hardware: try RMSCurrentHardware.profile(),
+                              ggufDigest: ggufDigest,
+                              executableDigest: try Self.executableDigest())
+        let kernel = try RMSEmittedKernel.compile(op: artifact.op,
+                                                  schedule: artifact.schedule,
+                                                  device: device)
+        guard kernel.source == artifact.emittedSource else {
+            throw RMSLoweringError.invalidArtifact("compiled source differs from artifact")
+        }
+        rmsGeneratedKernel = kernel
+        rmsGeneratedBoundN = artifact.op.n
+        rmsGeneratedBoundScaled = artifact.op.scaled
+        rmsGeneratedArtifactDigest = artifact.artifactDigest
+    }
+
+    /// TRIAL installation for the bounded per-candidate model-gate
+    /// orchestration (internal): installs a component-gated candidate; the
+    /// persisted-artifact production path remains installRmsGeneratedKernel
+    /// (which additionally requires the model-gate record).
+    internal func installRmsTrialKernel(op: RMSOpIR, kernel: RMSEmittedKernel) throws {
+        // EXACT runtime eps semantics (see installRmsGeneratedKernel).
+        guard Float(op.eps).bitPattern == config.rmsNormEps.bitPattern else {
+            throw RMSLoweringError.invalidArtifact(
+                "op eps \(op.eps) != config rmsNormEps \(config.rmsNormEps)")
+        }
+        if op.scaled, let tensor = op.tensor {
+            guard let r = ref[tensor], r.type == .float32, r.inDim == op.n,
+                  r.end - r.offset == op.n * 4 else {
+                throw RMSLoweringError.invalidArtifact(
+                    "bound tensor \(tensor) geometry mismatch vs this runner")
+            }
+        }
+        guard kernel.source == (try RMSKernelEmitter.emit(op: op,
+                                                          schedule: kernel.schedule)) else {
+            throw RMSLoweringError.invalidArtifact("kernel source not the canonical emission")
+        }
+        rmsGeneratedKernel = kernel
+        rmsGeneratedBoundN = op.n
+        rmsGeneratedBoundScaled = op.scaled
+        rmsGeneratedArtifactDigest = "trial:" + kernel.schedule.kernelName
+    }
+
+    /// Removes the generated RMSNorm kernel (arms / fallback).
+    public func uninstallRmsGeneratedKernel() {
+        rmsGeneratedKernel = nil
+        rmsGeneratedBoundN = nil
+        rmsGeneratedBoundScaled = nil
+        rmsGeneratedArtifactDigest = nil
+    }
+
+    /// Diagnostic-only bounded RMS trial (test suite): installs a
+    /// component-gated candidate for dispatch-counter proofs on real
+    /// forwards, after the same eps/geometry crosschecks as the internal
+    /// trial path. NOT a production path — production installs go only
+    /// through installRmsGeneratedKernel (full artifact identity + model
+    /// gate). Mirrors the public-but-diagnostic diagnosticMatvec surface.
+    public func diagnosticRmsTrial(op: RMSOpIR, kernel: RMSEmittedKernel) throws {
+        try installRmsTrialKernel(op: op, kernel: kernel)
     }
 
     /// Diagnostic-only bounded matvec probe: writes `x` into the normed-
@@ -1501,7 +1607,21 @@ public final class Gemma4Runner {
             enc.setBuffer(x, offset: 0, index: 5)
             enc.setBuffer(y, offset: 0, index: 6)
         }
-        if rmsTiledKernel {
+        if let gen = rmsGeneratedKernel, n == rmsGeneratedBoundN,
+               (weightTensor != nil) == (rmsGeneratedBoundScaled ?? false),
+               // Per-dispatch legality for the float4-staging family: the
+               // same production guards the VL kernel uses (width multiple
+               // of 4, scaled weight at a 16-byte aligned offset). The eps
+               // was validated against this config at install; the span
+               // bounds above cover this call; in-place x == y is legal by
+               // the emitted kernel's staging/barrier construction.
+               (gen.schedule.staging == .scalar
+                || Self.rmsVectorLoadGuards(n: n, scaled: weightTensor != nil, wOff: wOff)) {
+            rmsGeneratedDispatchCount += 1
+            try dispatchPipeline(gen.pipeline, name: gen.schedule.kernelName,
+                                 groups: vectors, threads: gen.schedule.threadsPerVector,
+                                 bindNorm)
+        } else if rmsTiledKernel {
             // Tiled cooperative variant (Forge candidate; the single-
             // thread-per-vector reduce is the measured 44% GPU hotspot).
             try dispatchExplicit("g4_rmsnorm_tiled", groups: vectors,
@@ -1701,6 +1821,7 @@ public final class Gemma4Runner {
             + "|expertCacheBudget=\(expertCache?.budgetBytes ?? 0)"
             + "|expertPrefetch=\(expertCache != nil && expertPrefetch ? "free-only" : "none")"
             + "|q4gen=\(q4GeneratedArtifactDigest ?? "none")"
+            + "|rmsgen=\(rmsGeneratedArtifactDigest ?? "none")"
     }
 
     /// Measured hardware profile of the device this runner holds.

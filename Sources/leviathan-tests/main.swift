@@ -3316,6 +3316,228 @@ if let device = MTLCreateSystemDefaultDevice() {
     print("SKIP: q4 lowering GPU gates (no Metal device)")
 }
 
+// MARK: - Phase 10: RMS lowering (op IR, deriver, emitter, oracle, GPU
+// bit-identity, artifact identity)
+
+/// Typed RMS-lowering error-case check: passes only when the body throws
+/// EXACTLY the expected RMSLoweringError case (Equatable).
+@MainActor
+func checkRMSThrows(_ name: String, _ expected: RMSLoweringError,
+                    _ body: () throws -> Void) {
+    do {
+        try body()
+        failed += 1; print("FAIL: \(name) — expected \(expected), got no error")
+    } catch let error as RMSLoweringError {
+        if error == expected { passed += 1 }
+        else { failed += 1; print("FAIL: \(name) — expected \(expected), got \(error)") }
+    } catch {
+        failed += 1; print("FAIL: \(name) — expected \(expected), got unexpected \(error)")
+    }
+}
+
+/// Builds op JSON matching the Python capture schema (unscaled by default,
+/// so the default suite needs no GGUF).
+func rmsOpJSON(op: String = "rmsnorm", n: Int = 2048, vectors: Int = 4,
+               scaled: Bool = false, eps: Any = 1e-6, tensor: Any? = nil,
+               reps: Any? = 4) throws -> Data {
+    let obj: [String: Any] = [
+        "schema": 1, "op": op, "semantics": "y[i] = x[i] * inv_rms(x) * w[i]",
+        "n": n, "vectors": vectors, "scaled": scaled, "eps": eps,
+        "layout": "row-major-f32-vectors", "quant": "f32",
+        "reduction": "serial-order-i0..n", "inputPrecision": "f32",
+        "tensor": tensor, "representativeVectors": reps,
+    ]
+    return try JSONSerialization.data(withJSONObject: obj)
+}
+
+do {
+    // ---- op IR validation ----
+    let good = try RMSOpIR.parse(rmsOpJSON())
+    checkEqual("rms op IR dims", good.n, 2048)
+    checkEqual("rms op IR digest stable", try good.digest(), try good.digest())
+    checkRMSThrows("rms op IR rejects unknown op",
+                   .invalidOp("unsupported op/semantics layernorm/y[i] = x[i] * inv_rms(x) * w[i]")) {
+        _ = try RMSOpIR.parse(rmsOpJSON(op: "layernorm"))
+    }
+    checkRMSThrows("rms op IR rejects non-multiple-of-4 n",
+                   .invalidOp("bad shape n 2049 vectors 4")) {
+        _ = try RMSOpIR.parse(rmsOpJSON(n: 2049))
+    }
+    checkRMSThrows("rms op IR rejects bad eps",
+                   .invalidOp("bad eps 0.5")) {
+        _ = try RMSOpIR.parse(rmsOpJSON(eps: 0.5))
+    }
+
+    // ---- deriver: shape + hardware dependence, bounded, baseline first ----
+    let hw = RMSHardwareProfile(deviceName: "test", maxTotalThreadsPerThreadgroup: 1024,
+                                threadExecutionWidth: 8, maxThreadgroupMemoryLength: 1 << 16,
+                                recommendedMaxWorkingSetSize: 1 << 30)
+    let derived = RMSScheduleDeriver.derive(op: good, hardware: hw)
+    check("rms deriver bounded to 6", derived.count <= 6)
+    checkEqual("rms deriver baseline first", derived.first,
+               RMSSchedule(threadsPerVector: 1, staging: .scalar))
+    // Width-8 hardware: the cooperative entries must be the two log2-nearest
+    // legal widths (8 and 4 here — derived, not a fixed set).
+    check("rms deriver T values follow the measured width",
+          derived.dropFirst().allSatisfy { [4, 8].contains($0.threadsPerVector) })
+    // Threadgroup MEMORY bound is a hard legality input: the staged array
+    // (n*4 bytes + the invShared slot) exceeds a 4 KB cap for n = 2048, so
+    // NOTHING is legal — not even the baseline (it stages too).
+    let tinyMem = RMSHardwareProfile(deviceName: "test", maxTotalThreadsPerThreadgroup: 1024,
+                                     threadExecutionWidth: 8, maxThreadgroupMemoryLength: 4096,
+                                     recommendedMaxWorkingSetSize: 1 << 30)
+    checkEqual("rms deriver respects threadgroup memory cap (empty, not illegal baseline)",
+               RMSScheduleDeriver.derive(op: good, hardware: tinyMem), [])
+    let tinyThreads = RMSHardwareProfile(deviceName: "test", maxTotalThreadsPerThreadgroup: 4,
+                                         threadExecutionWidth: 2, maxThreadgroupMemoryLength: 1 << 16,
+                                         recommendedMaxWorkingSetSize: 1 << 30)
+    check("rms deriver respects threadgroup thread cap",
+          RMSScheduleDeriver.derive(op: good, hardware: tinyThreads)
+              .allSatisfy { $0.threadsPerVector <= 4 })
+
+    // ---- emitter: deterministic, parameterized, distinct ----
+    let s1 = RMSSchedule(threadsPerVector: 8, staging: .float4)
+    let e1 = try RMSKernelEmitter.emit(op: good, schedule: s1)
+    checkEqual("rms emitter deterministic", e1, try RMSKernelEmitter.emit(op: good, schedule: s1))
+    check("rms emitter bakes shape and mapping",
+          e1.contains("constexpr uint N = 2048u") && e1.contains("constexpr uint T = 8u"))
+    check("rms emitter names kernel from schedule", e1.contains(s1.kernelName))
+    let e2 = try RMSKernelEmitter.emit(op: good, schedule: RMSSchedule(threadsPerVector: 4,
+                                                                        staging: .scalar))
+    check("rms emitter distinguishes schedules", e1 != e2)
+    checkRMSThrows("rms emitter rejects T exceeding n",
+                   .emissionFailed("schedule RMSSchedule(threadsPerVector: 4096, staging: "
+                                   + "LeviathanCore.RMSSchedule.Staging.scalar) illegal for n 2048")) {
+        _ = try RMSKernelEmitter.emit(op: good, schedule: RMSSchedule(threadsPerVector: 4096,
+                                                                       staging: .scalar))
+    }
+
+    // ---- FP64 oracle: hand-computed case ----
+    do {
+        // x = [3, 4, 0, 0], w = [2, 1, 1, 1], eps = 0:
+        // ms = 25, mean 6.25, inv = 0.4, y = [2.4, 1.6, 0, 0]. (0.4 is not
+        // an exact binary double, so compare at 1e-12 relative, not ==.)
+        let ref = try RMSOracle.rmsnormFP64(x: [3, 4, 0, 0], w: [2, 1, 1, 1],
+                                            eps: 0, vectors: 1)
+        let want = [2.4, 1.6, 0, 0]
+        check("rms FP64 oracle hand-computed",
+              zip(ref, want).allSatisfy { abs($0 - $1) <= 1e-12 * max(1, abs($1)) })
+    }
+    checkRMSThrows("rms FP64 oracle rejects nonfinite input",
+                   .oracleFailed("oracle geometry: x 4, vectors 1")) {
+        _ = try RMSOracle.rmsnormFP64(x: [3, .nan, 0, 0], w: nil, eps: 0, vectors: 1)
+    }
+
+    // ---- persisted-execution log format regression ----
+    // The real 32-step select run once crashed (SIGSEGV via
+    // objc_opt_respondsToSelector) because a Swift Bool was passed to
+    // String(format:) %@ as a C vararg. This calls the ACTUAL production
+    // formatter helper used by selectAndPersist's final proof line (not a
+    // duplicated copy), so any future Bool/non-object %@ regression in the
+    // production path fails this test rather than crashing a 15-minute
+    // model run.
+    for scaled in [false, true] {
+        for tensor in [nil, "blk.0.attn_norm.weight"] {
+            let line = rmsPersistedExecutionLogLine(fixtureName: "raw-hello",
+                                                    worstRel: 0.0, dispatches: 96,
+                                                    n: 2816, scaled: scaled,
+                                                    tensor: tensor)
+            check("rms persisted-execution log renders scaled=\(scaled ? "true" : "false") tensor=\(tensor ?? "none")",
+                  line.contains("scaled=\(scaled ? "true" : "false")")
+                  && line.contains("n=2816")
+                  && (tensor == nil ? !line.contains("weight tensor")
+                                    : line.contains(", weight tensor \(tensor!)")))
+        }
+    }
+} catch {
+    failed += 1; print("FAIL: rms lowering IR/deriver/emitter/oracle — threw \(error)")
+}
+
+// ---- GPU component gates + artifact identity (synthetic op, no GGUF) ----
+if let device = MTLCreateSystemDefaultDevice() {
+    do {
+        // Unbound synthetic op (unscaled): fast, no GGUF needed.
+        let op = try RMSOpIR.parse(rmsOpJSON(n: 2048, vectors: 4, reps: 4))
+        let hwProfile = try RMSCurrentHardware.profile()
+        let incumbent = try RMSIncumbentKernel.compile(device: device)
+        let wBytes = try RMSComponentInputs.weightBytes(op: op, file: nil)
+        let x = RMSComponentInputs.activation(op: op)
+        let production = incumbent.productionPipeline(n: op.n, scaled: op.scaled)
+        let incOut = try incumbent.run(pipeline: production, n: op.n, vectors: 4,
+                                       x: x, w: nil, eps: op.eps)
+        let incInPlace = try incumbent.run(pipeline: production, n: op.n, vectors: 4,
+                                           x: x, w: nil, eps: op.eps, inPlace: true)
+        check("rms incumbent kernel in-place stable (bit patterns)",
+              rmsBitEqual(incOut, incInPlace))
+
+        // THE load-bearing test: every emitted schedule (baseline AND
+        // cooperative, both staging widths) must be BIT-IDENTICAL to the
+        // incumbent production kernel — out-of-place AND in-place.
+        for schedule in RMSScheduleDeriver.derive(op: op, hardware: hwProfile)
+        where schedule.threadsPerVector > 1 {
+            let kernel = try RMSEmittedKernel.compile(op: op, schedule: schedule,
+                                                      device: device)
+            let out = try kernel.run(op: op, x: x, w: nil, vectors: 4, eps: op.eps)
+            let inPlace = try kernel.run(op: op, x: x, w: nil, vectors: 4,
+                                         eps: op.eps, inPlace: true)
+            check("rms emitted \(schedule.kernelName) bit-identical to incumbent (out-of-place)",
+                  rmsBitEqual(out, incOut))
+            check("rms emitted \(schedule.kernelName) bit-identical to incumbent (in-place)",
+                  rmsBitEqual(inPlace, incOut))
+        }
+
+        // Baseline vs the CPU FP64 oracle (existing 1e-4 contract).
+        let ref64 = try RMSOracle.rmsnormFP64(x: x, w: nil, eps: op.eps, vectors: 4)
+        var w1 = 0.0
+        for i in 0..<incOut.count {
+            w1 = max(w1, abs(Double(incOut[i]) - ref64[i]) / max(1.0, abs(ref64[i])))
+        }
+        check(String(format: "rms incumbent vs FP64 oracle (worst rel %.3e)", w1), w1 < 1e-4)
+
+        // Full component forge on the synthetic op -> artifact identity.
+        let (artifact, results, incRel) = try RMSLoweringForge.forge(
+            opJSON: rmsOpJSON(n: 2048, vectors: 4, reps: 4), ggufURL: nil)
+        check("rms forge incumbent within 1e-4 of FP64 oracle", incRel < 1e-4)
+        check("rms forge produced accepted candidates",
+              !results.isEmpty && results.contains { $0.accepted })
+        check("rms forge selected an accepted bit-identical schedule",
+              results.first { $0.schedule == artifact.schedule }!.accepted
+                  && results.first { $0.schedule == artifact.schedule }!.bitIdenticalToIncumbent == true)
+        try artifact.validate(op: artifact.op, hardware: hwProfile, ggufDigest: "",
+                              executableDigest: try Gemma4Runner.executableDigest())
+        check("rms artifact validates round-trip", true)
+        // Tampered source is rejected (JSON-level mutation).
+        do {
+            let encoded = try JSONEncoder().encode(artifact)
+            var obj = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+            obj["emittedSource"] = (artifact.emittedSource as NSString)
+                .replacingOccurrences(of: "T = ", with: "T =  /*x*/ ")
+            let tampered = try JSONDecoder().decode(
+                RMSLoweringArtifact.self, from: JSONSerialization.data(withJSONObject: obj))
+            checkRMSThrows("rms artifact rejects tampered source",
+                          .invalidArtifact("emitted source tampered/rule drift")) {
+                try tampered.validate(op: artifact.op, hardware: hwProfile, ggufDigest: "",
+                                      executableDigest: try Gemma4Runner.executableDigest())
+            }
+        }
+        // Stale hardware is rejected.
+        checkRMSThrows("rms artifact rejects hardware mismatch",
+                      .invalidArtifact("hardware mismatch")) {
+            try artifact.validate(op: artifact.op,
+                                  hardware: RMSHardwareProfile(
+                                    deviceName: "other", maxTotalThreadsPerThreadgroup: 7,
+                                    threadExecutionWidth: 7, maxThreadgroupMemoryLength: 7,
+                                    recommendedMaxWorkingSetSize: 7),
+                                  ggufDigest: "",
+                                  executableDigest: try Gemma4Runner.executableDigest())
+        }
+    } catch {
+        failed += 1; print("FAIL: rms lowering GPU/artifact gates — threw \(error)")
+    }
+} else {
+    print("SKIP: rms lowering GPU gates (no Metal device)")
+}
+
 // MARK: - Gemma 4 real-model gates (opt-in via LEVIATHAN_GEMMA_GGUF)
 
 // These load the full 14.44 GB checkpoint onto the GPU (~seconds, ~2 GB
@@ -3397,6 +3619,65 @@ if let gemmaPath, !gemmaPath.isEmpty, FileManager.default.fileExists(atPath: gem
               (try? runner.diagnosticMatvec(tensor: "blk.0.attn_q.weight",
                                             x: [Float](repeating: 0, count: 16),
                                             rows: 64, tiled: false)) == nil)
+
+        // Phase 10 real-op check: the n=2816 scaled RMSNorm family bound to
+        // the REAL weight tensor — component forge (bit-identity vs the
+        // production kernel on real weights) plus a trial-install forward
+        // proving the generated kernel actually dispatches.
+        do {
+            let realJSON = try rmsOpJSON(n: 2816, vectors: 8, scaled: true,
+                                         eps: 1e-6, tensor: "blk.0.attn_norm.weight",
+                                         reps: 8)
+            let realOp = try RMSOpIR.parse(realJSON)
+            try realOp.validateAgainst(file: runner.ggufFile)
+            let (art, res, incRel) = try RMSLoweringForge.forge(
+                opJSON: realJSON, ggufURL: URL(fileURLWithPath: gemmaPath))
+            check("real rms forge incumbent within 1e-4 of FP64 oracle", incRel < 1e-4)
+            check("real rms forge has bit-identical accepted candidates",
+                  res.contains { $0.accepted && $0.bitIdenticalToIncumbent == true })
+            guard let best = res.first(where: { $0.accepted }) else {
+                throw RMSLoweringError.componentGateFailed("no accepted real-op schedule")
+            }
+            guard let device = MTLCreateSystemDefaultDevice() else {
+                throw RMSLoweringError.hardwareUnavailable("no Metal device")
+            }
+            let kernel = try RMSEmittedKernel.compile(op: realOp,
+                                                      schedule: best.schedule,
+                                                      device: device)
+            try runner.diagnosticRmsTrial(op: realOp, kernel: kernel)
+            runner.reset()
+            runner.applyDiagnosticAxis(vectorizedLoads: true, segmentBatching: true)
+            let before = runner.rmsGeneratedDispatchCount
+            _ = try runner.forward(tokenIds: [2])
+            check("real rms trial kernel dispatches on a forward",
+                  runner.rmsGeneratedDispatchCount > before)
+            runner.uninstallRmsGeneratedKernel()
+            _ = art
+
+            // One-ULP-off eps is rejected: a neighboring Float eps value
+            // must NOT install (exact runtime semantics, not a tolerance).
+            let configEps = runner.config.rmsNormEps
+            let wrongEps = Double(configEps.nextUp)
+            let wrongJSON = try rmsOpJSON(n: 2816, vectors: 8, scaled: true,
+                                          eps: wrongEps,
+                                          tensor: "blk.0.attn_norm.weight", reps: 8)
+            let wrongOp = try RMSOpIR.parse(wrongJSON)
+            checkRMSThrows("real rms trial rejects one-ULP-off eps",
+                          .invalidArtifact("op eps \(wrongEps) != config rmsNormEps "
+                                           + "\(configEps)")) {
+                try runner.diagnosticRmsTrial(op: wrongOp, kernel: kernel)
+            }
+            // Behavioral proof nothing installed: a forward must not route
+            // any dispatch through a generated RMS kernel.
+            runner.reset()
+            runner.applyDiagnosticAxis(vectorizedLoads: true, segmentBatching: true)
+            let beforeWrong = runner.rmsGeneratedDispatchCount
+            _ = try runner.forward(tokenIds: [2])
+            checkEqual("rejected eps installs nothing (no generated dispatches)",
+                       runner.rmsGeneratedDispatchCount, beforeWrong)
+        } catch {
+            failed += 1; print("FAIL: real rms op forge/trial — threw \(error)")
+        }
     } catch {
         failed += 1; print("FAIL: real-model Gemma gates — threw \(error)")
     }

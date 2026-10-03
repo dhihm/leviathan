@@ -1,0 +1,14 @@
+SMOKE MODE: raw-hello only, gen 2/timed 1 — plumbing validation, NOT a quality or performance proof
+component: incumbent rel-to-FP64 1.057e-06; 5/5 candidates accepted
+reference [raw-hello]: 2 greedy steps
+component screen rmsgen_rms_T32_float4: 99.6 us/call (warmed median, pruning only)
+component screen rmsgen_rms_T32_scalar: 113.0 us/call (warmed median, pruning only)
+component screen rmsgen_rms_T16_float4: 219.9 us/call (warmed median, pruning only)
+component screen rmsgen_rms_T16_scalar: 250.8 us/call (warmed median, pruning only)
+gate PASS rmsgen_rms_T32_float4: 1/1 fixtures, worst rel 0.000e+00
+gate PASS rmsgen_rms_T32_scalar: 1/1 fixtures, worst rel 0.000e+00
+matched timing rmsgen_rms_T32_float4: rep sums 292715,289279,314885 vs paired incumbent 539705,398514,363602 (median 292715 vs 398514 us/token)
+matched timing rmsgen_rms_T32_scalar: rep sums 337442,311106,380690 vs paired incumbent 493221,463790,338882 (median 337442 vs 463790 us/token)
+policy: selected rmsgen_rms_T32_scalar beats its own paired incumbent matched-repeat median summed wall by 27.2% (> 2% policy threshold)
+persisted execution: reloaded+validated+installed from disk; raw-hello replay worst rel 0.000e+00; generated dispatches 633 (n=2816, scaled=true, weight tensor blk.0.attn_norm.weight)
+RMS_SELECT_COMPLETED -> /tmp/leviathan-forge2-tooling/rms/artifact-select-smoke-p10.json

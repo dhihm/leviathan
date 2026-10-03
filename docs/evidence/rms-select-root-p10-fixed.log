@@ -1,0 +1,33 @@
+component: incumbent rel-to-FP64 1.057e-06; 5/5 candidates accepted
+reference [en-chat]: 32 greedy steps
+reference [kr-chat]: 32 greedy steps
+reference [raw-hello]: 32 greedy steps
+component screen rmsgen_rms_T32_float4: 65.6 us/call (warmed median, pruning only)
+component screen rmsgen_rms_T32_scalar: 72.1 us/call (warmed median, pruning only)
+component screen rmsgen_rms_T16_float4: 98.9 us/call (warmed median, pruning only)
+component screen rmsgen_rms_T16_scalar: 134.6 us/call (warmed median, pruning only)
+gate PASS rmsgen_rms_T32_float4: 3/3 fixtures, worst rel 0.000e+00
+gate PASS rmsgen_rms_T32_scalar: 3/3 fixtures, worst rel 0.000e+00
+matched timing rmsgen_rms_T32_float4: rep sums 1187450,1211788,1251922 vs paired incumbent 1387527,1293425,1292686 (median 1211788 vs 1293425 us/token)
+matched timing rmsgen_rms_T32_scalar: rep sums 1220734,1232513,1243357 vs paired incumbent 1331159,1295364,1303912 (median 1232513 vs 1303912 us/token)
+policy: selected rmsgen_rms_T32_float4 beats its own paired incumbent matched-repeat median summed wall by 6.3% (> 2% policy threshold)
+persisted execution: reloaded+validated+installed from disk; en-chat replay worst rel 0.000e+00; generated dispatches 10972 (n=2816, scaled=true, weight tensor blk.0.attn_norm.weight)
+RMS_SELECT_COMPLETED -> /tmp/leviathan-forge2-tooling/rms/artifact-select-root-p10-fixed.json
+      893.76 real        80.72 user        29.14 sys
+          2888663040  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+             2076225  page reclaims
+               35393  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               14236  voluntary context switches
+             1535522  involuntary context switches
+        398887997532  instructions retired
+        328511668493  cycles elapsed
+         31156126720  peak memory footprint

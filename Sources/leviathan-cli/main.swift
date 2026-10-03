@@ -1540,6 +1540,130 @@ case "forge":
             fail("q4-lower requires a mode: forge | verify | select")
         }
 
+    case "rms-lower":
+        // Phase 10 parameterized serial-order-preserving cooperative
+        // RMSNorm lowering (one family). Python op input (captured by
+        // tools/rms_lower/export_rms_op.py) -> op IR validation ->
+        // shape+hardware-derived schedule enumeration -> Metal source
+        // EMISSION -> independent CPU FP64 oracle gate under the existing
+        // 1e-4 component contract PLUS hardware bit-identity to the
+        // incumbent production kernel -> persisted artifact with full
+        // identity binding. forge/verify run no model; select is the full
+        // bounded orchestration (see docs/RMS_LOWERING_DESIGN.md).
+        let rest = Array(args.dropFirst())
+        let mode = rest.first ?? ""
+        switch mode {
+        case "forge":
+            let opPath = requireValue("--op", args)
+            let outPath = requireValue("--out", args)
+            let ggufPath = args.firstIndex(of: "--gguf").map { _ in
+                requireValue("--gguf", args) }
+            do {
+                let opJSON = try Data(contentsOf: URL(fileURLWithPath: opPath))
+                let (artifact, results, incumbentRel) = try RMSLoweringForge.forge(
+                    opJSON: opJSON,
+                    ggufURL: ggufPath.map { URL(fileURLWithPath: $0) })
+                print(String(format: "incumbent rmsnorm rel-to-FP64: %.3e", incumbentRel))
+                for r in results {
+                    print("  \(r.accepted ? "ACCEPT" : "REJECT") \(r.schedule.kernelName): \(r.note)")
+                }
+                try artifact.save(to: URL(fileURLWithPath: outPath))
+                print("selected: \(artifact.schedule.kernelName)")
+                print("artifact saved: \(outPath) (digest \(artifact.artifactDigest.prefix(16))…)")
+            } catch {
+                fail("rms-lower forge failed: \(error)")
+            }
+        case "verify":
+            let artifactPath = requireValue("--artifact", args)
+            let ggufPath = requireValue("--gguf", args)
+            do {
+                let artifact = try RMSLoweringArtifact.load(
+                    from: URL(fileURLWithPath: artifactPath))
+                let ggufURL = URL(fileURLWithPath: ggufPath)
+                // The op is ALSO re-validated against the actual GGUF
+                // tensor directory here — not just the artifact's own copy.
+                try artifact.op.validateAgainst(file: try GGUFReader.read(ggufURL))
+                let digest = try GemmaForge.fileDigest(ggufURL)
+                try artifact.validate(op: artifact.op,
+                                      hardware: RMSCurrentHardware.profile(),
+                                      ggufDigest: digest,
+                                      executableDigest: try Gemma4Runner.executableDigest())
+                print("artifact VALID: \(artifact.schedule.kernelName) "
+                      + "bound to \(artifact.op.tensor ?? "<synthetic>") "
+                      + "[n=\(artifact.op.n), scaled=\(artifact.op.scaled)]")
+                print("codegen \(artifact.codegenVersion), vectors \(artifact.representativeVectors), "
+                      + "source sha \(artifact.sourceSha256.prefix(16))…")
+            } catch {
+                fail("rms-lower verify failed: \(error)")
+            }
+        case "select":
+            // Full bounded orchestration in ONE process (the phase-9
+            // protocol): component gates + bit-identity for every derived
+            // candidate, warmed component GPU screen (pruning only), at
+            // most 2 fastest non-baseline candidates through teacher-forced
+            // model gates on the EN/KR chat + raw Hello fixtures, 3 paired
+            // matched-timing repetitions, 2% policy, persistence, and a
+            // persisted-execution proof with dispatch counters.
+            let opPath = requireValue("--op", args)
+            let ggufPath = requireValue("--gguf", args)
+            let outPath = requireValue("--out", args)
+            // --smoke-test: bounded END-TO-END plumbing check of the complete
+            // select path (component -> gates -> timing -> persist -> reload
+            // -> install -> FINAL formatted proof line). Raw-Hello fixture
+            // ONLY, gen 2 / timed 1 defaults. It exercises the exact code the
+            // production run executes — including the last String(format:)
+            // log — but it is NEVER evidence of 32-step quality or
+            // performance; those need the full 3-fixture run.
+            let smokeTest = args.contains("--smoke-test")
+            let genTokens = args.firstIndex(of: "--gen-tokens").map { _ in
+                Int(requireValue("--gen-tokens", args)) ?? 0 } ?? (smokeTest ? 2 : 32)
+            let timedTokens = args.firstIndex(of: "--timed-tokens").map { _ in
+                Int(requireValue("--timed-tokens", args)) ?? 0 } ?? (smokeTest ? 1 : 31)
+            guard genTokens >= 2, genTokens <= 64, timedTokens >= 1, timedTokens < genTokens else {
+                fail("--gen-tokens must be 2...64 and --timed-tokens 1...(gen-1)")
+            }
+            if smokeTest {
+                print("SMOKE MODE: raw-hello only, gen \(genTokens)/timed \(timedTokens) — "
+                      + "plumbing validation, NOT a quality or performance proof")
+            }
+            let enText = args.firstIndex(of: "--text-en").map { _ in
+                requireValue("--text-en", args) } ?? "Hello, can you help me today?"
+            let krText = args.firstIndex(of: "--text-kr").map { _ in
+                requireValue("--text-kr", args) } ?? "안녕하세요, 오늘 날씨는 어떤가요?"
+            do {
+                let fileURL = URL(fileURLWithPath: ggufPath)
+                let tokenizer = try GemmaTokenizer(gguf: GGUFReader.read(fileURL))
+                // Canonical chat fixtures — the SAME user→model template
+                // the q4-lower select path uses.
+                func chatIds(_ text: String) throws -> [Int] {
+                    try tokenizer.encode(
+                        "<|turn>user\n" + text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>")
+                }
+                let fixtures = smokeTest
+                    ? [RMSLoweringForge.RMSFixture(name: "raw-hello",
+                                                   tokens: try tokenizer.encode("Hello"))]
+                    : [
+                        RMSLoweringForge.RMSFixture(name: "en-chat", tokens: try chatIds(enText)),
+                        RMSLoweringForge.RMSFixture(name: "kr-chat", tokens: try chatIds(krText)),
+                        RMSLoweringForge.RMSFixture(name: "raw-hello", tokens: try tokenizer.encode("Hello")),
+                    ]
+                let runner = try Gemma4Runner(fileAt: fileURL)
+                let (_, log) = try RMSLoweringForge.selectAndPersist(
+                    opJSON: try Data(contentsOf: URL(fileURLWithPath: opPath)),
+                    ggufURL: fileURL, runner: runner, fixtures: fixtures,
+                    genTokens: genTokens, timedTokens: timedTokens,
+                    isEndOfGeneration: { tokenizer.isEndOfGeneration($0) },
+                    saveTo: URL(fileURLWithPath: outPath))
+                for line in log { print(line) }
+                print("RMS_SELECT_COMPLETED -> \(outPath)")
+            } catch {
+                fail("rms-lower select failed: \(error)")
+            }
+        default:
+            fail("rms-lower requires a mode: forge | verify | select")
+        }
+
     case "gemma-q4gen-gate":
         // Phase 9 model-level acceptance of the generated Q4 lowering.
         // Teacher-forced same-history replay (the gemma-diagnose pattern):
@@ -1763,6 +1887,203 @@ case "forge":
             print("Q4GEN_GATE_COMPLETED")
         } catch {
             fail("gemma-q4gen-gate failed: \(error)")
+        }
+
+    case "gemma-rmsgen-gate":
+        // Phase 10 model-level acceptance of the generated RMSNorm
+        // lowering: teacher-forced same-history replay under the artifact's
+        // emitted kernel for its bound (n, scaled) family, gating full
+        // logits at the UNCHANGED strict 1e-4 relative formula + exact
+        // greedy token equality + finiteness per step, then matched timing
+        // with dispatch-counter proof. Fail closed — a rejected artifact
+        // never executes and the incumbent stays the fallback.
+        let path = requireValue("--file", args)
+        let artifactPath = requireValue("--artifact", args)
+        let genTokens = args.firstIndex(of: "--gen-tokens").map { _ in
+            Int(requireValue("--gen-tokens", args)) ?? 0 } ?? 32
+        guard genTokens >= 2, genTokens <= 64 else {
+            fail("--gen-tokens must be 2...64")
+        }
+        let timedTokens = args.firstIndex(of: "--timed-tokens").map { _ in
+            Int(requireValue("--timed-tokens", args)) ?? 0 } ?? 5
+        guard timedTokens >= 1, timedTokens <= 32, timedTokens < genTokens else {
+            fail("--timed-tokens must be 1...31 below --gen-tokens")
+        }
+        do {
+            let fileURL = URL(fileURLWithPath: path)
+            let tokenizer = try GemmaTokenizer(gguf: GGUFReader.read(fileURL))
+            var history: [Int]
+            if let tokensArg = args.firstIndex(of: "--tokens").map({ _ in
+                requireValue("--tokens", args) }) {
+                history = tokensArg.split(separator: ",").map {
+                    guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+                          id >= 0, id < tokenizer.vocabSize else {
+                        fail("invalid token id '\($0)'")
+                    }
+                    return id
+                }
+            } else {
+                history = try tokenizer.encode(requireValue("--text", args))
+            }
+            guard !history.isEmpty, history.count + genTokens <= 4096 else {
+                fail("prompt + gen-tokens must fit the 4096 context")
+            }
+            print("prompt ids: \(history.map(String.init).joined(separator: " "))")
+            let artifact = try RMSLoweringArtifact.load(
+                from: URL(fileURLWithPath: artifactPath))
+            let runner = try Gemma4Runner(fileAt: fileURL)
+
+            // Reference arm: incumbent kernels, pass-7 selected
+            // configuration, re-applied after every reset (reset-order
+            // guard, fail closed).
+            func resetIncumbentConfig() throws {
+                runner.reset()
+                runner.applyDiagnosticAxis(vectorizedLoads: true, segmentBatching: true)
+                guard runner.segmentBatchingActive else {
+                    throw GemmaForgeError.executionFailed(
+                        "segment batching failed to re-engage after reset")
+                }
+            }
+            try resetIncumbentConfig()
+            var refIds = [Int]()
+            var refLogits = [[Float]]()
+            do {
+                let prefill = try runner.forward(tokenIds: history)
+                refLogits.append(try runner.currentLogits())
+                refIds.append(prefill.argmaxToken)
+                var prev = prefill.argmaxToken
+                while refIds.count < genTokens {
+                    if tokenizer.isEndOfGeneration(prev) { break }
+                    let ev = try runner.forward(tokenIds: [prev])
+                    refLogits.append(try runner.currentLogits())
+                    refIds.append(ev.argmaxToken)
+                    prev = ev.argmaxToken
+                }
+            } catch { fail("reference pass failed: \(error)") }
+            let steps = refLogits.count
+            print("reference greedy ids (\(steps)): \(refIds.map(String.init).joined(separator: " "))")
+
+            let ggufDigest = try GemmaForge.fileDigest(fileURL)
+            do {
+                try runner.installRmsGeneratedKernel(artifact: artifact,
+                                                     ggufDigest: ggufDigest)
+            } catch {
+                fail("artifact rejected at install (incumbent stays active): \(error)")
+            }
+            print("generated kernel installed: \(artifact.schedule.kernelName) "
+                  + "for n=\(artifact.op.n), scaled=\(artifact.op.scaled) "
+                  + "(weight \(artifact.op.tensor ?? "<unweighted>"))")
+
+            var gateWorst = 0.0
+            var gateFail: String? = nil
+            do {
+                try resetIncumbentConfig()
+                for t in history {
+                    _ = try runner.forward(tokenIds: [t])
+                }
+                for s in 0..<steps {
+                    let lg = try runner.currentLogits()
+                    let want = refLogits[s]
+                    guard lg.count == want.count,
+                          lg.allSatisfy({ $0.isFinite }),
+                          want.allSatisfy({ $0.isFinite }) else {
+                        gateFail = "step \(s): shape/nonfinite violation"
+                        break
+                    }
+                    let lgArgmax = lg.enumerated().max { $0.element < $1.element }!.offset
+                    if lgArgmax != refIds[s] {
+                        gateFail = "step \(s): argmax \(lgArgmax) != reference \(refIds[s])"
+                        break
+                    }
+                    var worst = 0.0
+                    for i in 0..<lg.count {
+                        worst = max(worst, abs(Double(lg[i] - want[i]))
+                                    / max(1.0, abs(Double(want[i]))))
+                    }
+                    gateWorst = max(gateWorst, worst)
+                    if worst >= 1e-4 {
+                        gateFail = String(format: "step %d outside 1e-4 (worst %.3e)",
+                                          s, worst)
+                        break
+                    }
+                    if s + 1 < steps {
+                        _ = try runner.forward(tokenIds: [refIds[s]])
+                    }
+                }
+            } catch { fail("generated replay failed: \(error)") }
+
+            let genCalls = runner.rmsGeneratedDispatchCount
+            if genCalls == 0 {
+                runner.uninstallRmsGeneratedKernel()
+                fail("generated kernel never dispatched for the bound shape family — not an execution of the artifact")
+            }
+            print("generated-kernel dispatches (bound shape family): \(genCalls)")
+
+            if let failMsg = gateFail {
+                print("GATE_FAIL: \(failMsg) — incumbent remains the fallback")
+                runner.uninstallRmsGeneratedKernel()
+                fail("model-level gate rejected the generated lowering")
+            }
+            print(String(format: "GATE_PASS: %d steps, worst full-logit rel %.3e (strict 1e-4, unchanged)",
+                         steps, gateWorst))
+
+            guard steps > timedTokens + 1 else {
+                runner.uninstallRmsGeneratedKernel()
+                fail("insufficient gate steps (\(steps)) for \(timedTokens) timed tokens")
+            }
+            var armGeneratedDelta = 0
+            func timedArm() throws -> (wallMed: Double, gpuMed: Double) {
+                try resetIncumbentConfig()
+                for t in history {
+                    _ = try runner.forward(tokenIds: [t])
+                }
+                var idx = 0
+                while idx < steps - timedTokens - 1 {
+                    _ = try runner.forward(tokenIds: [refIds[idx]])
+                    idx += 1
+                }
+                var walls = [Double]()
+                var gpus = [Double]()
+                for k in 0..<timedTokens {
+                    let tok = refIds[min(idx + k, steps - 2)]
+                    let gpuBefore = runner.totalGpuMicros
+                    let genBefore = runner.rmsGeneratedDispatchCount
+                    let t0 = DispatchTime.now()
+                    _ = try runner.forward(tokenIds: [tok])
+                    walls.append(Double(DispatchTime.now().uptimeNanoseconds
+                                        - t0.uptimeNanoseconds) / 1000)
+                    gpus.append(runner.totalGpuMicros - gpuBefore)
+                    armGeneratedDelta += runner.rmsGeneratedDispatchCount - genBefore
+                }
+                let sortedW = walls.sorted()
+                let sortedG = gpus.sorted()
+                let n = sortedW.count
+                let wm = n.isMultiple(of: 2)
+                    ? (sortedW[n/2 - 1] + sortedW[n/2]) / 2 : sortedW[n/2]
+                let gm = n.isMultiple(of: 2)
+                    ? (sortedG[n/2 - 1] + sortedG[n/2]) / 2 : sortedG[n/2]
+                return (wm, gm)
+            }
+            let genTiming = try timedArm()
+            let genArmDispatches = armGeneratedDelta
+            runner.uninstallRmsGeneratedKernel()
+            armGeneratedDelta = 0
+            let incTiming = try timedArm()
+            let incArmDispatches = armGeneratedDelta
+            print("timing-arm dispatch proof: generated arm dispatches \(genArmDispatches) "
+                  + "(incumbent arm: \(incArmDispatches))")
+            if genArmDispatches == 0 {
+                fail("timing arm executed no generated dispatches — not a matched measurement")
+            }
+            print(String(format: "MATCHED_TIMING incumbent: wall %.0f us/token, gpu %.0f us/token",
+                         incTiming.wallMed, incTiming.gpuMed))
+            print(String(format: "MATCHED_TIMING generated: wall %.0f us/token, gpu %.0f us/token",
+                         genTiming.wallMed, genTiming.gpuMed))
+            print(String(format: "delta: generated vs incumbent wall %+.1f%%",
+                         (genTiming.wallMed / incTiming.wallMed - 1) * 100))
+            print("RMSGEN_GATE_COMPLETED")
+        } catch {
+            fail("gemma-rmsgen-gate failed: \(error)")
         }
 
     case "gemma-config-export":
@@ -3000,10 +3321,12 @@ case "forge":
             if args.contains("--q6-tiled") { runner.q6TiledKernel = true }
             if args.contains("--rms-tiled") { runner.rmsTiledKernel = true }
             if args.contains("--f32-tiled") { runner.f32TiledKernel = true }
+            if args.contains("--vectorized-loads") { runner.vectorizedLoads = true }
             let flagText = "q4Tiled=\(runner.q4TiledKernel) "
                 + "q6Tiled=\(runner.q6TiledKernel) "
                 + "rmsTiled=\(runner.rmsTiledKernel) "
-                + "f32Tiled=\(runner.f32TiledKernel)"
+                + "f32Tiled=\(runner.f32TiledKernel) "
+                + "rmsVL=\(runner.vectorizedLoads)"
             guard prompt.allSatisfy({ $0 >= 0 && $0 < runner.config.vocabSize }) else {
                 fail("bad prompt ids")
             }

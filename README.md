@@ -285,6 +285,33 @@ Two engine paths share the validated-IR + measured-plan core:
   the incumbent kernel. See
   [docs/Q4_LOWERING_DESIGN.md](docs/Q4_LOWERING_DESIGN.md) and pass 9
   of [docs/FORGE_PROGRESS.md](docs/FORGE_PROGRESS.md).
+- **Serial-order-preserving cooperative RMSNorm lowering (pass 10, one
+  operator family)** — the same pipeline applied to the production RMSNorm
+  bottleneck: a Python op input → operation IR validated against the
+  bound GGUF norm tensor → hardware-derived schedules (cooperative
+  threads derived from the measured execution width; the staged
+  threadgroup array n*4+4 bytes is a hard legality input) → Metal source
+  EMISSION (parallel staging of exact input copies, a SERIAL lane-0 sum
+  of squares in the incumbent's original scalar order, parallel strided
+  apply; in-place x==y safe by staging + barriers) → component gates =
+  bitPattern-level identity to the incumbent production kernel (both
+  out-of-place and in-place) AND the existing 1e-4 FP64 oracle contract →
+  warmed component GPU screen → at most two fastest candidates through
+  teacher-forced model gates, 3 paired matched-timing repetitions, 2%
+  policy, artifact identity binding, fail-closed incumbent fallback. The
+  dispatch binds the (n, scaled) call family after per-dispatch
+  eps/span/alignment checks (eps equality is exact Float-bitPattern).
+  MEASURED OUTCOME (root run 57271, executable 012ff4d7…, 893.76 s): both
+  finalists passed the unchanged strict 32-step gates on all 3 fixtures
+  with worst measured drift 0; selected `rmsgen_rms_T32_float4` at a
+  6.31% paired matched-timing median margin (all 3 repetitions positive;
+  bounded 3-rep evidence on a shared Mac, not a universal claim);
+  artifact 65be14e5… reloaded, verified in a separate root process, and
+  publicly installed with 10,972 replayed generated dispatches. The
+  engine's ~31.16 GB peak footprint means the lightweight/competitive
+  goal remains UNMET.
+  See [docs/RMS_LOWERING_DESIGN.md](docs/RMS_LOWERING_DESIGN.md) and
+  pass 10 of [docs/FORGE_PROGRESS.md](docs/FORGE_PROGRESS.md).
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detail and
 [docs/VALIDATION.md](docs/VALIDATION.md) for measured hardware
@@ -373,6 +400,14 @@ Gemma Forge path (measured, gated, still bounded):
   beyond the documented 2% policy threshold. Measured outcome and
   calibrated limits: pass 9 of
   [docs/FORGE_PROGRESS.md](docs/FORGE_PROGRESS.md).
+- The pass-10 parameterized RMSNorm lowering is likewise ONE operator
+  family (the n=2816 scaled RMSNorm call shape). Its bit-identity
+  evidence is bounded to the component inputs actually gated (synthetic
+  activations + the real bound weight bytes, both dispatch modes); it is
+  not a universal proof over all real activations, and the artifact
+  binds toolchain + executable bytes so any rebuild re-gates. No
+  performance claim exists until the pass-10 matched whole-model
+  measurement completes; the incumbent kernel stays selected otherwise.
 
 Runnable end-to-end (measured configuration; ~47 min on M1 Max 32 GB,
 peak ~31.2 GB, using the existing authorized GGUF — no new download):

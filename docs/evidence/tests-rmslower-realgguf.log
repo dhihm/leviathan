@@ -1,0 +1,15 @@
+metal device: Apple M1 Max
+  q6_k worst rel vs FP64 reference: gpu 2.424e-05, scalar 5.719e-08
+  q6_k worst row 60: ref64 -15.704554 gpu -15.704173 sumAbsProducts 195570.4 (|result| 15.7)
+  q6_k known block: ref -315.000000 gpu -315.000000 hand -315.000000
+  torch parity: worst rel diff GPU vs PyTorch 2.235e-08 (scalar 2.235e-08)
+q4 tiled numerical gates completed
+f32 tiled numerical gates completed
+q6 tiled numerical gates completed
+rms tiled numerical gates completed
+DIAGNOSTIC q4 matvec vl (inDim 32): 46/64 rows not bit-equal, worst rel vs plain 8.345e-07, worst of FP64 magnitude bound 0.001
+DIAGNOSTIC q4 matvec vl (inDim 704): 55/64 rows not bit-equal, worst rel vs plain 1.003e-05, worst of FP64 magnitude bound 0.000
+DIAGNOSTIC q4 matvec vl (inDim 2816): 57/64 rows not bit-equal, worst rel vs plain 5.328e-06, worst of FP64 magnitude bound 0.000
+q4 matvec per-call, dedicated-buffer submit (record only): plain 1029 us, vectorized 730 us
+691 passed, 0 failed
+ALL TESTS PASSED
