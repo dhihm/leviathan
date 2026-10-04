@@ -2212,7 +2212,8 @@ do {
              expectMutated("selected") {
                  $0["selected"] = ["segmentBatching": true, "top5Diagnostic": false,
                                    "matvecTiledQ4": true, "matvecTiledQ6": true,
-                                   "rmsnormTiled": true, "matvecTiledF32": true, "vectorizedLoads": true]
+                                   "rmsnormTiled": true, "matvecTiledF32": true, "vectorizedLoads": true,
+                                   "gpuCacheAppend": false]
              })
     // Wrong CURRENT inputs (not plan mutations) are rejected too.
     check("foreign current gguf digest rejected", (try? GemmaForge.validatePlanIdentity(
@@ -5126,6 +5127,159 @@ do {
 } catch {
     failed += 1
     print("FAIL: unexpected setup error for GemmaForge.fileDigest tests: \(error)")
+}
+
+// MARK: - GPU cache-append (g4_cache_append)
+
+do {
+    let enc = JSONEncoder()
+    let dec = JSONDecoder()
+    let t = GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, gpuCacheAppend: true)
+    let f = GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false)
+    let tj = String(data: try enc.encode(t), encoding: .utf8) ?? ""
+    let fj = String(data: try enc.encode(f), encoding: .utf8) ?? ""
+    check("gpuCacheAppend JSON reflects true", tj.contains("\"gpuCacheAppend\":true"))
+    check("gpuCacheAppend JSON reflects false", fj.contains("\"gpuCacheAppend\":false"))
+    check("gpuCacheAppend JSON roundtrip", (try? dec.decode(GemmaForgeCandidate.self, from: enc.encode(t))) == t)
+    // Legacy artifact carrying ALL old candidate fields but missing the
+    // new gpuCacheAppend key must be rejected, not silently defaulted.
+    let legacy = "{\"segmentBatching\":true,\"top5Diagnostic\":false,\"matvecTiledQ4\":false,\"matvecTiledQ6\":false,\"rmsnormTiled\":false,\"matvecTiledF32\":false,\"vectorizedLoads\":false}"
+    check("legacy artifact without gpuCacheAppend rejected",
+          (try? dec.decode(GemmaForgeCandidate.self, from: Data(legacy.utf8))) == nil)
+    let cands = GemmaForge.candidates()
+    checkEqual("bounded candidate count", cands.count, 15)
+    checkEqual("gpuCacheAppend candidates", cands.filter { $0.gpuCacheAppend }.count, 2)
+    check("old baseline default false", !cands[0].gpuCacheAppend && !cands[1].gpuCacheAppend)
+} catch {
+    failed += 1
+    print("FAIL cache-append candidate JSON: \(error)")
+}
+
+// Geometry boundary: PURE static helper on real MTL buffers — no GPU
+// segment, no runner state, no trap on gigantic width/position.
+if let device = MTLCreateSystemDefaultDevice() {
+    do {
+        let srcK = device.makeBuffer(length: 64, options: [])!
+        let srcV = device.makeBuffer(length: 64, options: [])!
+        let dstK = device.makeBuffer(length: 4096, options: [])!
+        let dstV = device.makeBuffer(length: 4096, options: [])!
+        let geo = Gemma4Runner.cacheAppendGeometry(srcK:srcK, srcV:srcV, dstK:dstK, dstV:dstV,
+                                                   kvWidth: 8, position: 5)
+        check("geometry valid with larger-than-required sources", geo)
+        check("geometry insufficient input rejected",
+              !Gemma4Runner.cacheAppendGeometry(srcK: srcK, srcV: srcV, dstK: dstK, dstV: dstV,
+                                                kvWidth: 32, position: 0))
+        check("geometry dest capacity rejected",
+              !Gemma4Runner.cacheAppendGeometry(srcK: srcK, srcV: srcV, dstK: dstK, dstV: dstV,
+                                                kvWidth: 16, position: 100))
+        check("geometry negative position rejected",
+              !Gemma4Runner.cacheAppendGeometry(srcK: srcK, srcV: srcV, dstK: dstK, dstV: dstV,
+                                                kvWidth: 8, position: -1))
+        check("geometry zero width rejected",
+              !Gemma4Runner.cacheAppendGeometry(srcK: srcK, srcV: srcV, dstK: dstK, dstV: dstV,
+                                                kvWidth: 0, position: 0))
+        check("geometry negative width rejected",
+              !Gemma4Runner.cacheAppendGeometry(srcK: srcK, srcV: srcV, dstK: dstK, dstV: dstV,
+                                                kvWidth: -8, position: 1))
+        check("geometry width Int.max rejected",
+              !Gemma4Runner.cacheAppendGeometry(srcK: srcK, srcV: srcV, dstK: dstK, dstV: dstV,
+                                                kvWidth: Int.max, position: 1))
+        check("geometry position Int.max rejected",
+              !Gemma4Runner.cacheAppendGeometry(srcK: srcK, srcV: srcV, dstK: dstK, dstV: dstV,
+                                                kvWidth: 8, position: Int.max))
+    } catch {
+        failed += 1
+        print("FAIL cache-append geometry: \(error)")
+    }
+} else {
+    print("SKIP cache-append geometry: Metal unavailable")
+}
+
+// Component test: the raw uint kernel copies every bit exactly (quiet/
+// signaling NaN, +/-inf, +/-0, subnormals, negatives) at two distinct
+// destination offsets with an odd ragged width of 9 against 64-thread
+// groups; ALL destination words compared, sources verified unchanged.
+if let device = MTLCreateSystemDefaultDevice() {
+    do {
+        let lib = try device.makeLibrary(source: Gemma4Runner.shaderSource, options: nil)
+        guard let fn = lib.makeFunction(name: "g4_cache_append") else {
+            throw NSError(domain: "test", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "makeFunction(g4_cache_append) returned nil"])
+        }
+        // makeComputePipelineState throws and returns a non-optional
+        // MTLComputePipelineState.
+        let pipe = try device.makeComputePipelineState(function: fn)
+        guard let q = device.makeCommandQueue() else {
+            throw NSError(domain: "test", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "makeCommandQueue returned nil"])
+        }
+
+        let srcK: [UInt32] = [0x7fc00000, 0xffc00000, 0x3f800000, 0x80000000,
+                              0x00000001, 0x7f800000, 0xff800000, 0x3f7fffff, 0x41200000]
+        let srcV: [UInt32] = [0x40490fdb, 0xc0490fdb, 0x00000000, 0xffffffff,
+                              0x7f7fffff, 0x00000001, 0xbf800000, 0x3eaaaaab, 0x4b189680]
+        let width = srcK.count
+        let offA = 3
+        let offB = offA + width + 6
+        let dstLen = offB + width + 5
+        let fill: [UInt32] = (0..<dstLen).map { 0xdeadbeef &+ UInt32(truncatingIfNeeded: $0 &* 2654435761) }
+        func mkBuffer(_ words: [UInt32]) -> MTLBuffer {
+            words.withUnsafeBytes { raw in
+                device.makeBuffer(bytes: raw.baseAddress!, length: words.count * 4,
+                                  options: .storageModeShared)!
+            }
+        }
+        let kb = mkBuffer(srcK)
+        let vb = mkBuffer(srcV)
+        let kdb = mkBuffer(fill)
+        let vdb = mkBuffer(fill)
+
+        let cmd = q.makeCommandBuffer()!
+        let enc = cmd.makeComputeCommandEncoder()!
+        enc.setComputePipelineState(pipe)
+        for off in [offA, offB] {
+            var n = UInt32(width)
+            var wordOffset = UInt32(off)
+            enc.setBuffer(kb, offset: 0, index: 0)
+            enc.setBuffer(vb, offset: 0, index: 1)
+            enc.setBuffer(kdb, offset: 0, index: 2)
+            enc.setBuffer(vdb, offset: 0, index: 3)
+            enc.setBytes(&n, length: MemoryLayout<UInt32>.stride, index: 4)
+            enc.setBytes(&wordOffset, length: MemoryLayout<UInt32>.stride, index: 5)
+            enc.dispatchThreadgroups(MTLSize(width: (width + 63) / 64, height: 1, depth: 1),
+                                     threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+        }
+        enc.endEncoding()
+        cmd.commit()
+        cmd.waitUntilCompleted()
+
+        check("cache-append command completed", cmd.status == .completed)
+        check("cache-append no command error", cmd.error == nil)
+        check("cache-append positive GPU time", cmd.gpuStartTime < cmd.gpuEndTime)
+
+        // Read word count from the buffer's own length so the source
+        // buffers (9 words) are never read out of bounds; destination
+        // buffers yield all dstLen words including untouched sentinels.
+        func words(_ b: MTLBuffer) -> [UInt32] {
+            Array(UnsafeBufferPointer(start: b.contents().assumingMemoryBound(to: UInt32.self),
+                                      count: b.length / 4))
+        }
+        var expK = fill
+        var expV = fill
+        for off in [offA, offB] {
+            expK.replaceSubrange(off..<(off + width), with: srcK)
+            expV.replaceSubrange(off..<(off + width), with: srcV)
+        }
+        checkEqual("cache-append K dest words all match", words(kdb), expK)
+        checkEqual("cache-append V dest words all match", words(vdb), expV)
+        checkEqual("cache-append K source unchanged", words(kb), srcK)
+        checkEqual("cache-append V source unchanged", words(vb), srcV)
+    } catch {
+        failed += 1
+        print("FAIL cache-append GPU copy: \(error)")
+    }
+} else {
+    print("SKIP cache-append GPU copy: Metal unavailable")
 }
 
 // MARK: - Summary

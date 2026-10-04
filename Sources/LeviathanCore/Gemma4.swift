@@ -540,7 +540,7 @@ public final class Gemma4Runner {
         catch { throw Gemma4Error.shaderCompileFailed("\(error)") }
         for name in ["g4_q4_matvec", "g4_q4_matvec_tiled", "g4_q6_matvec", "g4_q6_matvec_tiled", "g4_f32_matvec", "g4_f32_matvec_tiled", "g4_q6_embed_row",
                      "g4_rmsnorm", "g4_rmsnorm_vl", "g4_rmsnorm_tiled", "g4_gelu_up", "g4_rope", "g4_attn",
-                     "g4_axpy", "g4_add", "g4_scale", "g4_softcap"] {
+                     "g4_axpy", "g4_add", "g4_scale", "g4_softcap", "g4_cache_append"] {
             guard let fn = library.makeFunction(name: name),
                   let p = try? device.makeComputePipelineState(function: fn) else {
                 throw Gemma4Error.functionMissing(name)
@@ -661,6 +661,8 @@ public final class Gemma4Runner {
     internal var matvecGpuMicrosByTensor: [String: Double] = [:]
     internal var matvecCallsByTensor: [String: Int] = [:]
     internal var kernelGpuMicrosByName: [String: (Double, Int)] = [:]
+    /// GPU-resident cache_append axis (see GemmaForgeCandidate.gpuCacheAppend).
+    internal var gpuCacheAppendKernel = false
 
     /// Batched wall/GPU breakdown instrumentation (OFF by default; no
     /// timer reads when off — one branch remains). Categories are
@@ -796,18 +798,53 @@ public final class Gemma4Runner {
     public func applyDiagnosticAxis(q4Tiled: Bool = false, q6Tiled: Bool = false,
                                     rmsTiled: Bool = false, f32Tiled: Bool = false,
                                     vectorizedLoads: Bool = false,
-                                    segmentBatching: Bool = false) {
+                                    segmentBatching: Bool = false,
+                                    gpuCacheAppend: Bool = false) {
         self.q4TiledKernel = q4Tiled
         self.q6TiledKernel = q6Tiled
         self.rmsTiledKernel = rmsTiled
         self.f32TiledKernel = f32Tiled
         self.vectorizedLoads = vectorizedLoads
         self.autoSegment = segmentBatching
+        self.gpuCacheAppendKernel = gpuCacheAppend
     }
 
     /// Read-only view of the deferred-segment mode (diagnostics/tests —
     /// the setter stays applyDiagnosticAxis/executeToken only).
     public var segmentBatchingActive: Bool { autoSegment }
+
+    /// Read-only view of the GPU cache-append axis (diagnostics/tests).
+    public var gpuCacheAppendActive: Bool { gpuCacheAppendKernel }
+
+    /// Shared host-side geometry validation for the GPU cache-append
+    /// copy: all buffer/width/position/overflow checks run BEFORE any
+    /// GPU segment is opened. PURE (no state mutation) so tests can
+    /// exercise the boundary directly. Actual source buffers may be
+    /// LARGER than the required width, so src.length >= byteWidth is
+    /// required (not equality); every scaled quantity is computed with
+    /// checked arithmetic, including the end offset addition and the
+    /// uint32 word offset/end the kernel indexes with, so gigantic
+    /// width/position values fail closed instead of trapping.
+    public static func cacheAppendGeometry(srcK: MTLBuffer, srcV: MTLBuffer,
+                                           dstK: MTLBuffer, dstV: MTLBuffer,
+                                           kvWidth: Int, position: Int)
+        -> Bool {
+        guard kvWidth > 0, position >= 0 else { return false }
+        let (byteWidth, ov1) = kvWidth.multipliedReportingOverflow(by: 4)
+        guard !ov1 else { return false }
+        guard srcK.length >= byteWidth, srcV.length >= byteWidth,
+              byteWidth % 4 == 0 else { return false }
+        let (byteOffset, ov2) = byteWidth.multipliedReportingOverflow(by: position)
+        guard !ov2 else { return false }
+        // Checked byte-END addition (Int overflow of offset + width).
+        let (end, ov3) = byteOffset.addingReportingOverflow(byteWidth)
+        guard !ov3, end <= dstK.length, end <= dstV.length else { return false }
+        // The kernel indexes words as uint: word offset/end must fit UInt32.
+        let wordOffset = byteOffset / 4
+        let wordEnd = wordOffset + kvWidth
+        guard wordOffset <= Int(UInt32.max), wordEnd <= Int(UInt32.max) else { return false }
+        return true
+    }
 
     /// PURE routing predicate (the production decision, tested
     /// directly): the generated Q4 lowering serves its exact bound
@@ -2325,6 +2362,32 @@ public final class Gemma4Runner {
         }
     }
 
+    /// GPU cache-append runner: validates geometry (host, before any
+    /// segment opens), then encodes a bit-preserving uint32 copy of the
+    /// K/V words into the cache slot via the normal dispatch() path
+    /// (same segment/accounting/completion as every other kernel). No
+    /// CPU readback, no flush on the valid path. Bindings follow the
+    /// kernel contract exactly: n (word count) at buffer(4), wordOffset
+    /// at buffer(5) — kSrc/vSrc/kDst/vDst at buffers 0-3.
+    internal func gpuCacheAppendCopy(kSrc: MTLBuffer, vSrc: MTLBuffer,
+                                     kDst: MTLBuffer, vDst: MTLBuffer,
+                                     kvWidth: Int, position: Int) throws {
+        guard Self.cacheAppendGeometry(srcK: kSrc, srcV: vSrc, dstK: kDst, dstV: vDst,
+                                       kvWidth: kvWidth, position: position) else {
+            throw Gemma4Error.badTensorGeometry("cache_append gpu geometry invalid")
+        }
+        var n = UInt32(kvWidth)
+        var off = UInt32(position * kvWidth)
+        try dispatch("g4_cache_append", grid: kvWidth) { enc in
+            enc.setBuffer(kSrc, offset: 0, index: 0)
+            enc.setBuffer(vSrc, offset: 0, index: 1)
+            enc.setBuffer(kDst, offset: 0, index: 2)
+            enc.setBuffer(vDst, offset: 0, index: 3)
+            enc.setBytes(&n, length: MemoryLayout<UInt32>.stride, index: 4)
+            enc.setBytes(&off, length: MemoryLayout<UInt32>.stride, index: 5)
+        }
+    }
+
     // MARK: - CPU access to shared buffers
 
     internal func read(_ buffer: MTLBuffer, _ count: Int) throws -> [Float] {
@@ -2418,7 +2481,7 @@ public final class Gemma4Runner {
     public func engineIdentity() throws -> String {
         let msl = SHA256.hex(SHA256.hash(Array(Self.shaderSource.utf8)))
         let candidates = GemmaForge.candidates()
-            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)" }
+            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)/\($0.gpuCacheAppend)" }
             .sorted().joined(separator: ",")
         return "gemma-graph-executor-v1|exe=" + (try Self.executableDigest())
             + "|msl=" + msl
@@ -2628,10 +2691,16 @@ public final class Gemma4Runner {
                      freqs: localFreqBuffer)
             try rmsnorm(x: bufKV, y: bufKV, n: headDim, vectors: kvHeads, weightTensor: nil)
         }
-        let kNormed = try read(bufT2, kvWidth)
-        let vNormed = try read(bufKV, kvWidth)
-        memcpy(kCaches[layer].contents() + position * kvWidth * 4, kNormed, kvWidth * 4)
-        memcpy(vCaches[layer].contents() + position * kvWidth * 4, vNormed, kvWidth * 4)
+        if gpuCacheAppendKernel {
+            try gpuCacheAppendCopy(kSrc: bufT2, vSrc: bufKV,
+                                   kDst: kCaches[layer], vDst: vCaches[layer],
+                                   kvWidth: kvWidth, position: position)
+        } else {
+            let kNormed = try read(bufT2, kvWidth)
+            let vNormed = try read(bufKV, kvWidth)
+            memcpy(kCaches[layer].contents() + position * kvWidth * 4, kNormed, kvWidth * 4)
+            memcpy(vCaches[layer].contents() + position * kvWidth * 4, vNormed, kvWidth * 4)
+        }
 
         // Attention: one thread per query head; sliding window 1024 on local
         // layers, full causal on global; scaling is 1.0 (QK-normed heads).
@@ -3395,6 +3464,22 @@ public final class Gemma4Runner {
                          uint gid [[thread_position_in_grid]]) {
         if (gid >= n) { return; }
         x[gid] *= c;
+    }
+
+    // Bit-preserving uint32 K/V cache append: copies raw words, no
+    // arithmetic — identical bits to the CPU memcpy path (NaNs, infs,
+    // subnormals preserved). Bounds guard on gid; one thread per word,
+    // K and V in one launch.
+    kernel void g4_cache_append(constant const uint& n [[buffer(4)]],
+                                constant const uint& wordOffset [[buffer(5)]],
+                                device const uint* kSrc [[buffer(0)]],
+                                device const uint* vSrc [[buffer(1)]],
+                                device uint* kDst [[buffer(2)]],
+                                device uint* vDst [[buffer(3)]],
+                                uint gid [[thread_position_in_grid]]) {
+        if (gid >= n) { return; }
+        kDst[wordOffset + gid] = kSrc[gid];
+        vDst[wordOffset + gid] = vSrc[gid];
     }
 
     // In-place final-logit softcap: x = cap * tanh(x / cap).

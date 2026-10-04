@@ -65,10 +65,19 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
     /// dispatch.)
     public let vectorizedLoads: Bool
 
+    /// GPU-resident KV cache append: copy the K/V words into the cache
+    /// buffers with a bit-preserving uint32 GPU copy kernel encoded in
+    /// the open compute segment instead of reading them back to the CPU
+    /// and memcpy-ing (which forces a segment flush + CPU roundtrip per
+    /// layer). Bit-exact by construction (raw word copy, no arithmetic);
+    /// the kernel bounds-guards gid so no out-of-range word is touched.
+    public let gpuCacheAppend: Bool
+
     public init(segmentBatching: Bool, top5Diagnostic: Bool,
                 matvecTiledQ4: Bool = false, matvecTiledQ6: Bool = false,
                 rmsnormTiled: Bool = false, matvecTiledF32: Bool = false,
-                vectorizedLoads: Bool = false) {
+                vectorizedLoads: Bool = false,
+                gpuCacheAppend: Bool = false) {
         self.segmentBatching = segmentBatching
         self.top5Diagnostic = top5Diagnostic
         self.matvecTiledQ4 = matvecTiledQ4
@@ -76,6 +85,32 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
         self.rmsnormTiled = rmsnormTiled
         self.matvecTiledF32 = matvecTiledF32
         self.vectorizedLoads = vectorizedLoads
+        self.gpuCacheAppend = gpuCacheAppend
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case segmentBatching, top5Diagnostic, matvecTiledQ4, matvecTiledQ6
+        case rmsnormTiled, matvecTiledF32, vectorizedLoads, gpuCacheAppend
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Explicit identity: an artifact persisted before this axis
+        // existed is REJECTED rather than silently interpreted — an old
+        // engine identity must not be replayed as if it had decided the
+        // new flag.
+        guard let gpuCacheAppend = try c.decodeIfPresent(Bool.self, forKey: .gpuCacheAppend) else {
+            throw DecodingError.keyNotFound(CodingKeys.gpuCacheAppend, DecodingError.Context(
+                codingPath: c.codingPath, debugDescription: "gpuCacheAppend missing (pre-axis artifact)"))
+        }
+        self.segmentBatching = try c.decode(Bool.self, forKey: .segmentBatching)
+        self.top5Diagnostic = try c.decode(Bool.self, forKey: .top5Diagnostic)
+        self.matvecTiledQ4 = try c.decode(Bool.self, forKey: .matvecTiledQ4)
+        self.matvecTiledQ6 = try c.decode(Bool.self, forKey: .matvecTiledQ6)
+        self.rmsnormTiled = try c.decode(Bool.self, forKey: .rmsnormTiled)
+        self.matvecTiledF32 = try c.decode(Bool.self, forKey: .matvecTiledF32)
+        self.vectorizedLoads = try c.decode(Bool.self, forKey: .vectorizedLoads)
+        self.gpuCacheAppend = gpuCacheAppend
     }
 }
 
@@ -266,6 +301,17 @@ public enum GemmaForge {
                                 matvecTiledQ6: true, vectorizedLoads: true),
             GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
                                 matvecTiledQ6: true, vectorizedLoads: true),
+            // GPU-resident cache_append (bounded new pass): eliminates the
+            // per-layer CPU readback+memcpy roundtrip by encoding a bit-
+            // preserving uint32 GPU copy in the compute segment so the
+            // following attention reads ordered GPU writes. Alone for
+            // attribution (unbatched) and stacked on segment batching.
+            // Bit-exact by construction; the CPU incumbent path is
+            // untouched and remains the default selector policy.
+            GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false,
+                                gpuCacheAppend: true),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                vectorizedLoads: true, gpuCacheAppend: true),
         ]
     }
 
@@ -447,6 +493,7 @@ public enum GemmaForge {
         runner.rmsTiledKernel = candidate.rmsnormTiled
         runner.f32TiledKernel = candidate.matvecTiledF32
         runner.vectorizedLoads = candidate.vectorizedLoads
+        runner.gpuCacheAppendKernel = candidate.gpuCacheAppend
         defer {
             runner.autoSegment = false
             runner.q4TiledKernel = false
@@ -454,6 +501,7 @@ public enum GemmaForge {
             runner.rmsTiledKernel = false
             runner.f32TiledKernel = false
             runner.vectorizedLoads = false
+            runner.gpuCacheAppendKernel = false
         }
         var routerState = [Int: (topIdx: [Int], weights: [Float])]()
 
@@ -559,11 +607,19 @@ public enum GemmaForge {
                       byteOffset + byteWidth <= runner.vCaches[layer].length else {
                     throw GemmaForgeError.executionFailed("cache_append out of bounds")
                 }
-                try runner.flushOpenSegment()
-                let k = try runner.read(try vb(inst.inputs[0]), kvWidth)
-                let v = try runner.read(try vb(inst.inputs[1]), kvWidth)
-                memcpy(runner.kCaches[layer].contents() + byteOffset, k, byteWidth)
-                memcpy(runner.vCaches[layer].contents() + byteOffset, v, byteWidth)
+                if runner.gpuCacheAppendKernel {
+                    try runner.gpuCacheAppendCopy(kSrc: try vb(inst.inputs[0]),
+                                                  vSrc: try vb(inst.inputs[1]),
+                                                  kDst: runner.kCaches[layer],
+                                                  vDst: runner.vCaches[layer],
+                                                  kvWidth: kvWidth, position: position)
+                } else {
+                    try runner.flushOpenSegment()
+                    let k = try runner.read(try vb(inst.inputs[0]), kvWidth)
+                    let v = try runner.read(try vb(inst.inputs[1]), kvWidth)
+                    memcpy(runner.kCaches[layer].contents() + byteOffset, k, byteWidth)
+                    memcpy(runner.vCaches[layer].contents() + byteOffset, v, byteWidth)
+                }
             case "attention":
                 guard let layer = inst.layer, layer >= 0,
                       layer < config.layerCount else {

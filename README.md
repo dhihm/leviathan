@@ -12,8 +12,8 @@ Leviathan is a personal project building a local LLM inference engine for Mac GP
 
 - A Python frontend lowers static `torch.export` graphs to a validated model/compute DAG, with correctness-gated, measured Metal lowering and a persistent loaded-actual-input GPU runtime ([runtime details](docs/DAG_FORGE_RUNTIME.md)).
 - Real Gemma 26B-A4B Q4_0 GGUF inference runs: tokenizer, quantized Metal GPU execution, loopback serving, and automatic bounded measured passes.
-- Shape-specific SIMD kernels and a bounded hash memory fix are already published ([SIMD details](docs/Q4_SIMD_FORGE.md)).
-- Correctness gates and test coverage throughout — currently 815 checks ([detailed progress](docs/FORGE_PROGRESS.md)).
+- Shape-specific SIMD kernels and a bounded hash memory fix are already published ([SIMD details](docs/Q4_SIMD_FORGE.md), [GPU KV storage](docs/GPU_KV_APPEND.md)).
+- Correctness gates and test coverage throughout — currently 837 checks ([detailed progress](docs/FORGE_PROGRESS.md)).
 - Performance: closing the gap with Ollama and broader Python model coverage are in progress.
 
 [MIT](LICENSE); model weights keep their upstream terms.
