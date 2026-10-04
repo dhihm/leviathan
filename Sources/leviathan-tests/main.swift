@@ -2228,7 +2228,8 @@ do {
                  $0["selected"] = ["segmentBatching": true, "top5Diagnostic": false,
                                    "matvecTiledQ4": true, "matvecTiledQ6": true,
                                    "rmsnormTiled": true, "matvecTiledF32": true, "vectorizedLoads": true,
-                                   "rmsnormCooperative": false, "gpuCacheAppend": false, "parallelAttention": false]
+                                   "rmsnormCooperative": false, "gpuCacheAppend": false, "parallelAttention": false,
+                                   "matvecCooperativeQ6": false]
              })
     // Wrong CURRENT inputs (not plan mutations) are rejected too.
     check("foreign current gguf digest rejected", (try? GemmaForge.validatePlanIdentity(
@@ -2664,6 +2665,183 @@ do {
     failed += 1; print("FAIL: f32 tiled gate — threw \(error)")
 }
 
+// MARK: - Intra-block SIMD-reduction Q6_K matvec vs FP64 oracle (ACTUAL runtime shader)
+
+do {
+    // Compiles the standalone Q6Cooperative.source (the actual runtime
+    // shader, not a copied approximation) and dispatches
+    // g4_q6_matvec_coop over synthetic Q6_K blocks with mixed-sign FP16
+    // scales, saturated quant bytes and cancellation-prone alternating
+    // inputs, gated against the independent Q6_K.matvecReferenceF64
+    // oracle. One- and two-row threadgroups plus 1/2/3-row tails are
+    // exercised. Bit-equality and order preservation are NOT claimed:
+    // the simd_sum reduction reassociates the floating-point addition
+    // order relative to the plain kernel, so exact-match counts are
+    // reported honestly and only finite + normalized < 1e-4 is enforced,
+    // except the exact hand-computed -315 known block which must stay
+    // exact.
+    guard let device = MTLCreateSystemDefaultDevice(),
+          let queue = device.makeCommandQueue() else {
+        throw Q4TiledTestError("Metal unavailable")
+    }
+    let library = try device.makeLibrary(source: Q6Cooperative.source, options: nil)
+    guard let fn = library.makeFunction(name: Q6Cooperative.kernelName),
+          let coop = try? device.makeComputePipelineState(function: fn) else {
+        throw Q4TiledTestError("g4_q6_matvec_coop pipeline missing")
+    }
+    check("q6 coop version bound to source hash",
+          Q6Cooperative.hash == SHA256.hex(SHA256.hash(Array(Q6Cooperative.source.utf8)))
+              && Q6Cooperative.hash.count == 64)
+
+    // Pure checked-geometry eligibility and rejection cases.
+    let ew = coop.threadExecutionWidth
+    let pmax = coop.maxTotalThreadsPerThreadgroup
+    let mem = device.maxThreadgroupMemoryLength
+    func elig(_ inDim: Int, _ outDim: Int, _ rpg: Int,
+              ewOverride: Int? = nil, memOverride: Int? = nil,
+              pmaxOverride: Int? = nil) -> Bool {
+        Q6Cooperative.eligible(inDim: inDim, outDim: outDim, rowsPerGroup: rpg,
+                               executionWidth: ewOverride ?? ew,
+                               pipelineMaxThreads: pmaxOverride ?? pmax,
+                               maxThreadgroupMemory: memOverride ?? mem)
+    }
+    check("q6 coop accepts production geometry",
+          elig(2816, 262144, 2))
+    check("q6 coop rejects inDim below 256", !elig(128, 16, 1))
+    check("q6 coop rejects non-multiple-of-256 inDim", !elig(384, 16, 1))
+    check("q6 coop rejects inDim above 2816", !elig(3072, 16, 1))
+    check("q6 coop rejects rowsPerGroup 3", !elig(256, 16, 3))
+    check("q6 coop rejects outDim 0", !elig(256, 0, 1))
+    check("q6 coop rejects non-32 execution width (must fall back)",
+          !elig(256, 16, 1, ewOverride: 16))
+    check("q6 coop accepts zero threadgroup memory (no staging array)",
+          elig(256, 16, 1, memOverride: 0))
+    check("q6 coop rejects negative threadgroup memory",
+          !elig(256, 16, 1, memOverride: -1))
+    check("q6 coop rejects threads above pipeline cap",
+          !elig(256, 16, 2, pmaxOverride: 32))
+    check("q6 coop rejects negative pipeline cap",
+          !elig(256, 16, 1, pmaxOverride: -1))
+    check("q6 coop rejects threadgroup count above cap",
+          !elig(256, Q6Cooperative.maxThreadgroups * 2 + 1, 1))
+
+    func runCoop(blocks: [UInt8], outDim: Int, inDim: Int, x: [Float],
+                 rowsPerGroup: Int) throws -> [Float] {
+        guard let plan = Q6Cooperative.plan(
+            inDim: inDim, outDim: outDim, rowsPerGroup: rowsPerGroup,
+            executionWidth: coop.threadExecutionWidth,
+            pipelineMaxThreads: coop.maxTotalThreadsPerThreadgroup,
+            maxThreadgroupMemory: device.maxThreadgroupMemoryLength) else {
+            throw Q4TiledTestError(
+                "illegal coop geometry inDim \(inDim) outDim \(outDim) rpg \(rowsPerGroup)")
+        }
+        let wb = device.makeBuffer(bytes: blocks, length: blocks.count,
+                                   options: .storageModeShared)!
+        let xb = device.makeBuffer(bytes: x, length: x.count * 4,
+                                   options: .storageModeShared)!
+        let yb = device.makeBuffer(length: outDim * 4, options: .storageModeShared)!
+        var param = SIMD2<UInt32>(UInt32(inDim), UInt32(outDim))
+        var off = UInt64(0)
+        var rpg = UInt32(rowsPerGroup)
+        let cmd = queue.makeCommandBuffer()!
+        let enc = cmd.makeComputeCommandEncoder()!
+        enc.setComputePipelineState(coop)
+        enc.setBytes(&param, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
+        enc.setBytes(&off, length: MemoryLayout<UInt64>.stride, index: 1)
+        enc.setBuffer(wb, offset: 0, index: 2)
+        enc.setBuffer(xb, offset: 0, index: 3)
+        enc.setBuffer(yb, offset: 0, index: 4)
+        enc.setBytes(&rpg, length: MemoryLayout<UInt32>.stride, index: 5)
+        enc.dispatchThreadgroups(
+            MTLSize(width: plan.threadgroups, height: 1, depth: 1),
+            threadsPerThreadgroup:
+                MTLSize(width: plan.threadsPerThreadgroup, height: 1, depth: 1))
+        enc.endEncoding()
+        cmd.commit()
+        cmd.waitUntilCompleted()
+        guard cmd.status == .completed, cmd.error == nil else {
+            throw Q4TiledTestError("coop kernel failed: \(String(describing: cmd.error))")
+        }
+        return [Float](UnsafeBufferPointer(
+            start: yb.contents().assumingMemoryBound(to: Float.self), count: outDim))
+    }
+
+    var rng = SplitMix64(seed: 777)
+    let geometryCases: [(inDim: Int, outDim: Int, rpg: Int)] = [
+        (256, 16, 1), (256, 16, 2),
+        (512, 16, 1), (512, 16, 2),
+        (2816, 16, 1), (2816, 16, 2),
+        (256, 1, 2), (256, 2, 1), (256, 3, 2), (2816, 3, 2),
+    ]
+    var totalExact = 0
+    var totalRows = 0
+    for (inDim, outDim, rpg) in geometryCases {
+        let blocksPerRow = inDim / Q6_K.valuesPerBlock
+        var blocks = [UInt8]()
+        blocks.reserveCapacity(outDim * blocksPerRow * Q6_K.bytesPerBlock)
+        for r in 0..<(outDim * blocksPerRow) {
+            if r % 4 == 3 {
+                // Saturated quant bytes exercise the extreme nibble range.
+                for _ in 0..<208 {
+                    blocks.append(UInt8(rng.next() & 1 == 0 ? 0x00 : 0xFF))
+                }
+            } else {
+                for _ in 0..<208 { blocks.append(UInt8(rng.next() & 0xFF)) }
+            }
+            let scale = Float16(rng.nextUniform() * 2 - 1)
+            blocks += [UInt8(scale.bitPattern & 0xFF), UInt8(scale.bitPattern >> 8)]
+        }
+        var x = [Float](repeating: 0, count: inDim)
+        for i in 0..<inDim {
+            x[i] = (i % 2 == 0 ? 1 : -1) * Float(rng.nextUniform() * 10 - 5)
+        }
+        let ref64 = try Q6_K.matvecReferenceF64(blocks: blocks, outDim: outDim,
+                                                inDim: inDim, x: x)
+        let out = try runCoop(blocks: blocks, outDim: outDim, inDim: inDim,
+                              x: x, rowsPerGroup: rpg)
+        var worst = 0.0
+        var allFinite = true
+        var exact = 0
+        for i in 0..<outDim {
+            if !out[i].isFinite { allFinite = false }
+            worst = max(worst, abs(Double(out[i]) - ref64[i])
+                        / max(1.0, abs(ref64[i])))
+            if Float(out[i]) == Float(ref64[i]) { exact += 1 }
+        }
+        totalExact += exact
+        totalRows += outDim
+        check(String(format: "q6 coop rpg %d vs fp64 oracle (inDim %d, outDim %d, worst %.2e)",
+                     rpg, inDim, outDim, worst), allFinite && worst < 1e-4)
+    }
+    // Honest bit-equality report: exactness and order preservation are
+    // not claimed for this candidate; the simd_sum reduction reassociates
+    // the floating-point addition order relative to the plain kernel.
+    print("q6 coop bit-exact rows vs fp64 oracle: \(totalExact)/\(totalRows)")
+
+    // The exact hand-computed -315 known block must remain exact, in both
+    // a single-row group and a two-row group with a row tail.
+    do {
+        var block = [UInt8](repeating: 0, count: Q6_K.bytesPerBlock)
+        block[208] = 0x00; block[209] = 0x3C
+        block[192] = 3; block[193] = 0xFD; block[196] = 2
+        block[200] = 3; block[204] = 2
+        block[0] = 0x21; block[128] = 0x03
+        block[64] = 0x21; block[160] = 0x01
+        var kx = [Float](repeating: 0, count: 256)
+        kx[0] = 1; kx[16] = -1; kx[64] = 2; kx[128] = -2; kx[192] = 4
+        let a = try runCoop(blocks: block, outDim: 1, inDim: 256,
+                            x: kx, rowsPerGroup: 1)
+        check("q6 coop known block matches hand computation (-315, rpg 1)",
+              a[0] == -315)
+        let b = try runCoop(blocks: block + block, outDim: 2, inDim: 256,
+                            x: kx, rowsPerGroup: 2)
+        check("q6 coop known block matches hand computation (-315, rpg 2)",
+              b[0] == -315 && b[1] == -315)
+    }
+    print("q6 cooperative numerical gates completed")
+} catch {
+    failed += 1; print("FAIL: q6 coop gate — threw \(error)")
+}
 // MARK: - Tiled cooperative Q6_K matvec vs FP64 oracle (ACTUAL runtime shader)
 
 do {
@@ -5286,16 +5464,35 @@ do {
     let legacyNoRC = "{\"segmentBatching\":true,\"top5Diagnostic\":false,\"matvecTiledQ4\":false,\"matvecTiledQ6\":false,\"rmsnormTiled\":false,\"matvecTiledF32\":false,\"vectorizedLoads\":false,\"gpuCacheAppend\":false,\"parallelAttention\":false}"
     check("legacy artifact without rmsnormCooperative rejected",
           (try? dec.decode(GemmaForgeCandidate.self, from: Data(legacyNoRC.utf8))) == nil)
+    // matvecCooperativeQ6 axis: explicit Codable key, roundtrip, default
+    // false, missing-key rejection for legacy artifacts, and no legal
+    // candidate combining the new cooperative Q6 axis with the old
+    // tiled Q6 axis.
+    let q6c = GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                  vectorizedLoads: true, matvecCooperativeQ6: true)
+    let q6cj = String(data: try enc.encode(q6c), encoding: .utf8) ?? ""
+    check("matvecCooperativeQ6 JSON reflects true", q6cj.contains("\"matvecCooperativeQ6\":true"))
+    check("matvecCooperativeQ6 JSON roundtrip",
+          (try? dec.decode(GemmaForgeCandidate.self, from: enc.encode(q6c))) == q6c)
+    check("matvecCooperativeQ6 default false",
+          !GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false).matvecCooperativeQ6)
+    let legacyNoQ6C = "{\"segmentBatching\":true,\"top5Diagnostic\":false,\"matvecTiledQ4\":false,\"matvecTiledQ6\":false,\"rmsnormTiled\":false,\"matvecTiledF32\":false,\"vectorizedLoads\":false,\"gpuCacheAppend\":false,\"parallelAttention\":false,\"rmsnormCooperative\":false}"
+    check("legacy artifact without matvecCooperativeQ6 rejected",
+          (try? dec.decode(GemmaForgeCandidate.self, from: Data(legacyNoQ6C.utf8))) == nil)
     let cands = GemmaForge.candidates()
-    checkEqual("bounded candidate count", cands.count, 24)
-    checkEqual("gpuCacheAppend candidates", cands.filter { $0.gpuCacheAppend }.count, 10)
-    checkEqual("parallelAttention candidates", cands.filter { $0.parallelAttention }.count, 9)
-    checkEqual("rmsnormCooperative candidates", cands.filter { $0.rmsnormCooperative }.count, 4)
+    checkEqual("bounded candidate count", cands.count, 26)
+    checkEqual("gpuCacheAppend candidates", cands.filter { $0.gpuCacheAppend }.count, 12)
+    checkEqual("parallelAttention candidates", cands.filter { $0.parallelAttention }.count, 11)
+    checkEqual("rmsnormCooperative candidates", cands.filter { $0.rmsnormCooperative }.count, 5)
+    checkEqual("matvecCooperativeQ6 candidates", cands.filter { $0.matvecCooperativeQ6 }.count, 2)
     check("no legal candidate enables rmsnormCooperative and rmsnormTiled together",
           !cands.contains { $0.rmsnormCooperative && $0.rmsnormTiled })
+    check("no legal candidate enables matvecCooperativeQ6 and matvecTiledQ6 together",
+          !cands.contains { $0.matvecCooperativeQ6 && $0.matvecTiledQ6 })
     check("old baseline default false", !cands[0].gpuCacheAppend && !cands[1].gpuCacheAppend
           && !cands[0].parallelAttention && !cands[1].parallelAttention
-          && !cands[0].rmsnormCooperative && !cands[1].rmsnormCooperative)
+          && !cands[0].rmsnormCooperative && !cands[1].rmsnormCooperative
+          && !cands[0].matvecCooperativeQ6 && !cands[1].matvecCooperativeQ6)
 } catch {
     failed += 1
     print("FAIL cache-append candidate JSON: \(error)")

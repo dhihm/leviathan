@@ -1,0 +1,1088 @@
+{
+  "scope": "Static SSA evidence only: same immutable input version and attrs, different weight/apply outputs. Reuse requires equal epsilon/width and physical-buffer liveness validation; not implemented or speed-tested.",
+  "rmsOperations": 331,
+  "sharedInputGroups": 30,
+  "potentialRedundantStatisticReductions": 60,
+  "groups": [
+    [
+      {
+        "instructionIndex": 15,
+        "layer": 0,
+        "input": [
+          "x@1"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.0.ffn_norm.weight"
+        ],
+        "output": "h@2"
+      },
+      {
+        "instructionIndex": 21,
+        "layer": 0,
+        "input": [
+          "x@1"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@3"
+      },
+      {
+        "instructionIndex": 25,
+        "layer": 0,
+        "input": [
+          "x@1"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.0.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@5"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 46,
+        "layer": 1,
+        "input": [
+          "x@4"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.1.ffn_norm.weight"
+        ],
+        "output": "h@10"
+      },
+      {
+        "instructionIndex": 52,
+        "layer": 1,
+        "input": [
+          "x@4"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@11"
+      },
+      {
+        "instructionIndex": 56,
+        "layer": 1,
+        "input": [
+          "x@4"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.1.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@13"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 77,
+        "layer": 2,
+        "input": [
+          "x@7"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.2.ffn_norm.weight"
+        ],
+        "output": "h@18"
+      },
+      {
+        "instructionIndex": 83,
+        "layer": 2,
+        "input": [
+          "x@7"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@19"
+      },
+      {
+        "instructionIndex": 87,
+        "layer": 2,
+        "input": [
+          "x@7"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.2.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@21"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 108,
+        "layer": 3,
+        "input": [
+          "x@10"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.3.ffn_norm.weight"
+        ],
+        "output": "h@26"
+      },
+      {
+        "instructionIndex": 114,
+        "layer": 3,
+        "input": [
+          "x@10"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@27"
+      },
+      {
+        "instructionIndex": 118,
+        "layer": 3,
+        "input": [
+          "x@10"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.3.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@29"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 139,
+        "layer": 4,
+        "input": [
+          "x@13"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.4.ffn_norm.weight"
+        ],
+        "output": "h@34"
+      },
+      {
+        "instructionIndex": 145,
+        "layer": 4,
+        "input": [
+          "x@13"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@35"
+      },
+      {
+        "instructionIndex": 149,
+        "layer": 4,
+        "input": [
+          "x@13"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.4.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@37"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 170,
+        "layer": 5,
+        "input": [
+          "x@16"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.5.ffn_norm.weight"
+        ],
+        "output": "h@42"
+      },
+      {
+        "instructionIndex": 176,
+        "layer": 5,
+        "input": [
+          "x@16"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@43"
+      },
+      {
+        "instructionIndex": 180,
+        "layer": 5,
+        "input": [
+          "x@16"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.5.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@45"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 201,
+        "layer": 6,
+        "input": [
+          "x@19"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.6.ffn_norm.weight"
+        ],
+        "output": "h@50"
+      },
+      {
+        "instructionIndex": 207,
+        "layer": 6,
+        "input": [
+          "x@19"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@51"
+      },
+      {
+        "instructionIndex": 211,
+        "layer": 6,
+        "input": [
+          "x@19"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.6.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@53"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 232,
+        "layer": 7,
+        "input": [
+          "x@22"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.7.ffn_norm.weight"
+        ],
+        "output": "h@58"
+      },
+      {
+        "instructionIndex": 238,
+        "layer": 7,
+        "input": [
+          "x@22"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@59"
+      },
+      {
+        "instructionIndex": 242,
+        "layer": 7,
+        "input": [
+          "x@22"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.7.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@61"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 263,
+        "layer": 8,
+        "input": [
+          "x@25"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.8.ffn_norm.weight"
+        ],
+        "output": "h@66"
+      },
+      {
+        "instructionIndex": 269,
+        "layer": 8,
+        "input": [
+          "x@25"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@67"
+      },
+      {
+        "instructionIndex": 273,
+        "layer": 8,
+        "input": [
+          "x@25"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.8.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@69"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 294,
+        "layer": 9,
+        "input": [
+          "x@28"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.9.ffn_norm.weight"
+        ],
+        "output": "h@74"
+      },
+      {
+        "instructionIndex": 300,
+        "layer": 9,
+        "input": [
+          "x@28"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@75"
+      },
+      {
+        "instructionIndex": 304,
+        "layer": 9,
+        "input": [
+          "x@28"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.9.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@77"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 325,
+        "layer": 10,
+        "input": [
+          "x@31"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.10.ffn_norm.weight"
+        ],
+        "output": "h@82"
+      },
+      {
+        "instructionIndex": 331,
+        "layer": 10,
+        "input": [
+          "x@31"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@83"
+      },
+      {
+        "instructionIndex": 335,
+        "layer": 10,
+        "input": [
+          "x@31"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.10.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@85"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 356,
+        "layer": 11,
+        "input": [
+          "x@34"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.11.ffn_norm.weight"
+        ],
+        "output": "h@90"
+      },
+      {
+        "instructionIndex": 362,
+        "layer": 11,
+        "input": [
+          "x@34"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@91"
+      },
+      {
+        "instructionIndex": 366,
+        "layer": 11,
+        "input": [
+          "x@34"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.11.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@93"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 387,
+        "layer": 12,
+        "input": [
+          "x@37"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.12.ffn_norm.weight"
+        ],
+        "output": "h@98"
+      },
+      {
+        "instructionIndex": 393,
+        "layer": 12,
+        "input": [
+          "x@37"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@99"
+      },
+      {
+        "instructionIndex": 397,
+        "layer": 12,
+        "input": [
+          "x@37"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.12.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@101"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 418,
+        "layer": 13,
+        "input": [
+          "x@40"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.13.ffn_norm.weight"
+        ],
+        "output": "h@106"
+      },
+      {
+        "instructionIndex": 424,
+        "layer": 13,
+        "input": [
+          "x@40"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@107"
+      },
+      {
+        "instructionIndex": 428,
+        "layer": 13,
+        "input": [
+          "x@40"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.13.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@109"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 449,
+        "layer": 14,
+        "input": [
+          "x@43"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.14.ffn_norm.weight"
+        ],
+        "output": "h@114"
+      },
+      {
+        "instructionIndex": 455,
+        "layer": 14,
+        "input": [
+          "x@43"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@115"
+      },
+      {
+        "instructionIndex": 459,
+        "layer": 14,
+        "input": [
+          "x@43"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.14.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@117"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 480,
+        "layer": 15,
+        "input": [
+          "x@46"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.15.ffn_norm.weight"
+        ],
+        "output": "h@122"
+      },
+      {
+        "instructionIndex": 486,
+        "layer": 15,
+        "input": [
+          "x@46"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@123"
+      },
+      {
+        "instructionIndex": 490,
+        "layer": 15,
+        "input": [
+          "x@46"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.15.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@125"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 511,
+        "layer": 16,
+        "input": [
+          "x@49"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.16.ffn_norm.weight"
+        ],
+        "output": "h@130"
+      },
+      {
+        "instructionIndex": 517,
+        "layer": 16,
+        "input": [
+          "x@49"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@131"
+      },
+      {
+        "instructionIndex": 521,
+        "layer": 16,
+        "input": [
+          "x@49"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.16.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@133"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 542,
+        "layer": 17,
+        "input": [
+          "x@52"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.17.ffn_norm.weight"
+        ],
+        "output": "h@138"
+      },
+      {
+        "instructionIndex": 548,
+        "layer": 17,
+        "input": [
+          "x@52"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@139"
+      },
+      {
+        "instructionIndex": 552,
+        "layer": 17,
+        "input": [
+          "x@52"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.17.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@141"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 573,
+        "layer": 18,
+        "input": [
+          "x@55"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.18.ffn_norm.weight"
+        ],
+        "output": "h@146"
+      },
+      {
+        "instructionIndex": 579,
+        "layer": 18,
+        "input": [
+          "x@55"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@147"
+      },
+      {
+        "instructionIndex": 583,
+        "layer": 18,
+        "input": [
+          "x@55"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.18.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@149"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 604,
+        "layer": 19,
+        "input": [
+          "x@58"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.19.ffn_norm.weight"
+        ],
+        "output": "h@154"
+      },
+      {
+        "instructionIndex": 610,
+        "layer": 19,
+        "input": [
+          "x@58"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@155"
+      },
+      {
+        "instructionIndex": 614,
+        "layer": 19,
+        "input": [
+          "x@58"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.19.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@157"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 635,
+        "layer": 20,
+        "input": [
+          "x@61"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.20.ffn_norm.weight"
+        ],
+        "output": "h@162"
+      },
+      {
+        "instructionIndex": 641,
+        "layer": 20,
+        "input": [
+          "x@61"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@163"
+      },
+      {
+        "instructionIndex": 645,
+        "layer": 20,
+        "input": [
+          "x@61"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.20.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@165"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 666,
+        "layer": 21,
+        "input": [
+          "x@64"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.21.ffn_norm.weight"
+        ],
+        "output": "h@170"
+      },
+      {
+        "instructionIndex": 672,
+        "layer": 21,
+        "input": [
+          "x@64"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@171"
+      },
+      {
+        "instructionIndex": 676,
+        "layer": 21,
+        "input": [
+          "x@64"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.21.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@173"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 697,
+        "layer": 22,
+        "input": [
+          "x@67"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.22.ffn_norm.weight"
+        ],
+        "output": "h@178"
+      },
+      {
+        "instructionIndex": 703,
+        "layer": 22,
+        "input": [
+          "x@67"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@179"
+      },
+      {
+        "instructionIndex": 707,
+        "layer": 22,
+        "input": [
+          "x@67"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.22.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@181"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 728,
+        "layer": 23,
+        "input": [
+          "x@70"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.23.ffn_norm.weight"
+        ],
+        "output": "h@186"
+      },
+      {
+        "instructionIndex": 734,
+        "layer": 23,
+        "input": [
+          "x@70"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@187"
+      },
+      {
+        "instructionIndex": 738,
+        "layer": 23,
+        "input": [
+          "x@70"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.23.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@189"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 759,
+        "layer": 24,
+        "input": [
+          "x@73"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.24.ffn_norm.weight"
+        ],
+        "output": "h@194"
+      },
+      {
+        "instructionIndex": 765,
+        "layer": 24,
+        "input": [
+          "x@73"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@195"
+      },
+      {
+        "instructionIndex": 769,
+        "layer": 24,
+        "input": [
+          "x@73"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.24.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@197"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 790,
+        "layer": 25,
+        "input": [
+          "x@76"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.25.ffn_norm.weight"
+        ],
+        "output": "h@202"
+      },
+      {
+        "instructionIndex": 796,
+        "layer": 25,
+        "input": [
+          "x@76"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@203"
+      },
+      {
+        "instructionIndex": 800,
+        "layer": 25,
+        "input": [
+          "x@76"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.25.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@205"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 821,
+        "layer": 26,
+        "input": [
+          "x@79"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.26.ffn_norm.weight"
+        ],
+        "output": "h@210"
+      },
+      {
+        "instructionIndex": 827,
+        "layer": 26,
+        "input": [
+          "x@79"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@211"
+      },
+      {
+        "instructionIndex": 831,
+        "layer": 26,
+        "input": [
+          "x@79"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.26.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@213"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 852,
+        "layer": 27,
+        "input": [
+          "x@82"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.27.ffn_norm.weight"
+        ],
+        "output": "h@218"
+      },
+      {
+        "instructionIndex": 858,
+        "layer": 27,
+        "input": [
+          "x@82"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@219"
+      },
+      {
+        "instructionIndex": 862,
+        "layer": 27,
+        "input": [
+          "x@82"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.27.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@221"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 883,
+        "layer": 28,
+        "input": [
+          "x@85"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.28.ffn_norm.weight"
+        ],
+        "output": "h@226"
+      },
+      {
+        "instructionIndex": 889,
+        "layer": 28,
+        "input": [
+          "x@85"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@227"
+      },
+      {
+        "instructionIndex": 893,
+        "layer": 28,
+        "input": [
+          "x@85"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.28.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@229"
+      }
+    ],
+    [
+      {
+        "instructionIndex": 914,
+        "layer": 29,
+        "input": [
+          "x@88"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.29.ffn_norm.weight"
+        ],
+        "output": "h@234"
+      },
+      {
+        "instructionIndex": 920,
+        "layer": 29,
+        "input": [
+          "x@88"
+        ],
+        "attrs": {},
+        "weightTensor": [],
+        "output": "h@235"
+      },
+      {
+        "instructionIndex": 924,
+        "layer": 29,
+        "input": [
+          "x@88"
+        ],
+        "attrs": {},
+        "weightTensor": [
+          "blk.29.pre_ffw_norm_2.weight"
+        ],
+        "output": "h@237"
+      }
+    ]
+  ]
+}

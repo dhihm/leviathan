@@ -16,7 +16,8 @@ Leviathan is a personal project building a local LLM inference engine for Mac GP
 - Prepared SSA execution and bounded parallel attention now compose through Forge, with unchanged full-logit gates and feature attribution switches ([batch details](docs/PREPARED_ATTENTION_BATCH.md)).
 - Normal Forge and inference can now activate and reuse the verified MoE/Q4 composite: the measured batch reduced matched decode wall by 50.8%, reaching 6.47–6.50 tokens/s on the current M1 Max probe ([composite details](docs/COMPOSITE_FORGE_BATCH.md)).
 - Exact-order cooperative RMS now participates in bounded Forge composition and passed three full-model fixtures; measured gains and timing instability are recorded together ([RMS batch](docs/RMS_Q6_FORGE_BATCH.md), [Ollama comparison scope](docs/OLLAMA_COMPARISON_SCOPE.md)).
-- Correctness gates and test coverage throughout — currently 892 checks ([detailed progress](docs/FORGE_PROGRESS.md)).
+- [Q6 SIMD Forge batch](docs/Q6_SIMD_FORGE.md): full production/reload and three prepared-serving gates passed; four fixed comparison pairs improved, with 10.68% median decode time reduction. Remaining performance gap and bottlenecks are documented.
+- Correctness gates and test coverage throughout — currently 923 checks ([detailed progress](docs/FORGE_PROGRESS.md)).
 - Performance: closing the gap with Ollama and broader Python model coverage are in progress.
 
 [MIT](LICENSE); model weights keep their upstream terms.

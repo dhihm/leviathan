@@ -95,13 +95,26 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
     /// silently defaulted.
     public let rmsnormCooperative: Bool
 
+    /// Intra-block SIMD-reduction Q6_K matvec (default false): one
+    /// 32-lane SIMD group per output row, lane-local accumulation over
+    /// the same four dequantized products per half-block as the plain
+    /// kernel, and a simd_sum group reduction written by lane 0. The
+    /// simd_sum reduction reassociates the floating-point addition
+    /// order, so bit-exactness is NOT claimed; qualification is against
+    /// the strict FP64 oracle and the full Forge gates, unchanged and
+    /// fail-closed. Never combined with matvecTiledQ6 in any legal
+    /// candidate. Explicit Codable key — an artifact missing this field
+    /// is rejected, never silently defaulted.
+    public let matvecCooperativeQ6: Bool
+
     public init(segmentBatching: Bool, top5Diagnostic: Bool,
                 matvecTiledQ4: Bool = false, matvecTiledQ6: Bool = false,
                 rmsnormTiled: Bool = false, matvecTiledF32: Bool = false,
                 vectorizedLoads: Bool = false,
                 gpuCacheAppend: Bool = false,
                 parallelAttention: Bool = false,
-                rmsnormCooperative: Bool = false) {
+                rmsnormCooperative: Bool = false,
+                matvecCooperativeQ6: Bool = false) {
         self.segmentBatching = segmentBatching
         self.top5Diagnostic = top5Diagnostic
         self.matvecTiledQ4 = matvecTiledQ4
@@ -112,12 +125,13 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
         self.gpuCacheAppend = gpuCacheAppend
         self.parallelAttention = parallelAttention
         self.rmsnormCooperative = rmsnormCooperative
+        self.matvecCooperativeQ6 = matvecCooperativeQ6
     }
 
     private enum CodingKeys: String, CodingKey {
         case segmentBatching, top5Diagnostic, matvecTiledQ4, matvecTiledQ6
         case rmsnormTiled, matvecTiledF32, vectorizedLoads, gpuCacheAppend
-        case parallelAttention, rmsnormCooperative
+        case parallelAttention, rmsnormCooperative, matvecCooperativeQ6
     }
 
     public init(from decoder: Decoder) throws {
@@ -138,6 +152,10 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
             throw DecodingError.keyNotFound(CodingKeys.rmsnormCooperative, DecodingError.Context(
                 codingPath: c.codingPath, debugDescription: "rmsnormCooperative missing (pre-axis artifact)"))
         }
+        guard let matvecCooperativeQ6 = try c.decodeIfPresent(Bool.self, forKey: .matvecCooperativeQ6) else {
+            throw DecodingError.keyNotFound(CodingKeys.matvecCooperativeQ6, DecodingError.Context(
+                codingPath: c.codingPath, debugDescription: "matvecCooperativeQ6 missing (pre-axis artifact)"))
+        }
         self.segmentBatching = try c.decode(Bool.self, forKey: .segmentBatching)
         self.top5Diagnostic = try c.decode(Bool.self, forKey: .top5Diagnostic)
         self.matvecTiledQ4 = try c.decode(Bool.self, forKey: .matvecTiledQ4)
@@ -148,6 +166,7 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
         self.gpuCacheAppend = gpuCacheAppend
         self.parallelAttention = parallelAttention
         self.rmsnormCooperative = rmsnormCooperative
+        self.matvecCooperativeQ6 = matvecCooperativeQ6
     }
 }
 
@@ -515,7 +534,8 @@ public enum GemmaForge {
             // The 7 distinct non-empty combinations of {rmsCoop, Q6
             // tiled, F32 tiled} on the ALWAYS batched + VL + GPU-KV +
             // parallel-attention baseline (never rmsnormTiled, never
-            // tiled Q4). Total candidate set: 24.
+            // tiled Q4). Total candidate set before the cooperative
+            // Q6 matvec pass: 24.
             GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
                                 vectorizedLoads: true, gpuCacheAppend: true,
                                 parallelAttention: true, rmsnormCooperative: true),
@@ -541,6 +561,26 @@ public enum GemmaForge {
                                 matvecTiledQ6: true, matvecTiledF32: true,
                                 vectorizedLoads: true, gpuCacheAppend: true,
                                 parallelAttention: true, rmsnormCooperative: true),
+            // PRODUCTION intra-block SIMD-reduction Q6_K matvec (bounded
+            // new pass): eligible Q6_K matvecs (tied embedding / LM head)
+            // dispatch the cooperative kernel from the public
+            // Q6Cooperative enum source; ineligible geometry falls back
+            // to the plain g4_q6_matvec and counts a production
+            // fallback. The simd_sum reduction reassociates the addition
+            // order, so bit-exactness is NOT claimed — the strict FP64
+            // oracle and the FULL numerical gates (<1e-4, exact greedy)
+            // decide selection, unchanged and fail-closed. Appended on
+            // the ALWAYS batched + VL + GPU-KV + parallel-attention
+            // baseline WITHOUT the cooperative RMSNorm axis and WITH it
+            // (never tiled Q4, never tiled F32, never tiled Q6, never
+            // rmsnormTiled). Total candidate set: 26.
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                vectorizedLoads: true, gpuCacheAppend: true,
+                                parallelAttention: true, matvecCooperativeQ6: true),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                vectorizedLoads: true, gpuCacheAppend: true,
+                                parallelAttention: true, rmsnormCooperative: true,
+                                matvecCooperativeQ6: true),
         ]
     }
 
@@ -766,6 +806,7 @@ public enum GemmaForge {
         runner.gpuCacheAppendKernel = candidate.gpuCacheAppend
         runner.parallelAttentionKernel = candidate.parallelAttention
         runner.rmsCooperativeKernel = candidate.rmsnormCooperative
+        runner.matvecCooperativeQ6Kernel = candidate.matvecCooperativeQ6
         defer {
             runner.autoSegment = false
             runner.q4TiledKernel = false
@@ -776,6 +817,7 @@ public enum GemmaForge {
             runner.gpuCacheAppendKernel = false
             runner.parallelAttentionKernel = false
             runner.rmsCooperativeKernel = false
+            runner.matvecCooperativeQ6Kernel = false
         }
         var routerState = [Int: (topIdx: [Int], weights: [Float])]()
 

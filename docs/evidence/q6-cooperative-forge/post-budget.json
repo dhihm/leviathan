@@ -1,0 +1,114 @@
+{
+  "scope": "Separate warmed census, selected flags with diagnostic E4 and actual selected Q4 width64; normal batched categories plus per-command intrusive replay. Intrusive intervals are ranking, not normal GPU or wall shares; not a replacement performance benchmark.",
+  "decodeSteps": 31,
+  "normalMillisPerDecode": 117.61960490171371,
+  "normalPercent": {
+    "gpu": 61.371122355947826,
+    "flushHost": 32.88760975893602,
+    "encode": 1.0423652550795084,
+    "readCopy": 0.3411864073765737,
+    "writeCopy": 0.10545633952159764,
+    "residual": 4.252259883138462
+  },
+  "buffersPerDecode": 97.0,
+  "dispatchesPerDecode": 1289.0,
+  "intrusiveWorstNormalizedVsBatched": 0,
+  "intrusiveRanking": [
+    {
+      "kernel": "g4_rmsnorm_coop",
+      "callsPerDecode": 331.0,
+      "intrusiveMillisPerDecode": 47.552278595826316,
+      "intrusiveIntervalPercent": 28.737161626932657
+    },
+    {
+      "kernel": "g4_q4_matvec",
+      "callsPerDecode": 205.0,
+      "intrusiveMillisPerDecode": 40.303104481990296,
+      "intrusiveIntervalPercent": 24.356284530764096
+    },
+    {
+      "kernel": "g4_f32_matvec",
+      "callsPerDecode": 30.0,
+      "intrusiveMillisPerDecode": 29.16123935832612,
+      "intrusiveIntervalPercent": 17.622946227343146
+    },
+    {
+      "kernel": "moegen_gu_E4_R32",
+      "callsPerDecode": 60.0,
+      "intrusiveMillisPerDecode": 14.528522943897594,
+      "intrusiveIntervalPercent": 8.779989610761355
+    },
+    {
+      "kernel": "moegen_dn_E4_R32",
+      "callsPerDecode": 60.0,
+      "intrusiveMillisPerDecode": 7.814704275299465,
+      "intrusiveIntervalPercent": 4.722642667341564
+    },
+    {
+      "kernel": "g4_q6_matvec_coop",
+      "callsPerDecode": 1.0,
+      "intrusiveMillisPerDecode": 7.499458253263466,
+      "intrusiveIntervalPercent": 4.532130747513369
+    },
+    {
+      "kernel": "g4_axpy",
+      "callsPerDecode": 300.0,
+      "intrusiveMillisPerDecode": 5.484647853600402,
+      "intrusiveIntervalPercent": 3.314524907951683
+    },
+    {
+      "kernel": "g4_attn_par64_diag",
+      "callsPerDecode": 30.0,
+      "intrusiveMillisPerDecode": 4.466192015717106,
+      "intrusiveIntervalPercent": 2.6990437809187044
+    },
+    {
+      "kernel": "g4_rope",
+      "callsPerDecode": 60.0,
+      "intrusiveMillisPerDecode": 4.303924228635527,
+      "intrusiveIntervalPercent": 2.600980853927497
+    },
+    {
+      "kernel": "moegen_act_E4",
+      "callsPerDecode": 60.0,
+      "intrusiveMillisPerDecode": 1.4300146590798133,
+      "intrusiveIntervalPercent": 0.8641975442679729
+    },
+    {
+      "kernel": "g4_scale",
+      "callsPerDecode": 60.0,
+      "intrusiveMillisPerDecode": 1.1464358878231817,
+      "intrusiveIntervalPercent": 0.6928230229157186
+    },
+    {
+      "kernel": "g4_cache_append",
+      "callsPerDecode": 30.0,
+      "intrusiveMillisPerDecode": 0.6239840220059117,
+      "intrusiveIntervalPercent": 0.3770908613111391
+    },
+    {
+      "kernel": "g4_gelu_up",
+      "callsPerDecode": 30.0,
+      "intrusiveMillisPerDecode": 0.5505282071328932,
+      "intrusiveIntervalPercent": 0.3326994738366122
+    },
+    {
+      "kernel": "g4_add",
+      "callsPerDecode": 30.0,
+      "intrusiveMillisPerDecode": 0.5359718455902992,
+      "intrusiveIntervalPercent": 0.3239026605880814
+    },
+    {
+      "kernel": "g4_softcap",
+      "callsPerDecode": 1.0,
+      "intrusiveMillisPerDecode": 0.04348788230169204,
+      "intrusiveIntervalPercent": 0.026280934151206723
+    },
+    {
+      "kernel": "g4_q6_embed_row",
+      "callsPerDecode": 1.0,
+      "intrusiveMillisPerDecode": 0.02862775938645486,
+      "intrusiveIntervalPercent": 0.01730054947519799
+    }
+  ]
+}

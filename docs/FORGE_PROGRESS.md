@@ -1451,3 +1451,11 @@ torch 2.9.1 at /opt/anaconda3/bin/python, CPU export).
   intermediate record; and the labeled historical first-failure log
   torch-frontend-tests-first-failure.log. Generated .weights.f32/
   .plan.json outputs were NOT committed.
+
+
+### Phase 34: qualified Q6 SIMD composition
+
+- Original block-internal SIMD Q6 lowering and bounded Forge integration; 923 checks passed. Fresh production selection, separate artifact reload, and raw-Hello/English/Korean prepared-serving full-logit and exact-ID gates passed for 32 generated tokens each, with zero Q6 fallbacks.
+- Four predeclared matched phase33/phase34 pairs all improved: 10.678% median decode time reduction. Equal-work pooled totals give 10.341% less decode time and 11.534% more throughput. Phase34 measured 8.972–9.260 tokens/s in this series. This compares the qualified batch including Q4 width64 versus the incumbent width32; isolated Q6 attribution is not claimed. Earlier noisy and fixed results remain preserved.
+- The remaining performance gap and general lightweight Python-model compiler goal are unfinished. Current residual evidence identifies RMS, generic Q4, F32 routing and host flush work. SSA exposes 30 same-input RMS groups and 60 potentially reusable statistic reductions; that pass is proposed, not implemented.
+- Details and full measurements: [Q6 SIMD Forge](Q6_SIMD_FORGE.md), [evidence](evidence/q6-cooperative-forge/fixed-results.json).

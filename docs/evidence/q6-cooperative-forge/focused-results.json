@@ -1,0 +1,31 @@
+{
+  "candidates" : [
+    {
+      "bitExact" : false,
+      "exactIDs" : true,
+      "f32Tiled" : false,
+      "fullVocab" : 262144,
+      "passesStrictGate" : true,
+      "q6Applied" : 5,
+      "q6Cooperative" : true,
+      "q6Fallback" : 0,
+      "rmsCooperative" : false,
+      "steps" : 4,
+      "worstNormalizedDiff" : 8.3446502685546875e-06
+    },
+    {
+      "bitExact" : false,
+      "exactIDs" : true,
+      "f32Tiled" : false,
+      "fullVocab" : 262144,
+      "passesStrictGate" : true,
+      "q6Applied" : 5,
+      "q6Cooperative" : true,
+      "q6Fallback" : 0,
+      "rmsCooperative" : true,
+      "steps" : 4,
+      "worstNormalizedDiff" : 8.3446502685546875e-06
+    }
+  ],
+  "scope" : "Four-step teacher-forced full-logit development checks using existing diagnostic E4\/width32. No production artifact or performance approval; rejected combinations retained as observations."
+}

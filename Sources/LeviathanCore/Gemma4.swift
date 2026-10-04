@@ -774,6 +774,19 @@ public final class Gemma4Runner {
     /// (a dispatch with both enabled is REJECTED, never silently
     /// resolved).
     public internal(set) var rmsCooperativeKernel = false
+    /// PRODUCTION intra-block SIMD-reduction Q6_K matvec axis
+    /// (default false). When true, eligible Q6_K matvecs dispatch the
+    /// cooperative kernel from the public Q6Cooperative enum source:
+    /// one 32-lane SIMD group per output row, lane-local accumulation
+    /// over the same four dequantized products per half-block as the
+    /// plain kernel, and a simd_sum group reduction written by lane 0.
+    /// The simd_sum reduction reassociates the floating-point addition
+    /// order relative to the plain kernel, so bit-exactness is NOT
+    /// claimed. Ineligible geometry falls back to the plain g4_q6_matvec
+    /// and counts a production fallback. Mutually exclusive with
+    /// q6TiledKernel (a dispatch with both enabled is REJECTED, never
+    /// silently resolved).
+    public internal(set) var matvecCooperativeQ6Kernel = false
     /// Tiled cooperative F32 matvec (MoE router ffn_gate_inp — the
     /// one-thread-per-row scalar kernel is a measured GPU hotspot).
     public var f32TiledKernel = false
@@ -1294,6 +1307,90 @@ public final class Gemma4Runner {
         try dispatchPipeline(pipe, name: RMSCooperative.kernelName,
                              groups: vectors, threads: threads) { enc in
             enc.setThreadgroupMemoryLength(tgLen, index: 0)
+            bind(enc)
+        }
+        return true
+    }
+
+    /// Lazily compiled once per runner: the intra-block SIMD-reduction
+    /// Q6_K matvec pipeline from the public Q6Cooperative enum source
+    /// (its own MSL, its own library). NEVER stored in the shared
+    /// `pipelines` dictionary, so the pipeline identity key list in
+    /// engineIdentity() is unchanged — the axis identity is bound
+    /// explicitly via the |q6Coop= segment (kernel name, schedule
+    /// version, source SHA-256).
+    internal private(set) var q6CooperativePipelineState: MTLComputePipelineState?
+    /// PRODUCTION cooperative Q6_K counters: eligible matvecs served by
+    /// the cooperative pipeline, and axis-enabled calls whose geometry
+    /// was ineligible and safely fell back to the plain kernel.
+    public private(set) var q6CooperativeAppliedCount = 0
+    public private(set) var q6CooperativeFallbackCount = 0
+
+    /// Zeroes the production cooperative-Q6 counters.
+    public func q6CooperativeCountersReset() {
+        q6CooperativeAppliedCount = 0
+        q6CooperativeFallbackCount = 0
+    }
+
+    /// Compiles (once) the cooperative Q6_K pipeline from the PUBLIC
+    /// Q6Cooperative enum source with default compiler options on the
+    /// runner's OWN device. Compilation failure fails CLOSED as
+    /// Gemma4Error (shaderCompileFailed / functionMissing).
+    internal func q6CooperativePipeline() throws -> MTLComputePipelineState {
+        if let cached = q6CooperativePipelineState { return cached }
+        let device = self.device
+        let library: MTLLibrary
+        do { library = try device.makeLibrary(source: Q6Cooperative.source, options: nil) }
+        catch { throw Gemma4Error.shaderCompileFailed("q6 cooperative: \(error)") }
+        guard let fn = library.makeFunction(name: Q6Cooperative.kernelName) else {
+            throw Gemma4Error.functionMissing(Q6Cooperative.kernelName)
+        }
+        guard let pipe = try? device.makeComputePipelineState(function: fn) else {
+            throw Gemma4Error.shaderCompileFailed("q6 cooperative pipeline")
+        }
+        q6CooperativePipelineState = pipe
+        return pipe
+    }
+
+    /// PRODUCTION cooperative Q6_K dispatch: only when the axis is
+    /// enabled; mutual exclusion with the tiled Q6 axis is enforced by
+    /// the caller (matvecDispatch) BEFORE this hook. Geometry is planned
+    /// against the ACTUAL compiled pipeline (its real execution width —
+    /// the kernel's lane mapping requires exactly a 32-wide SIMD group —
+    /// and its real per-threadgroup thread cap) and the device
+    /// threadgroup-memory cap, including the pipeline's static
+    /// threadgroup-memory length. rowsPerGroup is hardware-derived: 2
+    /// when the actual pipeline allows 64 threads per threadgroup,
+    /// else 1 — never a GPU-name guess. Ineligible geometry records a
+    /// PRODUCTION fallback counter and returns false — the caller runs
+    /// the unchanged ORIGINAL plain kernel (never the tiled one).
+    /// Eligible geometry dispatches through the SAME ordered
+    /// compute-segment path as every other kernel (dispatchPipeline:
+    /// deferred segment, accounting, and completion checks unchanged)
+    /// with the identical buffer 0..4 ABI plus rowsPerGroup at buffer 5.
+    internal func q6CooperativeMatvecDispatch(inDim: Int, outRows: Int,
+                                               _ bind: (MTLComputeCommandEncoder) -> Void) throws -> Bool {
+        guard matvecCooperativeQ6Kernel else { return false }
+        let pipe = try q6CooperativePipeline()
+        guard pipe.staticThreadgroupMemoryLength <= device.maxThreadgroupMemoryLength else {
+            q6CooperativeFallbackCount += 1
+            return false
+        }
+        let rowsPerGroup = pipe.maxTotalThreadsPerThreadgroup >= 64 ? 2 : 1
+        guard let launch = Q6Cooperative.plan(
+                  inDim: inDim, outDim: outRows, rowsPerGroup: rowsPerGroup,
+                  executionWidth: pipe.threadExecutionWidth,
+                  pipelineMaxThreads: pipe.maxTotalThreadsPerThreadgroup,
+                  maxThreadgroupMemory: device.maxThreadgroupMemoryLength) else {
+            q6CooperativeFallbackCount += 1
+            return false
+        }
+        q6CooperativeAppliedCount += 1
+        var rpg = UInt32(launch.rowsPerGroup)
+        try dispatchPipeline(pipe, name: Q6Cooperative.kernelName,
+                             groups: launch.threadgroups,
+                             threads: launch.threadsPerThreadgroup) { enc in
+            enc.setBytes(&rpg, length: MemoryLayout<UInt32>.stride, index: 5)
             bind(enc)
         }
         return true
@@ -2151,6 +2248,18 @@ public final class Gemma4Runner {
             }
             try dispatchExplicit("g4_q4_matvec_tiled", groups: outRows,
                                  threads: q4TileWidth, bind)
+        } else if type == .q6_K && matvecCooperativeQ6Kernel {
+            // PRODUCTION cooperative Q6 axis: mutually exclusive with the
+            // tiled Q6 axis — both enabled is REJECTED, never silently
+            // resolved. Ineligible geometry counts a production fallback
+            // and runs the ORIGINAL plain kernel (never the tiled one).
+            if q6TiledKernel {
+                throw Gemma4Error.badTensorGeometry(
+                    "matvecCooperativeQ6 and matvecTiledQ6 cannot both be enabled")
+            }
+            if try !q6CooperativeMatvecDispatch(inDim: inDim, outRows: outRows, bind) {
+                try dispatch(kernel, grid: outRows, bind)
+            }
         } else if type == .q6_K && q6TiledKernel {
             try dispatchExplicit("g4_q6_matvec_tiled", groups: outRows,
                                  threads: q6TileWidth, bind)
@@ -2708,7 +2817,7 @@ public final class Gemma4Runner {
         // above — and is therefore unsafe and removed.
         let msl = SHA256.hex(SHA256.hash(Array(Self.shaderSource.utf8)))
         let candidates = GemmaForge.candidates()
-            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)/\($0.gpuCacheAppend)/\($0.parallelAttention)/\($0.rmsnormCooperative)" }
+            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)/\($0.gpuCacheAppend)/\($0.parallelAttention)/\($0.rmsnormCooperative)/\($0.matvecCooperativeQ6)" }
             .sorted().joined(separator: ",")
         return "gemma-graph-executor-v1|exe=" + (try Self.executableDigest())
             + "|msl=" + msl
@@ -2730,6 +2839,9 @@ public final class Gemma4Runner {
             + "|rmsCoop=" + RMSCooperative.kernelName
             + "@v\(RMSCooperative.scheduleVersion)"
             + "#\(RMSCooperative.sourceSha256())"
+            + "|q6Coop=" + Q6Cooperative.kernelName
+            + "@v\(Q6Cooperative.version)"
+            + "#\(Q6Cooperative.sourceSha256())"
             + compositeLoweringIdentity()
     }
 

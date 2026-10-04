@@ -1,0 +1,342 @@
+{
+  "scope": "Predeclared four serial AB/BA/AB/BA pairs; retain all runs without adaptive stopping or exclusion. This series is separate from prior evidence. Four repetitions with the first excluded and the median of three warm generations, preserved published phase33 executable versus qualified phase34 executable; same GGUF/raw-Hello/32 generated IDs, BOS-only reuse, repeat1 warmup excluded and repeats2/3/4 timed, no profiling or other owned GPU/build/author jobs during timing. Startup/identity/prefill excluded. CLI synchronous decode wall includes graph execution and output readback, distinct from Ollama server eval counters.",
+  "binarySha256": "2dd7437ca184d38a878bba7fa849fc8942ee2b3c8194c65dd73bfa2de0770e3c",
+  "baselineBinarySha256": "2fd2b16900503c021b86e2f3fdf4573472602146d323755d06d03193b57f5926",
+  "planHashes": {
+    "incumbent": "c387361ec0dc42d3a03d005749796678cde28bdd4a0d697a00f43b0f43fbc87a",
+    "candidate": "004749042398c1e1bfc1cdfcf2cfa185d9fa426583d0b35a30fe1c29e19bfd55"
+  },
+  "compositeHash": "83bd2d2fbed680c325400c597fc9685fb198826ffcbcd21f8fac80fe1f783c11",
+  "baselineCompositeHash": "690a6a4cae743c8c98f300f206fe954d09465aeaffbcc39808e4c63652fd71b4",
+  "arms": [
+    {
+      "pair": 1,
+      "arm": "incumbent",
+      "exit": 0,
+      "elapsedSeconds": 28.718790790997446,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 3723.5,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 119.42
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 3770.8,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 119.24
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 3748.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 117.88
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 3746.0,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 120.02
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 3748.1,
+      "warmAggregateTokensPerSecond": 8.270857234332063,
+      "log": "fixed-pair-1-incumbent.log"
+    },
+    {
+      "pair": 1,
+      "arm": "candidate",
+      "exit": 0,
+      "elapsedSeconds": 25.009086874779314,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 3094.9,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 98.47
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 3104.0,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 99.4
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 3408.2,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 105.16
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 3430.7,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 102.55
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 3408.2,
+      "warmAggregateTokensPerSecond": 9.095710345636993,
+      "log": "fixed-pair-1-candidate.log"
+    },
+    {
+      "pair": 2,
+      "arm": "candidate",
+      "exit": 0,
+      "elapsedSeconds": 25.507236333098263,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 3228.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 100.41
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 3291.3,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 102.52
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 3558.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 107.14
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 3389.3,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 101.99
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 3389.3,
+      "warmAggregateTokensPerSecond": 9.146431416516684,
+      "log": "fixed-pair-2-candidate.log"
+    },
+    {
+      "pair": 2,
+      "arm": "incumbent",
+      "exit": 0,
+      "elapsedSeconds": 27.58023441582918,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 3730.0,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 119.19
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 3815.8,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 120.4
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 3792.4,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 120.58
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 3754.8,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 119.83
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 3792.4,
+      "warmAggregateTokensPerSecond": 8.174243223288682,
+      "log": "fixed-pair-2-incumbent.log"
+    },
+    {
+      "pair": 3,
+      "arm": "incumbent",
+      "exit": 0,
+      "elapsedSeconds": 27.013567542191595,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 3780.5,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 119.23
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 3710.6,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 118.61
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 3758.2,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 119.44
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 3836.6,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 121.32
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 3758.2,
+      "warmAggregateTokensPerSecond": 8.248629663136608,
+      "log": "fixed-pair-3-incumbent.log"
+    },
+    {
+      "pair": 3,
+      "arm": "candidate",
+      "exit": 0,
+      "elapsedSeconds": 25.032418792136014,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 3322.2,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 102.73
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 3391.7,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 100.66
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 3163.0,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 100.59
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 3347.7,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 101.27
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 3347.7,
+      "warmAggregateTokensPerSecond": 9.260089016339577,
+      "log": "fixed-pair-3-candidate.log"
+    },
+    {
+      "pair": 4,
+      "arm": "candidate",
+      "exit": 0,
+      "elapsedSeconds": 25.371333749964833,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 3228.0,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 100.29
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 3469.3,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 101.77
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 3455.2,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 101.33
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 3305.0,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 101.63
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 3455.2,
+      "warmAggregateTokensPerSecond": 8.971984255614727,
+      "log": "fixed-pair-4-candidate.log"
+    },
+    {
+      "pair": 4,
+      "arm": "incumbent",
+      "exit": 0,
+      "elapsedSeconds": 27.680923249572515,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 3802.2,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 120.48
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 3898.3,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 126.56
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 3870.4,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 122.37
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 3798.4,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 120.34
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 3870.4,
+      "warmAggregateTokensPerSecond": 8.009508061182306,
+      "log": "fixed-pair-4-incumbent.log"
+    }
+  ],
+  "pairs": [
+    {
+      "pair": 1,
+      "order": [
+        "incumbent",
+        "candidate"
+      ],
+      "candidateToIncumbentWallRatio": 0.9093140524532429,
+      "wallReductionPercent": 9.068594754675708
+    },
+    {
+      "pair": 2,
+      "order": [
+        "candidate",
+        "incumbent"
+      ],
+      "candidateToIncumbentWallRatio": 0.8937084695707204,
+      "wallReductionPercent": 10.629153042927964
+    },
+    {
+      "pair": 3,
+      "order": [
+        "incumbent",
+        "candidate"
+      ],
+      "candidateToIncumbentWallRatio": 0.8907721781704007,
+      "wallReductionPercent": 10.922782182959933
+    },
+    {
+      "pair": 4,
+      "order": [
+        "candidate",
+        "incumbent"
+      ],
+      "candidateToIncumbentWallRatio": 0.892724266225713,
+      "wallReductionPercent": 10.727573377428701
+    }
+  ],
+  "startedUTC": "2026-10-04T09:06:45Z",
+  "medianPairedWallRatio": 0.8932163678982167,
+  "medianPairedWallReductionPercent": 10.678363210178333,
+  "allPairsImprove": true,
+  "everyPairOverTwoPercent": true,
+  "crossArmExactTokenIDs": true,
+  "sourceUnchanged": true,
+  "baselineCompositeUnchanged": true,
+  "compositeUnchanged": true,
+  "plansUnchanged": true,
+  "binaryUnchanged": true
+}

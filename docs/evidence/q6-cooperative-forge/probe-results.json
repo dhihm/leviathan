@@ -1,0 +1,331 @@
+{
+  "device" : "Apple M1 Max",
+  "dimensions" : [
+    2816,
+    262144
+  ],
+  "geometry" : [
+    {
+      "config" : "plain-production",
+      "groups" : 256,
+      "maxThreads" : 1024,
+      "staticThreadgroupBytes" : 0,
+      "threadExecutionWidth" : 32,
+      "threadsPerGroup" : 1024
+    },
+    {
+      "config" : "cooperative-rpg1",
+      "groups" : 262144,
+      "maxThreads" : 1024,
+      "staticThreadgroupBytes" : 22528,
+      "threadExecutionWidth" : 32,
+      "threadsPerGroup" : 32
+    },
+    {
+      "config" : "cooperative-rpg2",
+      "groups" : 131072,
+      "maxThreads" : 1024,
+      "staticThreadgroupBytes" : 22528,
+      "threadExecutionWidth" : 32,
+      "threadsPerGroup" : 64
+    }
+  ],
+  "inputBytes" : 11264,
+  "outputBytes" : 1048576,
+  "records" : [
+    {
+      "config" : "empty-command",
+      "round" : 1,
+      "timing" : {
+        "commitMicros" : 8.041015625,
+        "encodeMicros" : 12.2919921875,
+        "gpuMicros" : 43.124891817569733,
+        "waitMicros" : 121.6669921875,
+        "wallMicros" : 142
+      }
+    },
+    {
+      "argmax" : 236968,
+      "bitUnequalRows" : 0,
+      "config" : "plain-production",
+      "referenceArgmax" : 236968,
+      "round" : 1,
+      "timing" : {
+        "commitMicros" : 8.7080078125,
+        "encodeMicros" : 23.625,
+        "gpuMicros" : 22101.749666035175,
+        "waitMicros" : 22375.875,
+        "wallMicros" : 22408.2080078125
+      },
+      "worstNormalizedVsPlain" : 0
+    },
+    {
+      "argmax" : 236968,
+      "bitUnequalRows" : 253015,
+      "config" : "cooperative-rpg1",
+      "referenceArgmax" : 236968,
+      "round" : 1,
+      "timing" : {
+        "commitMicros" : 13.125,
+        "encodeMicros" : 25.416015625,
+        "gpuMicros" : 816711.54173091054,
+        "waitMicros" : 817031.458984375,
+        "wallMicros" : 817070
+      },
+      "worstNormalizedVsPlain" : 3.9546346906204538e-06
+    },
+    {
+      "argmax" : 236968,
+      "bitUnequalRows" : 253015,
+      "config" : "cooperative-rpg2",
+      "referenceArgmax" : 236968,
+      "round" : 1,
+      "timing" : {
+        "commitMicros" : 24.0830078125,
+        "encodeMicros" : 52.375,
+        "gpuMicros" : 409773.66641163826,
+        "waitMicros" : 410323.0830078125,
+        "wallMicros" : 410399.541015625
+      },
+      "worstNormalizedVsPlain" : 3.9546346906204538e-06
+    },
+    {
+      "config" : "empty-command",
+      "round" : 2,
+      "timing" : {
+        "commitMicros" : 21.416015625,
+        "encodeMicros" : 42.875,
+        "gpuMicros" : 0.74971467256546021,
+        "waitMicros" : 134.708984375,
+        "wallMicros" : 199
+      }
+    },
+    {
+      "argmax" : 236968,
+      "bitUnequalRows" : 253015,
+      "config" : "cooperative-rpg2",
+      "referenceArgmax" : 236968,
+      "round" : 2,
+      "timing" : {
+        "commitMicros" : 10.4169921875,
+        "encodeMicros" : 30,
+        "gpuMicros" : 409612.33340203762,
+        "waitMicros" : 410421.125,
+        "wallMicros" : 410461.5419921875
+      },
+      "worstNormalizedVsPlain" : 3.9546346906204538e-06
+    },
+    {
+      "argmax" : 236968,
+      "bitUnequalRows" : 253015,
+      "config" : "cooperative-rpg1",
+      "referenceArgmax" : 236968,
+      "round" : 2,
+      "timing" : {
+        "commitMicros" : 17.75,
+        "encodeMicros" : 64.791015625,
+        "gpuMicros" : 815926.0000102222,
+        "waitMicros" : 816512.708984375,
+        "wallMicros" : 816595.25
+      },
+      "worstNormalizedVsPlain" : 3.9546346906204538e-06
+    },
+    {
+      "argmax" : 236968,
+      "bitUnequalRows" : 0,
+      "config" : "plain-production",
+      "referenceArgmax" : 236968,
+      "round" : 2,
+      "timing" : {
+        "commitMicros" : 8,
+        "encodeMicros" : 27.875,
+        "gpuMicros" : 22929.374594241381,
+        "waitMicros" : 23228.083984375,
+        "wallMicros" : 23263.958984375
+      },
+      "worstNormalizedVsPlain" : 0
+    },
+    {
+      "config" : "empty-command",
+      "round" : 3,
+      "timing" : {
+        "commitMicros" : 14.625,
+        "encodeMicros" : 24.5,
+        "gpuMicros" : 0.25006011128425598,
+        "waitMicros" : 65.7080078125,
+        "wallMicros" : 104.8330078125
+      }
+    },
+    {
+      "argmax" : 236968,
+      "bitUnequalRows" : 0,
+      "config" : "plain-production",
+      "referenceArgmax" : 236968,
+      "round" : 3,
+      "timing" : {
+        "commitMicros" : 13.0830078125,
+        "encodeMicros" : 19.0419921875,
+        "gpuMicros" : 21424.166392534971,
+        "waitMicros" : 21673.458984375,
+        "wallMicros" : 21705.583984375
+      },
+      "worstNormalizedVsPlain" : 0
+    },
+    {
+      "argmax" : 236968,
+      "bitUnequalRows" : 253015,
+      "config" : "cooperative-rpg1",
+      "referenceArgmax" : 236968,
+      "round" : 3,
+      "timing" : {
+        "commitMicros" : 7.166015625,
+        "encodeMicros" : 19.5419921875,
+        "gpuMicros" : 816918.87509077787,
+        "waitMicros" : 817853.375,
+        "wallMicros" : 817880.0830078125
+      },
+      "worstNormalizedVsPlain" : 3.9546346906204538e-06
+    },
+    {
+      "argmax" : 236968,
+      "bitUnequalRows" : 253015,
+      "config" : "cooperative-rpg2",
+      "referenceArgmax" : 236968,
+      "round" : 3,
+      "timing" : {
+        "commitMicros" : 7.9580078125,
+        "encodeMicros" : 22.2080078125,
+        "gpuMicros" : 409707.7501937747,
+        "waitMicros" : 410132.5419921875,
+        "wallMicros" : 410162.7080078125
+      },
+      "worstNormalizedVsPlain" : 3.9546346906204538e-06
+    },
+    {
+      "config" : "empty-command",
+      "round" : 4,
+      "timing" : {
+        "commitMicros" : 9.4169921875,
+        "encodeMicros" : 17.2919921875,
+        "gpuMicros" : 0.20815059542655945,
+        "waitMicros" : 55.291015625,
+        "wallMicros" : 82
+      }
+    },
+    {
+      "argmax" : 236968,
+      "bitUnequalRows" : 253015,
+      "config" : "cooperative-rpg2",
+      "referenceArgmax" : 236968,
+      "round" : 4,
+      "timing" : {
+        "commitMicros" : 1.9169921875,
+        "encodeMicros" : 12.3330078125,
+        "gpuMicros" : 409408.12509506941,
+        "waitMicros" : 409723.25,
+        "wallMicros" : 409737.5
+      },
+      "worstNormalizedVsPlain" : 3.9546346906204538e-06
+    },
+    {
+      "argmax" : 236968,
+      "bitUnequalRows" : 253015,
+      "config" : "cooperative-rpg1",
+      "referenceArgmax" : 236968,
+      "round" : 4,
+      "timing" : {
+        "commitMicros" : 10.9169921875,
+        "encodeMicros" : 25.5830078125,
+        "gpuMicros" : 816399.00011941791,
+        "waitMicros" : 816672.5419921875,
+        "wallMicros" : 816709.0419921875
+      },
+      "worstNormalizedVsPlain" : 3.9546346906204538e-06
+    },
+    {
+      "argmax" : 236968,
+      "bitUnequalRows" : 0,
+      "config" : "plain-production",
+      "referenceArgmax" : 236968,
+      "round" : 4,
+      "timing" : {
+        "commitMicros" : 8.375,
+        "encodeMicros" : 17.625,
+        "gpuMicros" : 21003.208123147488,
+        "waitMicros" : 21309.458984375,
+        "wallMicros" : 21335.458984375
+      },
+      "worstNormalizedVsPlain" : 0
+    }
+  ],
+  "scope" : "Local diagnostic of externally authored new Q6 cooperative shader versus unchanged incumbent and actual Q6 tensor bytes with deterministic synthetic input; not real hidden state, serving qualification or whole-model speed claim. Two warmups per configuration then four rounds with alternating configuration order; all timings retained. Empty compute-command baseline is separate and is not blindly subtracted.",
+  "warmups" : [
+    {
+      "config" : "plain-production",
+      "repetition" : 1,
+      "timing" : {
+        "commitMicros" : 62.875,
+        "encodeMicros" : 435,
+        "gpuMicros" : 37246.791645884514,
+        "waitMicros" : 75677.2080078125,
+        "wallMicros" : 76175.0830078125
+      }
+    },
+    {
+      "config" : "plain-production",
+      "repetition" : 2,
+      "timing" : {
+        "commitMicros" : 12.4580078125,
+        "encodeMicros" : 33,
+        "gpuMicros" : 21148.750092834234,
+        "waitMicros" : 21634.1669921875,
+        "wallMicros" : 21679.625
+      }
+    },
+    {
+      "config" : "cooperative-rpg1",
+      "repetition" : 1,
+      "timing" : {
+        "commitMicros" : 10.9169921875,
+        "encodeMicros" : 21.3330078125,
+        "gpuMicros" : 817415.24999961257,
+        "waitMicros" : 817788.2919921875,
+        "wallMicros" : 817820.5419921875
+      }
+    },
+    {
+      "config" : "cooperative-rpg1",
+      "repetition" : 2,
+      "timing" : {
+        "commitMicros" : 18.9169921875,
+        "encodeMicros" : 72.6669921875,
+        "gpuMicros" : 817931.29164725542,
+        "waitMicros" : 818829.5830078125,
+        "wallMicros" : 818921.1669921875
+      }
+    },
+    {
+      "config" : "cooperative-rpg2",
+      "repetition" : 1,
+      "timing" : {
+        "commitMicros" : 8.416015625,
+        "encodeMicros" : 19.5,
+        "gpuMicros" : 408517.9166868329,
+        "waitMicros" : 408838.9169921875,
+        "wallMicros" : 408866.8330078125
+      }
+    },
+    {
+      "config" : "cooperative-rpg2",
+      "repetition" : 2,
+      "timing" : {
+        "commitMicros" : 9.5,
+        "encodeMicros" : 55.3330078125,
+        "gpuMicros" : 408243.8750192523,
+        "waitMicros" : 408525.4580078125,
+        "wallMicros" : 408590.291015625
+      }
+    }
+  ],
+  "weightBytes" : 605552640
+}
