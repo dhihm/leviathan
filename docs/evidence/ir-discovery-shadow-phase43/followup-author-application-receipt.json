@@ -1,0 +1,37 @@
+{
+  "appliedUtc": "2026-10-04T18:14:53.478926+00:00",
+  "exactAuthorPatch": true,
+  "semanticSupervisorEdits": false,
+  "entries": [
+    {
+      "path": "Sources/LeviathanCore/GemmaOpportunityDiscovery.swift",
+      "oldAnchorSha256": "af610029483ce8e406086c912d626510daa95085fb46a07dd560cf53238c6921",
+      "authoredReplacementSha256": "ca7786e528e33fba5fac29440224ca71b8c8397e4d7359c20b7094726275bbb7"
+    },
+    {
+      "path": "Sources/LeviathanCore/GemmaOpportunityDiscovery.swift",
+      "oldAnchorSha256": "2f020f0fbe4b60082ad810f023b6b7953d5282a1a4b58aa561062aecf2443ef4",
+      "authoredReplacementSha256": "fe4de087ab6fc9ee6a5d259cbfde0fd5ad6ec82470920e1db63b482fb478a9db"
+    },
+    {
+      "path": "Sources/LeviathanCore/GemmaOpportunityDiscovery.swift",
+      "oldAnchorSha256": "63bc7290423414a25fd129915274df0a3cf8702f019b554f81c9ab5b4e542549",
+      "authoredReplacementSha256": "dc300eabe773358dab9b42db03240b35c8edb77c90d18152a9f93df8d29110fb"
+    },
+    {
+      "path": "Sources/leviathan-tests/main.swift",
+      "oldAnchorSha256": "eb2261516562b35ee8fd328179b387fcf482219cc3a1cd23ca5b54bad2089300",
+      "authoredReplacementSha256": "61668633c32a9f1f1a132c8e5195bbe310a4f75842be40d394f357dc20aeec9c"
+    },
+    {
+      "path": "Sources/leviathan-tests/main.swift",
+      "oldAnchorSha256": "d2f50dbb7431c6ecff32668a369a4b1b60a0d4cfbad62e0cdd1f850642f254c5",
+      "authoredReplacementSha256": "f21ddf4a41fc35fc13caabeff3b6454d2dbe8b94c66c2f7aae27ea9a74a0de8a"
+    },
+    {
+      "path": "Sources/leviathan-tests/main.swift",
+      "oldAnchorSha256": "b0c228e809b9d5344de78d59e76ba8ddb25e9e5b512ce4a6657c91d20f331caf",
+      "authoredReplacementSha256": "3aeca97c40c6b910fda3e4b582d3e114ca5ce3e909fd1821502013ce267454e9"
+    }
+  ]
+}

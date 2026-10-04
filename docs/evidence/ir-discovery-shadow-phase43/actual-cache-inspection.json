@@ -1,0 +1,580 @@
+{
+  "scope": "Independent read-only inspection of actual validated/lowered IR; implementation report will be compared separately",
+  "cacheAppendCount": 30,
+  "uniqueLayerCount": 30,
+  "canonicalCoverage": true,
+  "exactBindingOrder": true,
+  "zeroOrAbsentSlices": true,
+  "rows": [
+    {
+      "instruction": 10,
+      "layer": 0,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_0@0"
+    },
+    {
+      "instruction": 41,
+      "layer": 1,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_1@0"
+    },
+    {
+      "instruction": 72,
+      "layer": 2,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_2@0"
+    },
+    {
+      "instruction": 103,
+      "layer": 3,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_3@0"
+    },
+    {
+      "instruction": 134,
+      "layer": 4,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_4@0"
+    },
+    {
+      "instruction": 165,
+      "layer": 5,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        1024,
+        1024
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 2,
+      "headDim": 512,
+      "output": "kvstate_5@0"
+    },
+    {
+      "instruction": 196,
+      "layer": 6,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_6@0"
+    },
+    {
+      "instruction": 227,
+      "layer": 7,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_7@0"
+    },
+    {
+      "instruction": 258,
+      "layer": 8,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_8@0"
+    },
+    {
+      "instruction": 289,
+      "layer": 9,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_9@0"
+    },
+    {
+      "instruction": 320,
+      "layer": 10,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_10@0"
+    },
+    {
+      "instruction": 351,
+      "layer": 11,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        1024,
+        1024
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 2,
+      "headDim": 512,
+      "output": "kvstate_11@0"
+    },
+    {
+      "instruction": 382,
+      "layer": 12,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_12@0"
+    },
+    {
+      "instruction": 413,
+      "layer": 13,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_13@0"
+    },
+    {
+      "instruction": 444,
+      "layer": 14,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_14@0"
+    },
+    {
+      "instruction": 475,
+      "layer": 15,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_15@0"
+    },
+    {
+      "instruction": 506,
+      "layer": 16,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_16@0"
+    },
+    {
+      "instruction": 537,
+      "layer": 17,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        1024,
+        1024
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 2,
+      "headDim": 512,
+      "output": "kvstate_17@0"
+    },
+    {
+      "instruction": 568,
+      "layer": 18,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_18@0"
+    },
+    {
+      "instruction": 599,
+      "layer": 19,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_19@0"
+    },
+    {
+      "instruction": 630,
+      "layer": 20,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_20@0"
+    },
+    {
+      "instruction": 661,
+      "layer": 21,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_21@0"
+    },
+    {
+      "instruction": 692,
+      "layer": 22,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_22@0"
+    },
+    {
+      "instruction": 723,
+      "layer": 23,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        1024,
+        1024
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 2,
+      "headDim": 512,
+      "output": "kvstate_23@0"
+    },
+    {
+      "instruction": 754,
+      "layer": 24,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_24@0"
+    },
+    {
+      "instruction": 785,
+      "layer": 25,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_25@0"
+    },
+    {
+      "instruction": 816,
+      "layer": 26,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_26@0"
+    },
+    {
+      "instruction": 847,
+      "layer": 27,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_27@0"
+    },
+    {
+      "instruction": 878,
+      "layer": 28,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        2048,
+        2048
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 8,
+      "headDim": 256,
+      "output": "kvstate_28@0"
+    },
+    {
+      "instruction": 909,
+      "layer": 29,
+      "names": [
+        "t2",
+        "kv"
+      ],
+      "lengths": [
+        1024,
+        1024
+      ],
+      "sliceOffsets": [
+        null,
+        null
+      ],
+      "kvHeads": 2,
+      "headDim": 512,
+      "output": "kvstate_29@0"
+    }
+  ]
+}

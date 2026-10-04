@@ -7097,6 +7097,580 @@ func runCompileDiagnosticGates() {
 }
 
 runCompileDiagnosticGates()
+// MARK: - IR-derived opportunity discovery (pure shadow, gpuCacheAppend)
+
+/// One synthetic cache_append block: fresh t2/kv versions are defined by
+/// matvecs reading the live x, then appended to kvstate_<layer>.
+private struct ODAppendSpec {
+    let layer: Int
+    let kvHeads: Int
+    let headDim: Int
+    let width: Int
+    var keySlice: Int? = nil
+}
+
+private func odHardware(_ name: String = "shadow-test") -> ForgeHardwareProfile {
+    ForgeHardwareProfile(deviceName: name, maxTotalThreadsPerThreadgroup: 1024,
+                         threadExecutionWidth: 32, recommendedMaxWorkingSetSize: 1 << 30)
+}
+
+/// Small synthetic config: local layers 2x4, global layers 1x8 (same
+/// 8-word width, different geometry).
+private func odSyntheticConfig(layerCount: Int = 2, hidden: Int = 8, vocabSize: Int = 16,
+                               localKVHeads: Int = 2, globalKVHeads: Int = 1,
+                               localHeadDim: Int = 4, globalHeadDim: Int = 8,
+                               finalSoftcap: Float = 30,
+                               globalLayers: [Int] = [1]) -> GemmaGraphIR.GraphConfig {
+    GemmaGraphIR.GraphConfig(
+        layerCount: layerCount, hidden: hidden, qHeads: 2,
+        localKVHeads: localKVHeads, globalKVHeads: globalKVHeads,
+        localHeadDim: localHeadDim, globalHeadDim: globalHeadDim,
+        slidingWindow: 4, vocabSize: vocabSize, expertCount: 4, expertUsedCount: 2,
+        expertIntermediate: 8, sharedIntermediate: 8,
+        finalSoftcap: finalSoftcap, globalLayers: globalLayers)
+}
+
+/// Builds a small but fully VALID schedule from scratch through Codable
+/// JSON: fresh versions on every write, live-version uses, and a logits
+/// softcap terminal (hidden 8, vocab 16).
+private func odSyntheticSSA(_ specs: [ODAppendSpec]) -> GemmaSSAIR? {
+    var versions = [String: Int]()
+    var values = [[String: Any]]()
+    var instructions = [[String: Any]]()
+    func def(_ name: String, _ length: Int, kind: String = "vector",
+             slice: Int? = nil) -> String {
+        let v = (versions[name] ?? -1) + 1
+        versions[name] = v
+        var value: [String: Any] = ["name": name, "version": v, "dtype": "f32",
+                                    "length": length, "kind": kind]
+        if let slice { value["sliceOffset"] = slice }
+        values.append(value)
+        return "\(name)@\(v)"
+    }
+    func live(_ name: String) -> String { "\(name)@\(versions[name] ?? 0)" }
+    func emit(_ op: String, _ layer: Int?, _ inputs: [String], _ output: String,
+              tensors: [String] = [], attrs: [String: Int] = [:]) {
+        var inst: [String: Any] = ["op": op, "inputs": inputs, "output": output,
+                                   "tensors": tensors, "attrs": attrs]
+        if let layer { inst["layer"] = layer }
+        instructions.append(inst)
+    }
+    let x = def("x", 8)
+    emit("embed_row", nil, [], x, tensors: ["token_embd.weight"])
+    for s in specs {
+        let src = live("x")
+        let k = def("t2", s.width, slice: s.keySlice)
+        emit("matvec", s.layer, [src], k, tensors: ["k"], attrs: ["rows": s.width])
+        let v = def("kv", s.width)
+        emit("matvec", s.layer, [src], v, tensors: ["v"], attrs: ["rows": s.width])
+        let state = def("kvstate_\(s.layer)", s.width, kind: "kvstate")
+        emit("cache_append", s.layer, [k, v], state,
+             attrs: ["kvHeads": s.kvHeads, "headDim": s.headDim])
+    }
+    let logitsIn = live("x")
+    let l0 = def("logits", 16)
+    emit("matvec", nil, [logitsIn], l0, tensors: ["token_embd.weight"], attrs: ["rows": 16])
+    let l1 = def("logits", 16)
+    emit("softcap", nil, [l0], l1, attrs: ["cap": 30])
+    let root: [String: Any] = ["schema": GemmaSSA.schemaVersion, "values": values,
+                               "instructions": instructions]
+    guard let data = try? JSONSerialization.data(withJSONObject: root) else { return nil }
+    return try? JSONDecoder().decode(GemmaSSAIR.self, from: data)
+}
+
+private func odMutated(_ ssa: GemmaSSAIR,
+                       _ mutate: (inout [String: Any]) -> Void) -> GemmaSSAIR? {
+    guard let data = try? JSONEncoder().encode(ssa),
+          var obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    else { return nil }
+    mutate(&obj)
+    guard let out = try? JSONSerialization.data(withJSONObject: obj) else { return nil }
+    return try? JSONDecoder().decode(GemmaSSAIR.self, from: out)
+}
+
+private func odIsConfigError(_ e: GemmaOpportunityDiscoveryError) -> Bool {
+    if case .invalidConfig = e { return true }
+    return false
+}
+
+private func odIsHardwareError(_ e: GemmaOpportunityDiscoveryError) -> Bool {
+    if case .invalidHardware = e { return true }
+    return false
+}
+
+private func odIsSSAError(_ e: GemmaOpportunityDiscoveryError) -> Bool {
+    if case .malformedSSA = e { return true }
+    return false
+}
+
+/// A fixture counts toward the valid-but-unsupported boundary ONLY when
+/// the existing validator accepts it.
+@MainActor
+private func odValidates(_ name: String, _ ssa: GemmaSSAIR,
+                         _ config: GemmaGraphIR.GraphConfig) -> Bool {
+    do {
+        try GemmaSSA.validate(ssa, config: config)
+        passed += 1
+        return true
+    } catch {
+        failed += 1
+        print("FAIL: \(name): fixture rejected by GemmaSSA.validate (not a valid-but-unsupported proof) - \(error)")
+        return false
+    }
+}
+
+@MainActor
+private func odExpectThrows(_ name: String,
+                            _ matches: (GemmaOpportunityDiscoveryError) -> Bool,
+                            _ body: () throws -> Void) {
+    do {
+        try body()
+        failed += 1; print("FAIL: \(name) - no error")
+    } catch let e as GemmaOpportunityDiscoveryError {
+        if matches(e) { passed += 1 }
+        else { failed += 1; print("FAIL: \(name) - wrong case \(e)") }
+    } catch {
+        failed += 1; print("FAIL: \(name) - unexpected \(error)")
+    }
+}
+
+@MainActor
+private func odCheckShadow(_ name: String, _ ssa: GemmaSSAIR,
+                           _ config: GemmaGraphIR.GraphConfig, supported: Bool) {
+    let manual = GemmaForge.candidates()
+    do {
+        let shadow = try GemmaOpportunityDiscovery.shadowCandidates(
+            ssa: ssa, config: config, hardware: odHardware())
+        checkEqual("\(name): baseline retained first", shadow.first, manual.first)
+        checkEqual("\(name): shadow list", shadow,
+                   supported ? manual
+                       : manual.enumerated()
+                           .filter { $0.offset == 0 || !$0.element.gpuCacheAppend }
+                           .map(\.element))
+        check("\(name): non-cache-append tuples untouched",
+              manual.filter { !$0.gpuCacheAppend }.allSatisfy { shadow.contains($0) })
+    } catch {
+        failed += 1; print("FAIL: \(name) shadow - threw \(error)")
+    }
+}
+
+@MainActor
+private func odExpectSyntheticUnsupported(_ name: String, _ specs: [ODAppendSpec],
+                                          reasons: [GemmaOpportunityReport.Reason],
+                                          provenLayers: [Int]) {
+    let config = odSyntheticConfig()
+    guard let ssa = odSyntheticSSA(specs) else {
+        failed += 1; print("FAIL: \(name) - synthetic fixture unrepresentable")
+        return
+    }
+    guard odValidates(name, ssa, config) else { return }
+    do {
+        let report = try GemmaOpportunityDiscovery.discover(
+            ssa: ssa, config: config, hardware: odHardware())
+        check("\(name): unsupported", !report.body.supported)
+        checkEqual("\(name): exact reasons", report.body.reasons, reasons)
+        checkEqual("\(name): proven layers", report.body.proofs.map(\.layer), provenLayers)
+        let again = try GemmaOpportunityDiscovery.discover(
+            ssa: ssa, config: config, hardware: odHardware())
+        checkEqual("\(name): deterministic report", again, report)
+        let verified = try report.verifyDigest()
+        check("\(name): digest verifies", verified)
+    } catch {
+        failed += 1; print("FAIL: \(name) - threw \(error)")
+    }
+    odCheckShadow(name, ssa, config, supported: false)
+}
+
+@MainActor
+func runOpportunityDiscoveryGates() {
+    let hw = odHardware()
+    let manual = GemmaForge.candidates()
+
+    // Canonical real config lowered from the expected sequence (no Metal,
+    // no GGUF tensors needed).
+    let canonicalConfig: GemmaGraphIR.GraphConfig
+    let canonicalSSA: GemmaSSAIR
+    do {
+        var b = GGUFTestBuilder()
+        b.appendGemma4Metadata()
+        let cfg = try Gemma4Config(file: GGUFReader.parse(b.finish()))
+        canonicalConfig = GemmaGraphIR.GraphConfig(
+            layerCount: cfg.layerCount, hidden: cfg.hiddenSize, qHeads: cfg.qHeads,
+            localKVHeads: cfg.localKVHeads, globalKVHeads: cfg.globalKVHeads,
+            localHeadDim: cfg.localHeadDim, globalHeadDim: cfg.globalHeadDim,
+            slidingWindow: cfg.slidingWindow, vocabSize: cfg.vocabSize,
+            expertCount: cfg.expertCount, expertUsedCount: cfg.topKExperts,
+            expertIntermediate: cfg.expertIntermediate,
+            sharedIntermediate: cfg.sharedIntermediate,
+            finalSoftcap: cfg.finalSoftcap, globalLayers: cfg.globalLayers)
+        canonicalSSA = try GemmaSSA.lower(GemmaGraphIR(
+            schema: 1, model: "gemma4-26b-a4b", config: canonicalConfig,
+            ops: GemmaGraph.expectedSequence(canonicalConfig)))
+    } catch {
+        failed += 1; print("FAIL: od canonical setup - threw \(error)")
+        return
+    }
+
+    // Canonical: supported, each layer evidenced once, whole-tuple
+    // equivalence, repeated/Codable determinism, digest tamper.
+    do {
+        let report = try GemmaOpportunityDiscovery.discover(
+            ssa: canonicalSSA, config: canonicalConfig, hardware: hw)
+        let body = report.body
+        check("od canonical: gpuCacheAppend axis supported", body.supported)
+        checkEqual("od canonical: no withheld reasons", body.reasons, [])
+        checkEqual("od canonical: axis name", body.axis, "gpuCacheAppend")
+        checkEqual("od canonical: analysis version", body.analysisVersion,
+                   GemmaOpportunityDiscovery.analysisVersion)
+        checkEqual("od canonical: each layer evidenced once, in order",
+                   body.proofs.map(\.layer), Array(0..<canonicalConfig.layerCount))
+        checkEqual("od canonical: global evidence matches config",
+                   body.proofs.filter(\.global).map(\.layer),
+                   canonicalConfig.globalLayers.sorted())
+        check("od canonical: every proof binds t2 then kv into its kvstate",
+              body.proofs.allSatisfy { p in
+                  p.keyInputID.hasPrefix("t2@") && p.valueInputID.hasPrefix("kv@")
+                      && p.outputID == "kvstate_\(p.layer)@0" })
+        check("od canonical: proof geometry is the layer's config geometry",
+              body.proofs.allSatisfy { p in
+                  let heads = p.global ? canonicalConfig.globalKVHeads : canonicalConfig.localKVHeads
+                  let dim = p.global ? canonicalConfig.globalHeadDim : canonicalConfig.localHeadDim
+                  return p.kvHeads == heads && p.headDim == dim && p.wordWidth == heads * dim
+              })
+        check("od canonical: proof indices are cache_append instructions",
+              body.proofs.allSatisfy {
+                  canonicalSSA.instructions[$0.instructionIndex].op == "cache_append" })
+        checkEqual("od canonical: SSA digest recorded", body.ssaDigest,
+                   try GemmaSSA.digest(canonicalSSA))
+        checkEqual("od canonical: config recorded", body.config, canonicalConfig)
+        checkEqual("od canonical: hardware recorded", body.hardware, hw)
+        let verified = try report.verifyDigest()
+        check("od canonical: digest verifies", verified)
+        // Recorded regression constants for the current canonical fixture
+        // and report codec under odHardware() (shadow-test/1024/32/1GiB),
+        // observed independently from the validated lowered IR. Not a
+        // portable proof: Foundation's JSONEncoder output may differ across
+        // platforms or releases. The report digest already covers ssaDigest;
+        // the separate SSA pin tells lowering drift apart from codec drift.
+        checkEqual("od canonical: recorded SSA digest", body.ssaDigest,
+                   "28a04586de4fe9b62d56c56723e55ba9f8668548d3cb29db1a565a42097f8583")
+        checkEqual("od canonical: recorded report digest", report.reportDigest,
+                   "9900d8cd07e974722f6a9bc3ff712476746f504c1ea0b4cefefd0df3c5272199")
+
+        let shadow = try GemmaOpportunityDiscovery.shadowCandidates(
+            ssa: canonicalSSA, config: canonicalConfig, hardware: hw)
+        checkEqual("od canonical: shadow list equals manual list (ordered)", shadow, manual)
+        checkEqual("od canonical: baseline retained first", shadow.first, manual.first)
+
+        let again = try GemmaOpportunityDiscovery.discover(
+            ssa: canonicalSSA, config: canonicalConfig, hardware: hw)
+        checkEqual("od repeated: identical report", again, report)
+        checkEqual("od repeated: identical digest", again.reportDigest, report.reportDigest)
+
+        let encoded = try JSONEncoder().encode(report)
+        let decoded = try JSONDecoder().decode(GemmaOpportunityReport.self, from: encoded)
+        checkEqual("od codable: body roundtrip", decoded.body, report.body)
+        checkEqual("od codable: report roundtrip", decoded, report)
+        checkEqual("od codable: digest recomputed from body alone",
+                   try GemmaOpportunityReport.digest(of: decoded.body), report.reportDigest)
+        let decodedVerified = try decoded.verifyDigest()
+        check("od codable: decoded digest verifies", decodedVerified)
+
+        func tampered(_ edit: (inout [String: Any]) -> Void) throws -> GemmaOpportunityReport {
+            var obj = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] ?? [:]
+            edit(&obj)
+            return try JSONDecoder().decode(
+                GemmaOpportunityReport.self,
+                from: JSONSerialization.data(withJSONObject: obj))
+        }
+        let metaTamper = try tampered { obj in
+            var b = obj["body"] as? [String: Any] ?? [:]
+            var h = b["hardware"] as? [String: Any] ?? [:]
+            h["deviceName"] = "tampered-device"
+            b["hardware"] = h
+            obj["body"] = b
+        }
+        check("od tamper: metadata edit changes body", metaTamper.body != report.body)
+        let metaVerified = try metaTamper.verifyDigest()
+        check("od tamper: metadata edit fails digest", !metaVerified)
+        check("od tamper: metadata edit changes recomputed digest",
+              (try? GemmaOpportunityReport.digest(of: metaTamper.body)) != report.reportDigest)
+        let configTamper = try tampered { obj in
+            var b = obj["body"] as? [String: Any] ?? [:]
+            var c = b["config"] as? [String: Any] ?? [:]
+            c["layerCount"] = 29
+            b["config"] = c
+            obj["body"] = b
+        }
+        check("od tamper: config edit changes body", configTamper.body != report.body)
+        let configVerified = try configTamper.verifyDigest()
+        check("od tamper: config edit fails digest", !configVerified)
+        let proofTamper = try tampered { obj in
+            var b = obj["body"] as? [String: Any] ?? [:]
+            var proofs = b["proofs"] as? [[String: Any]] ?? []
+            if !proofs.isEmpty { proofs[0]["headDim"] = 7 }
+            b["proofs"] = proofs
+            obj["body"] = b
+        }
+        check("od tamper: proof edit changes body", proofTamper.body != report.body)
+        let proofVerified = try proofTamper.verifyDigest()
+        check("od tamper: proof edit fails digest", !proofVerified)
+
+        let otherHW = try GemmaOpportunityDiscovery.discover(
+            ssa: canonicalSSA, config: canonicalConfig, hardware: odHardware("other-device"))
+        check("od digest covers hardware profile", otherHW.reportDigest != report.reportDigest)
+        check("od other hardware keeps the static verdict", otherHW.body.supported)
+    } catch {
+        failed += 1; print("FAIL: od canonical gates - threw \(error)")
+    }
+
+    // Swapped cache operands that still pass SSA validation.
+    if let appendIndex = canonicalSSA.instructions.firstIndex(where: { $0.op == "cache_append" }) {
+        let originalInputs = canonicalSSA.instructions[appendIndex].inputs
+        let swappedInputs = Array(originalInputs.reversed())
+        let swapped = odMutated(canonicalSSA) { obj in
+            var insts = obj["instructions"] as? [[String: Any]] ?? []
+            insts[appendIndex]["inputs"] = swappedInputs
+            obj["instructions"] = insts
+        }
+        if let swapped, swapped != canonicalSSA {
+            if odValidates("od swapped operands", swapped, canonicalConfig) {
+                do {
+                    let r = try GemmaOpportunityDiscovery.discover(
+                        ssa: swapped, config: canonicalConfig, hardware: hw)
+                    check("od swapped operands: unsupported", !r.body.supported)
+                    checkEqual("od swapped operands: exact instruction/operand evidence",
+                               r.body.reasons,
+                               [GemmaOpportunityReport.Reason(
+                                   code: .operandBinding,
+                                   layer: canonicalSSA.instructions[appendIndex].layer,
+                                   instructionIndices: [appendIndex],
+                                   valueIDs: swappedInputs)])
+                    checkEqual("od swapped operands: remaining layers proven",
+                               r.body.proofs.map(\.layer),
+                               Array(1..<canonicalConfig.layerCount))
+                } catch {
+                    failed += 1; print("FAIL: od swapped operands - threw \(error)")
+                }
+                odCheckShadow("od swapped operands", swapped, canonicalConfig, supported: false)
+            }
+        } else {
+            failed += 1; print("FAIL: od swapped operands - fixture unrepresentable or unchanged")
+        }
+    } else {
+        failed += 1; print("FAIL: od canonical schedule has no cache_append")
+    }
+
+    // Stale references: rejected by the existing validator, so discovery
+    // throws before producing any report.
+    if let stale = odMutated(canonicalSSA, { obj in
+        obj["instructions"] = (obj["instructions"] as? [[String: Any]] ?? []).map { inst in
+            var i = inst
+            if (i["op"] as? String) == "rmsnorm", var ins = i["inputs"] as? [String],
+               ins.first?.hasPrefix("x@") == true {
+                ins[0] = "x@0"; i["inputs"] = ins
+            }
+            return i
+        }
+    }) {
+        check("od stale: fixture rejected by GemmaSSA.validate",
+              (try? GemmaSSA.validate(stale, config: canonicalConfig)) == nil)
+        odExpectThrows("od stale reference throws before report", odIsSSAError) {
+            _ = try GemmaOpportunityDiscovery.discover(
+                ssa: stale, config: canonicalConfig, hardware: hw)
+        }
+        odExpectThrows("od stale reference throws from shadow helper", odIsSSAError) {
+            _ = try GemmaOpportunityDiscovery.shadowCandidates(
+                ssa: stale, config: canonicalConfig, hardware: hw)
+        }
+    } else {
+        failed += 1; print("FAIL: od stale fixture unrepresentable")
+    }
+
+    // Synthetic schedules rebuilt with fresh versions and live uses.
+    let synthConfig = odSyntheticConfig()
+    let local0 = ODAppendSpec(layer: 0, kvHeads: 2, headDim: 4, width: 8)
+    let global1 = ODAppendSpec(layer: 1, kvHeads: 1, headDim: 8, width: 8)
+    for (label, specs) in [("od synthetic covered", [local0, global1]),
+                           ("od synthetic zero slice offset",
+                            [ODAppendSpec(layer: 0, kvHeads: 2, headDim: 4, width: 8,
+                                          keySlice: 0), global1])] {
+        guard let ssa = odSyntheticSSA(specs) else {
+            failed += 1; print("FAIL: \(label) - fixture unrepresentable")
+            continue
+        }
+        guard odValidates(label, ssa, synthConfig) else { continue }
+        do {
+            let r = try GemmaOpportunityDiscovery.discover(
+                ssa: ssa, config: synthConfig, hardware: hw)
+            check("\(label): supported", r.body.supported)
+            checkEqual("\(label): no reasons", r.body.reasons, [])
+            checkEqual("\(label): proof layers", r.body.proofs.map(\.layer), [0, 1])
+            checkEqual("\(label): proof globalness", r.body.proofs.map(\.global), [false, true])
+            checkEqual("\(label): proof indices", r.body.proofs.map(\.instructionIndex), [3, 6])
+            checkEqual("\(label): proof heads", r.body.proofs.map(\.kvHeads), [2, 1])
+            checkEqual("\(label): proof word widths", r.body.proofs.map(\.wordWidth), [8, 8])
+        } catch {
+            failed += 1; print("FAIL: \(label) - threw \(error)")
+        }
+        odCheckShadow(label, ssa, synthConfig, supported: true)
+    }
+
+    odExpectSyntheticUnsupported(
+        "od duplicate coverage", [local0, local0, global1],
+        reasons: [GemmaOpportunityReport.Reason(
+            code: .duplicateLayer, layer: 0, instructionIndices: [3, 6],
+            valueIDs: ["kvstate_0@0", "kvstate_0@1"])],
+        provenLayers: [0, 0, 1])
+    odExpectSyntheticUnsupported(
+        "od missing coverage", [local0],
+        reasons: [GemmaOpportunityReport.Reason(
+            code: .missingLayer, layer: 1, instructionIndices: [], valueIDs: [])],
+        provenLayers: [0])
+    odExpectSyntheticUnsupported(
+        "od local geometry on global layer",
+        [local0, ODAppendSpec(layer: 1, kvHeads: 2, headDim: 4, width: 8)],
+        reasons: [GemmaOpportunityReport.Reason(
+            code: .geometryMismatch, layer: 1, instructionIndices: [6],
+            valueIDs: ["t2@1", "kv@1"])],
+        provenLayers: [0])
+    odExpectSyntheticUnsupported(
+        "od nonzero input slice offset",
+        [ODAppendSpec(layer: 0, kvHeads: 2, headDim: 4, width: 8, keySlice: 4), global1],
+        reasons: [GemmaOpportunityReport.Reason(
+            code: .operandSlice, layer: 0, instructionIndices: [3],
+            valueIDs: ["t2@0", "kv@0"])],
+        provenLayers: [1])
+    // Validator-consistent (attrs 2*8 == length 16 <= 8*hidden) but not the
+    // config's local 2x4 geometry: three ordered reasons on one instruction.
+    odExpectSyntheticUnsupported(
+        "od multi-reason local geometry",
+        [ODAppendSpec(layer: 0, kvHeads: 2, headDim: 8, width: 16), global1],
+        reasons: [
+            GemmaOpportunityReport.Reason(
+                code: .geometryMismatch, layer: 0, instructionIndices: [3],
+                valueIDs: ["t2@0", "kv@0"]),
+            GemmaOpportunityReport.Reason(
+                code: .operandLength, layer: 0, instructionIndices: [3],
+                valueIDs: ["t2@0", "kv@0"]),
+            GemmaOpportunityReport.Reason(
+                code: .outputMismatch, layer: 0, instructionIndices: [3],
+                valueIDs: ["kvstate_0@0"]),
+        ],
+        provenLayers: [1])
+
+    // A cache_append without a layer that the existing validator still
+    // accepts (output kvstate_-1): withheld as layerAbsent, leaving layer 0
+    // uncovered.
+    if let absentBase = odSyntheticSSA([local0, global1]),
+       let absent = odMutated(absentBase, { obj in
+           var insts = obj["instructions"] as? [[String: Any]] ?? []
+           insts[3].removeValue(forKey: "layer")
+           insts[3]["output"] = "kvstate_-1@0"
+           obj["instructions"] = insts
+           obj["values"] = (obj["values"] as? [[String: Any]] ?? []).map { value in
+               var v = value
+               if (v["name"] as? String) == "kvstate_0" {
+                   v["name"] = "kvstate_-1"
+                   if v["id"] != nil { v["id"] = "kvstate_-1@0" }
+               }
+               return v
+           }
+       }) {
+        if odValidates("od absent layer", absent, synthConfig) {
+            do {
+                let r = try GemmaOpportunityDiscovery.discover(
+                    ssa: absent, config: synthConfig, hardware: hw)
+                check("od absent layer: unsupported", !r.body.supported)
+                checkEqual("od absent layer: exact reasons", r.body.reasons, [
+                    GemmaOpportunityReport.Reason(
+                        code: .layerAbsent, layer: nil, instructionIndices: [3],
+                        valueIDs: ["kvstate_-1@0"]),
+                    GemmaOpportunityReport.Reason(
+                        code: .missingLayer, layer: 0, instructionIndices: [],
+                        valueIDs: []),
+                ])
+                checkEqual("od absent layer: proven layers", r.body.proofs.map(\.layer), [1])
+            } catch {
+                failed += 1; print("FAIL: od absent layer - threw \(error)")
+            }
+            odCheckShadow("od absent layer", absent, synthConfig, supported: false)
+        }
+    } else {
+        failed += 1; print("FAIL: od absent-layer fixture unrepresentable")
+    }
+
+    // Unknown IR, invalid config, and invalid profile throw.
+    if let base = odSyntheticSSA([local0, global1]) {
+        if let unknown = odMutated(base, { obj in
+            var insts = obj["instructions"] as? [[String: Any]] ?? []
+            insts[1]["op"] = "conv2d"
+            obj["instructions"] = insts
+        }) {
+            odExpectThrows("od unknown op fails the existing validator", odIsSSAError) {
+                _ = try GemmaOpportunityDiscovery.discover(
+                    ssa: unknown, config: synthConfig, hardware: hw)
+            }
+        } else {
+            failed += 1; print("FAIL: od unknown-op fixture unrepresentable")
+        }
+        let badConfigs: [(String, GemmaGraphIR.GraphConfig)] = [
+            ("8*hidden overflow", odSyntheticConfig(hidden: Int.max / 4)),
+            ("zero layers", odSyntheticConfig(layerCount: 0, globalLayers: [])),
+            ("layer count beyond diagnostic bound",
+             odSyntheticConfig(layerCount: GemmaOpportunityDiscovery.maxLayerCount + 1)),
+            ("zero vocab", odSyntheticConfig(vocabSize: 0)),
+            ("zero local kv heads", odSyntheticConfig(localKVHeads: 0)),
+            ("negative global head dim", odSyntheticConfig(globalHeadDim: -8)),
+            ("local geometry product overflow",
+             odSyntheticConfig(localKVHeads: Int.max, localHeadDim: 2)),
+            ("NaN softcap", odSyntheticConfig(finalSoftcap: .nan)),
+            ("infinite softcap", odSyntheticConfig(finalSoftcap: .infinity)),
+            ("global layer out of range", odSyntheticConfig(globalLayers: [2])),
+            ("negative global layer", odSyntheticConfig(globalLayers: [-1])),
+            ("duplicate global layer", odSyntheticConfig(globalLayers: [1, 1])),
+        ]
+        for (label, config) in badConfigs {
+            odExpectThrows("od invalid config throws: \(label)", odIsConfigError) {
+                _ = try GemmaOpportunityDiscovery.discover(
+                    ssa: base, config: config, hardware: hw)
+            }
+        }
+        let badHardware: [(String, ForgeHardwareProfile)] = [
+            ("empty device name", ForgeHardwareProfile(
+                deviceName: "", maxTotalThreadsPerThreadgroup: 1024,
+                threadExecutionWidth: 32, recommendedMaxWorkingSetSize: 1 << 30)),
+            ("zero max threads", ForgeHardwareProfile(
+                deviceName: "t", maxTotalThreadsPerThreadgroup: 0,
+                threadExecutionWidth: 32, recommendedMaxWorkingSetSize: 1 << 30)),
+            ("zero execution width", ForgeHardwareProfile(
+                deviceName: "t", maxTotalThreadsPerThreadgroup: 1024,
+                threadExecutionWidth: 0, recommendedMaxWorkingSetSize: 1 << 30)),
+            ("execution width above max threads", ForgeHardwareProfile(
+                deviceName: "t", maxTotalThreadsPerThreadgroup: 1024,
+                threadExecutionWidth: 2048, recommendedMaxWorkingSetSize: 1 << 30)),
+            ("zero working set", ForgeHardwareProfile(
+                deviceName: "t", maxTotalThreadsPerThreadgroup: 1024,
+                threadExecutionWidth: 32, recommendedMaxWorkingSetSize: 0)),
+        ]
+        for (label, profile) in badHardware {
+            odExpectThrows("od invalid profile throws: \(label)", odIsHardwareError) {
+                _ = try GemmaOpportunityDiscovery.discover(
+                    ssa: base, config: synthConfig, hardware: profile)
+            }
+            odExpectThrows("od invalid profile throws from shadow helper: \(label)",
+                           odIsHardwareError) {
+                _ = try GemmaOpportunityDiscovery.shadowCandidates(
+                    ssa: base, config: synthConfig, hardware: profile)
+            }
+        }
+    } else {
+        failed += 1; print("FAIL: od synthetic base fixture unrepresentable")
+    }
+}
+
+runOpportunityDiscoveryGates()
+
 // MARK: - Summary
 
 print("\(passed) passed, \(failed) failed")

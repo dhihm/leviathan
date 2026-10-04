@@ -1,0 +1,14 @@
+{
+  "command": [
+    "/tmp/leviathan-forge2-tooling/phase43-ir-discovery-shadow/measure-actual-discovery-final",
+    "/tmp/leviathan-forge2-tooling/phase43-ir-discovery-shadow/actual-model-ssa.json",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "/tmp/leviathan-forge2-tooling/phase43-ir-discovery-shadow/actual-hardware-profile.json",
+    "/tmp/leviathan-forge2-tooling/phase43-ir-discovery-shadow/actual-final-report.json",
+    "/tmp/leviathan-forge2-tooling/phase43-ir-discovery-shadow/actual-final-measurement.json"
+  ],
+  "exit": 0,
+  "elapsedBuildAndRunSeconds": 2.287466916721314,
+  "completedUtc": "2026-10-04T18:18:13.810164+00:00",
+  "driverSha256": "54e366231c7223a30f75251aefb091ce1b85bc60a1277973c4636298bc283cd1"
+}

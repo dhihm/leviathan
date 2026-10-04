@@ -1,0 +1,12 @@
+{
+  "exactOrderedPatchReplayMatchesFinal": true,
+  "semanticSupervisorSourceEdits": false,
+  "patchHashes": {
+    "patch.json": "14eb5e3311b40d725e971036ada8b108e0336def235e263b8d9a8925a3e499c7",
+    "followup-author/patch.json": "d7efa889714a1c032845b50614f0d9c021ac95145e847370b2bf59bcfef37113"
+  },
+  "finalSourceHashes": {
+    "Sources/leviathan-tests/main.swift": "73b1cd7e61f99d4111bf7ab4bdf4c5bd0ac76c0bd62647568b66f98930c9a2cb",
+    "Sources/LeviathanCore/GemmaOpportunityDiscovery.swift": "7d8250272a2d8c92255dc2ce0985972ec44c034c0283deddff4132aadc4057e5"
+  }
+}

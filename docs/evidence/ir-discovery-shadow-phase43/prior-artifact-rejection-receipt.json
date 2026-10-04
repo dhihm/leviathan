@@ -1,0 +1,30 @@
+{
+  "command": [
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-ir-discovery-phase43/.build/release/leviathan-cli",
+    "gemma-generate",
+    "--file",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "--graph",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "--plan",
+    "/tmp/leviathan-forge2-tooling/phase41-compiler-integrity-review/production-lifecycle/batch-plan.json",
+    "--composite-plan",
+    "/tmp/leviathan-forge2-tooling/phase41-compiler-integrity-review/production-lifecycle/composite-pass.json",
+    "--moe-region",
+    "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+    "--text",
+    "Hello",
+    "--max-tokens",
+    "1",
+    "--repeat",
+    "1",
+    "--bos-align"
+  ],
+  "exit": 1,
+  "elapsedSeconds": 9.872745709028095,
+  "completedUtc": "2026-10-04T18:24:03.150702+00:00",
+  "cliSha256": "192245cd4cd098a749fa55b588bc0b3dadf4ef2066b670cd716ac5ada740b20c",
+  "identityMismatch": true,
+  "generationCompleted": false,
+  "artifactsUnchanged": true
+}

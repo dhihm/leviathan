@@ -1,0 +1,6 @@
+{
+  "deviceName": "Apple M1 Max",
+  "maxTotalThreadsPerThreadgroup": 1024,
+  "recommendedMaxWorkingSetSize": 26800603136,
+  "threadExecutionWidth": 32
+}

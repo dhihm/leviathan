@@ -2,7 +2,7 @@
 
 The current Gemma forge uses a manually assembled list of execution flag tuples. The next step is a pure opportunity-discovery boundary that explains candidate admissibility from validated IR, beginning with the existing GPU cache-append copy transformation. It does not add another backend, support another model family, replace the entire engine, or claim a speed gain.
 
-This is a design deliverable, not an implemented discovery feature. Fable 5.1 reviewed the original source, corrected the initial proposal, and confirmed the hardware-profile and cache-copy source facts. The final implementation brief and model receipts are preserved in `docs/evidence/ir-discovery-design-phase42`.
+This is the original design. The pure shadow slice is now implemented; see [the implementation and verification record](IR_DISCOVERY_SHADOW_IMPLEMENTATION.md). Runtime candidate discovery remains inactive. Fable 5.1 reviewed the original source, corrected the initial proposal, and confirmed the hardware-profile and cache-copy source facts. The final implementation brief and model receipts are preserved in `docs/evidence/ir-discovery-design-phase42`.
 
 ## Existing evidence
 

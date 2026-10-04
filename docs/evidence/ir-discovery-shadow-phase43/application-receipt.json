@@ -1,0 +1,17 @@
+{
+  "appliedUtc": "2026-10-04T18:02:42.744161+00:00",
+  "exactAuthorPatch": true,
+  "semanticSupervisorEdits": false,
+  "entries": [
+    {
+      "path": "Sources/LeviathanCore/GemmaOpportunityDiscovery.swift",
+      "newFileSha256": "ce8c3e94e4a8c8711e1eec16869819509586076de2ace275ee7e57e3e222b3aa"
+    },
+    {
+      "path": "Sources/leviathan-tests/main.swift",
+      "oldAnchorSha256": "82051c1af7f6ec36def0fb445ca20256343f5cfcaa0e4db620f4b02459e369a3",
+      "authoredReplacementSha256": "d334ce5ca3fac9341fac584d070ae57142f5b792af83bbcd0e862fa2dc4ecc44",
+      "fileSha256": "5f3c0e3cb374f3225a2f5bb724ab7a1b83c05c2e2ab6531216e6fd6b619ce7a6"
+    }
+  ]
+}

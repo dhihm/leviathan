@@ -1,0 +1,25 @@
+{
+  "counts" : {
+    "add" : 30,
+    "attention" : 30,
+    "axpy" : 60,
+    "cache_append" : 30,
+    "copy" : 5,
+    "embed_row" : 1,
+    "expert_matvec_chain" : 30,
+    "gelu_up" : 30,
+    "matvec" : 236,
+    "rmsnorm" : 331,
+    "rope" : 60,
+    "router_topk" : 30,
+    "scale" : 60,
+    "softcap" : 1
+  },
+  "graphOps" : 934,
+  "modelBytes" : 14439363584,
+  "scope" : "Independent IR census from existing actual GGUF with full tensor contract and graph validation; no Metal dispatch or performance measurement",
+  "ssaDigest" : "28a04586de4fe9b62d56c56723e55ba9f8668548d3cb29db1a565a42097f8583",
+  "ssaInstructions" : 934,
+  "ssaValues" : 934,
+  "tensorCount" : 658
+}

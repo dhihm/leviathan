@@ -1,0 +1,34 @@
+{
+  "replacements": [
+    {
+      "path": "Sources/LeviathanCore/GemmaOpportunityDiscovery.swift",
+      "old": "    /// Shadow-only consistency helper: re-runs FRESH discovery from the\n    /// supplied inputs (a report is never accepted as input), then keeps\n    /// the full manual baseline and admits or withholds ONLY the manual\n    /// tuples carrying gpuCacheAppend. Every other flag passes through\n    /// untouched. Not called by the forge.",
+      "new": "    /// Shadow-only consistency helper: re-runs FRESH discovery from the\n    /// supplied inputs (a report is never accepted as input), then keeps\n    /// the manual baseline (index 0) unconditionally and admits or\n    /// withholds ONLY the later manual tuples carrying gpuCacheAppend,\n    /// preserving manual order. Every other tuple passes through\n    /// untouched. Not called by the forge."
+    },
+    {
+      "path": "Sources/LeviathanCore/GemmaOpportunityDiscovery.swift",
+      "old": "        return GemmaForge.candidates().filter { !$0.gpuCacheAppend || supported }",
+      "new": "        // Index 0 is pinned explicitly, whatever its flags.\n        return GemmaForge.candidates().enumerated()\n            .filter { $0.offset == 0 || !$0.element.gpuCacheAppend || supported }\n            .map(\\.element)"
+    },
+    {
+      "path": "Sources/LeviathanCore/GemmaOpportunityDiscovery.swift",
+      "old": "        // Lowering converts the cap with Int(...): keep it finite,\n        // positive, and well inside the integer range.",
+      "new": "        // Finite is required twice over: the report digest encodes the\n        // config as canonical JSON and JSONEncoder rejects non-finite\n        // floats, and lowering converts the cap with Int(...), so it must\n        // also be positive and well inside the integer range."
+    },
+    {
+      "path": "Sources/leviathan-tests/main.swift",
+      "old": "                   supported ? manual : manual.filter { !$0.gpuCacheAppend })",
+      "new": "                   supported ? manual\n                       : manual.enumerated()\n                           .filter { $0.offset == 0 || !$0.element.gpuCacheAppend }\n                           .map(\\.element))"
+    },
+    {
+      "path": "Sources/leviathan-tests/main.swift",
+      "old": "        check(\"od canonical: digest verifies\", verified)\n",
+      "new": "        check(\"od canonical: digest verifies\", verified)\n        // Recorded regression constants for the current canonical fixture\n        // and report codec under odHardware() (shadow-test/1024/32/1GiB),\n        // observed independently from the validated lowered IR. Not a\n        // portable proof: Foundation's JSONEncoder output may differ across\n        // platforms or releases. The report digest already covers ssaDigest;\n        // the separate SSA pin tells lowering drift apart from codec drift.\n        checkEqual(\"od canonical: recorded SSA digest\", body.ssaDigest,\n                   \"28a04586de4fe9b62d56c56723e55ba9f8668548d3cb29db1a565a42097f8583\")\n        checkEqual(\"od canonical: recorded report digest\", report.reportDigest,\n                   \"9900d8cd07e974722f6a9bc3ff712476746f504c1ea0b4cefefd0df3c5272199\")\n"
+    },
+    {
+      "path": "Sources/leviathan-tests/main.swift",
+      "old": "        reasons: [GemmaOpportunityReport.Reason(\n            code: .operandSlice, layer: 0, instructionIndices: [3],\n            valueIDs: [\"t2@0\", \"kv@0\"])],\n        provenLayers: [1])\n",
+      "new": "        reasons: [GemmaOpportunityReport.Reason(\n            code: .operandSlice, layer: 0, instructionIndices: [3],\n            valueIDs: [\"t2@0\", \"kv@0\"])],\n        provenLayers: [1])\n    // Validator-consistent (attrs 2*8 == length 16 <= 8*hidden) but not the\n    // config's local 2x4 geometry: three ordered reasons on one instruction.\n    odExpectSyntheticUnsupported(\n        \"od multi-reason local geometry\",\n        [ODAppendSpec(layer: 0, kvHeads: 2, headDim: 8, width: 16), global1],\n        reasons: [\n            GemmaOpportunityReport.Reason(\n                code: .geometryMismatch, layer: 0, instructionIndices: [3],\n                valueIDs: [\"t2@0\", \"kv@0\"]),\n            GemmaOpportunityReport.Reason(\n                code: .operandLength, layer: 0, instructionIndices: [3],\n                valueIDs: [\"t2@0\", \"kv@0\"]),\n            GemmaOpportunityReport.Reason(\n                code: .outputMismatch, layer: 0, instructionIndices: [3],\n                valueIDs: [\"kvstate_0@0\"]),\n        ],\n        provenLayers: [1])\n\n    // A cache_append without a layer that the existing validator still\n    // accepts (output kvstate_-1): withheld as layerAbsent, leaving layer 0\n    // uncovered.\n    if let absentBase = odSyntheticSSA([local0, global1]),\n       let absent = odMutated(absentBase, { obj in\n           var insts = obj[\"instructions\"] as? [[String: Any]] ?? []\n           insts[3].removeValue(forKey: \"layer\")\n           insts[3][\"output\"] = \"kvstate_-1@0\"\n           obj[\"instructions\"] = insts\n           obj[\"values\"] = (obj[\"values\"] as? [[String: Any]] ?? []).map { value in\n               var v = value\n               if (v[\"name\"] as? String) == \"kvstate_0\" {\n                   v[\"name\"] = \"kvstate_-1\"\n                   if v[\"id\"] != nil { v[\"id\"] = \"kvstate_-1@0\" }\n               }\n               return v\n           }\n       }) {\n        if odValidates(\"od absent layer\", absent, synthConfig) {\n            do {\n                let r = try GemmaOpportunityDiscovery.discover(\n                    ssa: absent, config: synthConfig, hardware: hw)\n                check(\"od absent layer: unsupported\", !r.body.supported)\n                checkEqual(\"od absent layer: exact reasons\", r.body.reasons, [\n                    GemmaOpportunityReport.Reason(\n                        code: .layerAbsent, layer: nil, instructionIndices: [3],\n                        valueIDs: [\"kvstate_-1@0\"]),\n                    GemmaOpportunityReport.Reason(\n                        code: .missingLayer, layer: 0, instructionIndices: [],\n                        valueIDs: []),\n                ])\n                checkEqual(\"od absent layer: proven layers\", r.body.proofs.map(\\.layer), [1])\n            } catch {\n                failed += 1; print(\"FAIL: od absent layer - threw \\(error)\")\n            }\n            odCheckShadow(\"od absent layer\", absent, synthConfig, supported: false)\n        }\n    } else {\n        failed += 1; print(\"FAIL: od absent-layer fixture unrepresentable\")\n    }\n"
+    }
+  ]
+}

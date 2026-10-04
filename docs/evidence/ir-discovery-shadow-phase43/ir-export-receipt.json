@@ -1,0 +1,12 @@
+{
+  "command": [
+    "/tmp/leviathan-forge2-tooling/phase43-ir-discovery-shadow/export-real-ir",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "/tmp/leviathan-forge2-tooling/phase43-ir-discovery-shadow/actual-model-ssa.json",
+    "/tmp/leviathan-forge2-tooling/phase43-ir-discovery-shadow/actual-model-ir-census.json"
+  ],
+  "exit": 0,
+  "elapsedSeconds": 0.9993866253644228,
+  "completedUtc": "2026-10-04T18:00:25.148683+00:00"
+}

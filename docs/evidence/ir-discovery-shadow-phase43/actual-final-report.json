@@ -1,0 +1,373 @@
+{
+  "body" : {
+    "analysisVersion" : 1,
+    "axis" : "gpuCacheAppend",
+    "config" : {
+      "expertCount" : 128,
+      "expertIntermediate" : 704,
+      "expertUsedCount" : 8,
+      "finalSoftcap" : 30,
+      "globalHeadDim" : 512,
+      "globalKVHeads" : 2,
+      "globalLayers" : [
+        5,
+        11,
+        17,
+        23,
+        29
+      ],
+      "hidden" : 2816,
+      "layerCount" : 30,
+      "localHeadDim" : 256,
+      "localKVHeads" : 8,
+      "qHeads" : 16,
+      "sharedIntermediate" : 2112,
+      "slidingWindow" : 1024,
+      "vocabSize" : 262144
+    },
+    "hardware" : {
+      "deviceName" : "Apple M1 Max",
+      "maxTotalThreadsPerThreadgroup" : 1024,
+      "recommendedMaxWorkingSetSize" : 26800603136,
+      "threadExecutionWidth" : 32
+    },
+    "proofs" : [
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 10,
+        "keyInputID" : "t2@2",
+        "kvHeads" : 8,
+        "layer" : 0,
+        "outputID" : "kvstate_0@0",
+        "valueInputID" : "kv@1",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 41,
+        "keyInputID" : "t2@6",
+        "kvHeads" : 8,
+        "layer" : 1,
+        "outputID" : "kvstate_1@0",
+        "valueInputID" : "kv@3",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 72,
+        "keyInputID" : "t2@10",
+        "kvHeads" : 8,
+        "layer" : 2,
+        "outputID" : "kvstate_2@0",
+        "valueInputID" : "kv@5",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 103,
+        "keyInputID" : "t2@14",
+        "kvHeads" : 8,
+        "layer" : 3,
+        "outputID" : "kvstate_3@0",
+        "valueInputID" : "kv@7",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 134,
+        "keyInputID" : "t2@18",
+        "kvHeads" : 8,
+        "layer" : 4,
+        "outputID" : "kvstate_4@0",
+        "valueInputID" : "kv@9",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : true,
+        "headDim" : 512,
+        "instructionIndex" : 165,
+        "keyInputID" : "t2@22",
+        "kvHeads" : 2,
+        "layer" : 5,
+        "outputID" : "kvstate_5@0",
+        "valueInputID" : "kv@11",
+        "wordWidth" : 1024
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 196,
+        "keyInputID" : "t2@26",
+        "kvHeads" : 8,
+        "layer" : 6,
+        "outputID" : "kvstate_6@0",
+        "valueInputID" : "kv@13",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 227,
+        "keyInputID" : "t2@30",
+        "kvHeads" : 8,
+        "layer" : 7,
+        "outputID" : "kvstate_7@0",
+        "valueInputID" : "kv@15",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 258,
+        "keyInputID" : "t2@34",
+        "kvHeads" : 8,
+        "layer" : 8,
+        "outputID" : "kvstate_8@0",
+        "valueInputID" : "kv@17",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 289,
+        "keyInputID" : "t2@38",
+        "kvHeads" : 8,
+        "layer" : 9,
+        "outputID" : "kvstate_9@0",
+        "valueInputID" : "kv@19",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 320,
+        "keyInputID" : "t2@42",
+        "kvHeads" : 8,
+        "layer" : 10,
+        "outputID" : "kvstate_10@0",
+        "valueInputID" : "kv@21",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : true,
+        "headDim" : 512,
+        "instructionIndex" : 351,
+        "keyInputID" : "t2@46",
+        "kvHeads" : 2,
+        "layer" : 11,
+        "outputID" : "kvstate_11@0",
+        "valueInputID" : "kv@23",
+        "wordWidth" : 1024
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 382,
+        "keyInputID" : "t2@50",
+        "kvHeads" : 8,
+        "layer" : 12,
+        "outputID" : "kvstate_12@0",
+        "valueInputID" : "kv@25",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 413,
+        "keyInputID" : "t2@54",
+        "kvHeads" : 8,
+        "layer" : 13,
+        "outputID" : "kvstate_13@0",
+        "valueInputID" : "kv@27",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 444,
+        "keyInputID" : "t2@58",
+        "kvHeads" : 8,
+        "layer" : 14,
+        "outputID" : "kvstate_14@0",
+        "valueInputID" : "kv@29",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 475,
+        "keyInputID" : "t2@62",
+        "kvHeads" : 8,
+        "layer" : 15,
+        "outputID" : "kvstate_15@0",
+        "valueInputID" : "kv@31",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 506,
+        "keyInputID" : "t2@66",
+        "kvHeads" : 8,
+        "layer" : 16,
+        "outputID" : "kvstate_16@0",
+        "valueInputID" : "kv@33",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : true,
+        "headDim" : 512,
+        "instructionIndex" : 537,
+        "keyInputID" : "t2@70",
+        "kvHeads" : 2,
+        "layer" : 17,
+        "outputID" : "kvstate_17@0",
+        "valueInputID" : "kv@35",
+        "wordWidth" : 1024
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 568,
+        "keyInputID" : "t2@74",
+        "kvHeads" : 8,
+        "layer" : 18,
+        "outputID" : "kvstate_18@0",
+        "valueInputID" : "kv@37",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 599,
+        "keyInputID" : "t2@78",
+        "kvHeads" : 8,
+        "layer" : 19,
+        "outputID" : "kvstate_19@0",
+        "valueInputID" : "kv@39",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 630,
+        "keyInputID" : "t2@82",
+        "kvHeads" : 8,
+        "layer" : 20,
+        "outputID" : "kvstate_20@0",
+        "valueInputID" : "kv@41",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 661,
+        "keyInputID" : "t2@86",
+        "kvHeads" : 8,
+        "layer" : 21,
+        "outputID" : "kvstate_21@0",
+        "valueInputID" : "kv@43",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 692,
+        "keyInputID" : "t2@90",
+        "kvHeads" : 8,
+        "layer" : 22,
+        "outputID" : "kvstate_22@0",
+        "valueInputID" : "kv@45",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : true,
+        "headDim" : 512,
+        "instructionIndex" : 723,
+        "keyInputID" : "t2@94",
+        "kvHeads" : 2,
+        "layer" : 23,
+        "outputID" : "kvstate_23@0",
+        "valueInputID" : "kv@47",
+        "wordWidth" : 1024
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 754,
+        "keyInputID" : "t2@98",
+        "kvHeads" : 8,
+        "layer" : 24,
+        "outputID" : "kvstate_24@0",
+        "valueInputID" : "kv@49",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 785,
+        "keyInputID" : "t2@102",
+        "kvHeads" : 8,
+        "layer" : 25,
+        "outputID" : "kvstate_25@0",
+        "valueInputID" : "kv@51",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 816,
+        "keyInputID" : "t2@106",
+        "kvHeads" : 8,
+        "layer" : 26,
+        "outputID" : "kvstate_26@0",
+        "valueInputID" : "kv@53",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 847,
+        "keyInputID" : "t2@110",
+        "kvHeads" : 8,
+        "layer" : 27,
+        "outputID" : "kvstate_27@0",
+        "valueInputID" : "kv@55",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : false,
+        "headDim" : 256,
+        "instructionIndex" : 878,
+        "keyInputID" : "t2@114",
+        "kvHeads" : 8,
+        "layer" : 28,
+        "outputID" : "kvstate_28@0",
+        "valueInputID" : "kv@57",
+        "wordWidth" : 2048
+      },
+      {
+        "global" : true,
+        "headDim" : 512,
+        "instructionIndex" : 909,
+        "keyInputID" : "t2@118",
+        "kvHeads" : 2,
+        "layer" : 29,
+        "outputID" : "kvstate_29@0",
+        "valueInputID" : "kv@59",
+        "wordWidth" : 1024
+      }
+    ],
+    "reasons" : [
+
+    ],
+    "ssaDigest" : "28a04586de4fe9b62d56c56723e55ba9f8668548d3cb29db1a565a42097f8583",
+    "supported" : true
+  },
+  "reportDigest" : "d957577fe026b8d57898dd64935115482262c1be0728b333e1927a84ba546e06"
+}
