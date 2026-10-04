@@ -672,6 +672,12 @@ case "forge":
         // decode steps — both engines then freshly evaluate exactly one
         // prompt token per round. Requires --plan (SSA execution path)
         // and exactly 2 prompt ids.
+        // --unprepared opts OUT of the default prepared hot path for the
+        // qualified plan (feature toggle; prepared is the DEFAULT).
+        let unpreparedOptOut = args.contains("--unprepared")
+        guard !unpreparedOptOut || args.contains("--plan") else {
+            fail("--unprepared requires --plan (it selects the plan schedule path)")
+        }
         let bosAlign = args.contains("--bos-align")
         guard !bosAlign || args.contains("--plan") else {
             fail("--bos-align requires --plan (SSA execution path)")
@@ -732,6 +738,7 @@ case "forge":
             // logit array (both arrays finiteness-checked explicitly).
             var planOpt: GemmaForgePlan? = nil
             var graphOpt: GemmaGraphIR? = nil
+            var preparedExec: GemmaPreparedExecution? = nil
             var memorySample = 0
             var gatedIds: [Int]? = nil
             if args.contains("--plan") {
@@ -763,6 +770,24 @@ case "forge":
                     expertCacheBudget: nil)
                 print("plan identity validated: \(planOpt!.planDigest) "
                       + "(selected \(planOpt!.selected))")
+                // DEFAULT PREPARED hot path: one-time prepare (validate +
+                // lower + value table) after identity validation, with the
+                // prepared SSA asserted EXACTLY equal to the plan's embedded
+                // schedule — a mismatch is a hard rejection. --unprepared
+                // opts out to the persisted-schedule path.
+                if unpreparedOptOut {
+                    preparedExec = nil
+                    print("prepared execution: OFF (--unprepared opt-out; plan schedule path)")
+                } else {
+                    let prep = try GemmaPreparedExecution.prepare(
+                        graph: graphOpt!, runner: runner)
+                    guard prep.ssa == planOpt!.schedule else {
+                        fail("prepared SSA schedule differs from the plan's embedded schedule — rejecting")
+                    }
+                    preparedExec = prep
+                    print("prepared execution: ON (prepared.ssa asserted equal to plan.schedule)")
+                }
+                print("selected candidate flags: batching=\(planOpt!.selected.segmentBatching ? 1 : 0) tiledQ4=\(planOpt!.selected.matvecTiledQ4 ? 1 : 0) tiledQ6=\(planOpt!.selected.matvecTiledQ6 ? 1 : 0) rmsTiled=\(planOpt!.selected.rmsnormTiled ? 1 : 0) f32Tiled=\(planOpt!.selected.matvecTiledF32 ? 1 : 0) vecLoads=\(planOpt!.selected.vectorizedLoads ? 1 : 0) gpuCacheAppend=\(planOpt!.selected.gpuCacheAppend ? 1 : 0) parallelAttention=\(planOpt!.selected.parallelAttention ? 1 : 0)")
                 print(String(format: "identity validation prep: %.1f ms (graph parse + GGUF hash + plan load)",
                              ms(ContinuousClock.now - prepStart)))
             }
@@ -787,9 +812,11 @@ case "forge":
                     prev = ev.argmaxToken
                 }
                 runner.reset()
-                let (am, lg, _, _, _) = try GemmaForge.executeGraph(
-                    graph, runner: runner, tokenIds: promptIDs,
-                    candidate: plan.selected, schedule: plan.schedule)
+                let (am, lg, _, _, _) = try (preparedExec != nil
+                    ? GemmaForge.executeGraph(graph, runner: runner, tokenIds: promptIDs,
+                                              candidate: plan.selected, prepared: preparedExec)
+                    : GemmaForge.executeGraph(graph, runner: runner, tokenIds: promptIDs,
+                                              candidate: plan.selected, schedule: plan.schedule))
                 guard am == refIds[0],
                       lg.count == prefillLogits.count,
                       lg.allSatisfy({ $0.isFinite }),
@@ -802,9 +829,11 @@ case "forge":
                 }
                 var gateGen = [am]
                 for step in 1..<min(refIds.count, maxTokens) {
-                    let (next, sl, _, _, _) = try GemmaForge.executeGraphContinue(
-                        graph, runner: runner, token: gateGen.last!,
-                        candidate: plan.selected, schedule: plan.schedule)
+                    let (next, sl, _, _, _) = try (preparedExec != nil
+                        ? GemmaForge.executeGraphContinue(graph, runner: runner, token: gateGen.last!,
+                                                          candidate: plan.selected, prepared: preparedExec)
+                        : GemmaForge.executeGraphContinue(graph, runner: runner, token: gateGen.last!,
+                                                          candidate: plan.selected, schedule: plan.schedule))
                     let want = stepLogits[step - 1]
                     // Explicit shape/finiteness checks first, then the
                     // full-array worst relative difference (no
@@ -851,21 +880,27 @@ case "forge":
                         // keeps warm per the 11498 cache-manager log);
                         // the timed window starts right before the
                         // freshly evaluated non-BOS prompt token.
-                        _ = try GemmaForge.executeGraph(
-                            graph, runner: runner, tokenIds: [promptIDs[0]],
-                            candidate: plan.selected, schedule: plan.schedule)
+                        _ = try (preparedExec != nil
+                            ? GemmaForge.executeGraph(graph, runner: runner, tokenIds: [promptIDs[0]],
+                                                      candidate: plan.selected, prepared: preparedExec)
+                            : GemmaForge.executeGraph(graph, runner: runner, tokenIds: [promptIDs[0]],
+                                                      candidate: plan.selected, schedule: plan.schedule))
                         let timedStart = ContinuousClock.now
                         let (am, _, gpuMicros, _, _) =
-                            try GemmaForge.executeGraphContinue(
-                                graph, runner: runner, token: promptIDs[1],
-                                candidate: plan.selected, schedule: plan.schedule)
+                            try (preparedExec != nil
+                                ? GemmaForge.executeGraphContinue(graph, runner: runner, token: promptIDs[1],
+                                                                  candidate: plan.selected, prepared: preparedExec)
+                                : GemmaForge.executeGraphContinue(graph, runner: runner, token: promptIDs[1],
+                                                                  candidate: plan.selected, schedule: plan.schedule))
                         firstToken = am
                         gpuMicrosTotal = gpuMicros
                         ttftMs = ms(ContinuousClock.now - timedStart)
                     } else {
-                        let (am, _, gpuMicros, _, _) = try GemmaForge.executeGraph(
-                            graph, runner: runner, tokenIds: promptIDs,
-                            candidate: plan.selected, schedule: plan.schedule)
+                        let (am, _, gpuMicros, _, _) = try (preparedExec != nil
+                            ? GemmaForge.executeGraph(graph, runner: runner, tokenIds: promptIDs,
+                                                      candidate: plan.selected, prepared: preparedExec)
+                            : GemmaForge.executeGraph(graph, runner: runner, tokenIds: promptIDs,
+                                                      candidate: plan.selected, schedule: plan.schedule))
                         firstToken = am
                         gpuMicrosTotal = gpuMicros
                         ttftMs = ms(ContinuousClock.now - prefillStart)
@@ -894,9 +929,11 @@ case "forge":
                     let stepStart = ContinuousClock.now
                     if let plan = planOpt, let graph = graphOpt {
                         let (next, _, gpuMicros, _, _) =
-                            try GemmaForge.executeGraphContinue(
-                                graph, runner: runner, token: generated.last!,
-                                candidate: plan.selected, schedule: plan.schedule)
+                            try (preparedExec != nil
+                                ? GemmaForge.executeGraphContinue(graph, runner: runner, token: generated.last!,
+                                                                  candidate: plan.selected, prepared: preparedExec)
+                                : GemmaForge.executeGraphContinue(graph, runner: runner, token: generated.last!,
+                                                                  candidate: plan.selected, schedule: plan.schedule))
                         gpuMicrosTotal += gpuMicros
                         generated.append(next)
                         if breakdown {
@@ -963,6 +1000,7 @@ case "forge":
                                  bdTotals.residual, pct(bdTotals.residual)))
                 }
             }
+            print("parallel attention totals: applied \(runner.parallelAttentionAppliedCount), fallback \(runner.parallelAttentionFallbackCount)")
             print(String(format: "load (once): %.1f ms (runtime Metal library + pipeline compile within it: %.1f ms)",
                          loadMs, runner.metalCompileMicros / 1000))
             print("GENERATION_COMPLETED")

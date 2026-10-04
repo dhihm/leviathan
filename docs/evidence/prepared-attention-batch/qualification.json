@@ -1,0 +1,51 @@
+{
+  "binarySha256": "6197931a3107e0b9dc398511e3e3fd57cd0d9f418f20b3b4c33ddadd9ca05b9d",
+  "modelBytes": 14439363584,
+  "modelSha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+  "modelDownloaded": false,
+  "freshAndReloadStages": [
+    {
+      "name": "fresh",
+      "exit": 0,
+      "elapsedSeconds": 172.1414371668361
+    },
+    {
+      "name": "reload",
+      "exit": 0,
+      "elapsedSeconds": 72.01181620778516
+    }
+  ],
+  "sourceUnchanged": true,
+  "fullGateTokens": 32,
+  "selected": {
+    "gpuCacheAppend": true,
+    "matvecTiledF32": false,
+    "matvecTiledQ4": false,
+    "matvecTiledQ6": false,
+    "parallelAttention": true,
+    "rmsnormTiled": false,
+    "segmentBatching": true,
+    "top5Diagnostic": false,
+    "vectorizedLoads": true
+  },
+  "planDigest": "32426de678617d27f2269ad84053b911fd79cdf3ab2db429e73fdbf8a49ea923",
+  "fullGateRejections": [
+    "candidate GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: true, matvecTiledQ6: false, rmsnormTiled: true, matvecTiledF32: false, vectorizedLoads: false, gpuCacheAppend: false, parallelAttention: false) rejected: step 25 worst rel 1.171e-04 >= 1e-4"
+  ],
+  "preparedServingGate": {
+    "steps": 32,
+    "vocabSize": 262144,
+    "worstNormalizedLogitDiff": 7.529184222221375e-05,
+    "tolerance": 0.0001,
+    "exactGreedyIDs": true,
+    "parallelAttentionApplied": 990,
+    "parallelAttentionFallback": 0,
+    "serialPreparedLogitsBitExact": true,
+    "rejectionCases": 4,
+    "expertCacheBudgetBytes": 134217728,
+    "performanceClaim": false
+  },
+  "regressionChecks": 846,
+  "regressionFailures": 0,
+  "scope": "One raw Hello fixture; not arbitrary model coverage or universal numerical equivalence."
+}

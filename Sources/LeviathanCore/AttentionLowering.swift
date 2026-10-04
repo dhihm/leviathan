@@ -123,6 +123,13 @@ public enum AttentionDiagnostic {
     public static let labelPrefix = "attn-diagnostic"
     /// Separate pipeline-cache key. The cached g4_attn entry is untouched.
     public static let slotKey = "diagnostic.attention.candidate"
+    /// PRODUCTION plumbing constant (distinct from the diagnostic slot):
+    /// the production parallel-attention runtime compiles the SAME,
+    /// NUMERICALLY UNMODIFIED candidateSource on the runner's OWN device
+    /// into an INDEPENDENT pipeline labelled `productionLabel`. It never
+    /// touches the diagnostic slot, the diagnostic counters, or any
+    /// approval record.
+    public static let productionLabel = "attn-par64-production"
     public static let threads = 64
     public static let maxContext = 4096
     public static let maxHeadDim = 512

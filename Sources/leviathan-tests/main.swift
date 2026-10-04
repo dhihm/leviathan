@@ -1922,6 +1922,13 @@ do {
         checkEqual("ssa lowering deterministic", lowered2, ssa)
         checkEqual("ssa digest stable", try GemmaSSA.digest(lowered2),
                    try GemmaSSA.digest(ssa))
+        // Prepared value-table gate (pure): one entry per distinct value id,
+        // and the table maps every id to its exact SSA value.
+        let table = GemmaPreparedExecution.valueTable(ssa)
+        checkEqual("prepared value table size", table.count,
+                   Set(ssa.values.map(\.id)).count)
+        check("prepared value table entries exact",
+              ssa.values.allSatisfy { table[$0.id] == $0 })
     } catch {
         failed += 1; print("FAIL: SSA determinism/digest — \(error)")
     }
@@ -2177,6 +2184,14 @@ do {
     check("plan identity validates", (try? GemmaForge.validatePlanIdentity(
         plan, graph: graph, ggufDigest: gguf, engineDigest: engine,
         hardware: hw)) != nil)
+    // Pure config-fingerprint table check: stable for the same config and
+    // sensitive to a layer-count change (structural, no hashing/GPU).
+    checkEqual("config fingerprint stable for same config",
+               GemmaConfigFingerprint(cfg), GemmaConfigFingerprint(cfg))
+    check("config fingerprint layer count captured",
+          GemmaConfigFingerprint(cfg).layerCount == cfg.layerCount
+              && GemmaConfigFingerprint(cfg).hiddenSize == cfg.hiddenSize
+              && GemmaConfigFingerprint(cfg).globalLayers == Set(cfg.globalLayers))
     let otherHex = String(repeating: "ff", count: 32)
     rejected("tampered gguf digest rejected",
              expectMutated("gguf") { $0["ggufDigest"] = otherHex })
@@ -2213,7 +2228,7 @@ do {
                  $0["selected"] = ["segmentBatching": true, "top5Diagnostic": false,
                                    "matvecTiledQ4": true, "matvecTiledQ6": true,
                                    "rmsnormTiled": true, "matvecTiledF32": true, "vectorizedLoads": true,
-                                   "gpuCacheAppend": false]
+                                   "gpuCacheAppend": false, "parallelAttention": false]
              })
     // Wrong CURRENT inputs (not plan mutations) are rejected too.
     check("foreign current gguf digest rejected", (try? GemmaForge.validatePlanIdentity(
@@ -5146,10 +5161,25 @@ do {
     let legacy = "{\"segmentBatching\":true,\"top5Diagnostic\":false,\"matvecTiledQ4\":false,\"matvecTiledQ6\":false,\"rmsnormTiled\":false,\"matvecTiledF32\":false,\"vectorizedLoads\":false}"
     check("legacy artifact without gpuCacheAppend rejected",
           (try? dec.decode(GemmaForgeCandidate.self, from: Data(legacy.utf8))) == nil)
+    // parallelAttention axis: explicit Codable key, default false,
+    // missing key rejected, bounded candidate counts.
+    let pa = GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                 vectorizedLoads: true, parallelAttention: true)
+    let paj = String(data: try enc.encode(pa), encoding: .utf8) ?? ""
+    check("parallelAttention JSON reflects true", paj.contains("\"parallelAttention\":true"))
+    check("parallelAttention JSON roundtrip",
+          (try? dec.decode(GemmaForgeCandidate.self, from: enc.encode(pa))) == pa)
+    check("parallelAttention default false",
+          !GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false).parallelAttention)
+    let legacyNoPA = "{\"segmentBatching\":true,\"top5Diagnostic\":false,\"matvecTiledQ4\":false,\"matvecTiledQ6\":false,\"rmsnormTiled\":false,\"matvecTiledF32\":false,\"vectorizedLoads\":false,\"gpuCacheAppend\":false}"
+    check("legacy artifact without parallelAttention rejected",
+          (try? dec.decode(GemmaForgeCandidate.self, from: Data(legacyNoPA.utf8))) == nil)
     let cands = GemmaForge.candidates()
-    checkEqual("bounded candidate count", cands.count, 15)
-    checkEqual("gpuCacheAppend candidates", cands.filter { $0.gpuCacheAppend }.count, 2)
-    check("old baseline default false", !cands[0].gpuCacheAppend && !cands[1].gpuCacheAppend)
+    checkEqual("bounded candidate count", cands.count, 17)
+    checkEqual("gpuCacheAppend candidates", cands.filter { $0.gpuCacheAppend }.count, 3)
+    checkEqual("parallelAttention candidates", cands.filter { $0.parallelAttention }.count, 2)
+    check("old baseline default false", !cands[0].gpuCacheAppend && !cands[1].gpuCacheAppend
+          && !cands[0].parallelAttention && !cands[1].parallelAttention)
 } catch {
     failed += 1
     print("FAIL cache-append candidate JSON: \(error)")

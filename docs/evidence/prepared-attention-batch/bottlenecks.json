@@ -1,0 +1,67 @@
+{
+  "currentBinarySha256": "408076eaf055fd990c541f1f01c5940dbf64b4bb50903428d00ef88eb62d319c",
+  "currentPlan": "phase30 GPU KV append selected",
+  "workload": "Hello, BOS-only alignment, 32 generated IDs, repeat 1 warmup and repeat 2 measured, 31 decode steps",
+  "breakdownRows": [
+    "breakdown totals (31 steps, decode only): wall 11719.2 ms | gpu 10497.0 (89.6%) | flush-host 867.1 (7.4%) | encode 43.0 (0.4%) | readCopy 20.8 (0.2%) | writeCopy 3.5 (0.0%) | residual 287.8 (2.5%)",
+    "breakdown totals (31 steps, decode only): wall 12362.3 ms | gpu 10657.0 (86.2%) | flush-host 1069.0 (8.6%) | encode 92.7 (0.7%) | readCopy 47.3 (0.4%) | writeCopy 18.3 (0.1%) | residual 478.0 (3.9%)"
+  ],
+  "currentDispatchesPerToken": 1829,
+  "currentBuffersPerToken": 97,
+  "metalAllocatedSampleGiB": 15.168,
+  "historicalIntrusiveRanking": [
+    {
+      "name": "g4_q4_matvec",
+      "totalMs": 3399.4676237925887,
+      "msPerDecodedToken": 109.66024592879319,
+      "sharePercent": 32.00743077115746,
+      "calls": 6355
+    },
+    {
+      "name": "g4_attn",
+      "totalMs": 2883.928663097322,
+      "msPerDecodedToken": 93.02995687410716,
+      "sharePercent": 27.153412607019476,
+      "calls": 930
+    },
+    {
+      "name": "g4_rmsnorm_vl",
+      "totalMs": 2305.072098970413,
+      "msPerDecodedToken": 74.35716448291656,
+      "sharePercent": 21.703232327893357,
+      "calls": 10261
+    },
+    {
+      "name": "g4_q6_matvec",
+      "totalMs": 763.2983755320311,
+      "msPerDecodedToken": 24.622528242968745,
+      "sharePercent": 7.186778230092964,
+      "calls": 31
+    },
+    {
+      "name": "g4_f32_matvec",
+      "totalMs": 579.2392469011247,
+      "msPerDecodedToken": 18.685136996810474,
+      "sharePercent": 5.4537833998963565,
+      "calls": 930
+    }
+  ],
+  "historicalCaveat": "Separate-command-buffer intrusive attribution, not current production shares. Historical batching GPU interval inflation 1.454.",
+  "batchPriority": [
+    "Original bounded parallel attention integrated into Forge candidate selection",
+    "Prepared immutable validated SSA and retained operand index",
+    "Compose attention with existing GPU KV append; retain feature toggles and unchanged numerical gates"
+  ],
+  "deferredPendingProfile": [
+    "RMS and matvec replacement: historical ranking alone insufficient to justify current schedule changes"
+  ],
+  "mlXComparison": "No matched MLX benchmark yet; dependency/model conversion not assumed available.",
+  "repeatedValidationCPU": {
+    "iterations": 100,
+    "medianMicros": 2050.042,
+    "p95Micros": 7994.0,
+    "instructions": 934,
+    "values": 934,
+    "scope": "CPU-only repeated SSA validate+canonical lower+equality+operand index; no model execution or speed claim"
+  }
+}

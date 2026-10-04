@@ -1,0 +1,82 @@
+{
+  "scope": "Single sequential feature-attribution runs, same new executable; repeat1 warmup excluded, repeats2/3 timed. These arms are not replicated matched pairs and cannot establish small causal speedups. No gate/model startup/prefill in decode timing. Serial control artifact records original 4-step Forge gate; separate full-prepared-gate.log verifies serial prepared bit exact over32 steps.",
+  "arms": [
+    {
+      "arm": "serial-prepared",
+      "exit": 0,
+      "elapsedSeconds": 62.30820412514731,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 13212.6,
+          "steps": 31
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 13042.1,
+          "steps": 31
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 12837.3,
+          "steps": 31
+        }
+      ],
+      "warmMedianDecodeWallMillis": 12939.7,
+      "warmAggregateTokensPerSecond": 2.3957278762258785,
+      "crossArmExactIDs": true
+    },
+    {
+      "arm": "serial-unprepared",
+      "exit": 0,
+      "elapsedSeconds": 52.29332333384082,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 13225.8,
+          "steps": 31
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 12476.2,
+          "steps": 31
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 12060.4,
+          "steps": 31
+        }
+      ],
+      "warmMedianDecodeWallMillis": 12268.3,
+      "warmAggregateTokensPerSecond": 2.5268374591426688,
+      "crossArmExactIDs": true
+    },
+    {
+      "arm": "parallel-unprepared",
+      "exit": 0,
+      "elapsedSeconds": 46.80960483290255,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 10066.8,
+          "steps": 31
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 10038.7,
+          "steps": 31
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 10014.7,
+          "steps": 31
+        }
+      ],
+      "warmMedianDecodeWallMillis": 10026.7,
+      "warmAggregateTokensPerSecond": 3.0917450407412206,
+      "crossArmExactIDs": true
+    }
+  ],
+  "binarySha256": "6197931a3107e0b9dc398511e3e3fd57cd0d9f418f20b3b4c33ddadd9ca05b9d",
+  "binaryUnchanged": true
+}

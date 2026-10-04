@@ -73,11 +73,21 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
     /// the kernel bounds-guards gid so no out-of-range word is touched.
     public let gpuCacheAppend: Bool
 
+    /// PRODUCTION parallel-attention axis (default false): serve eligible
+    /// attention geometry with the original 64-lane par64 kernel through
+    /// the runner's production parallel-attention pipeline (numerically
+    /// unmodified kernel; same ordered compute-segment path). Ineligible
+    /// geometry safely falls back to the incumbent g4_attn and counts a
+    /// production fallback. Explicit Codable key — a pre-axis artifact
+    /// missing this field is rejected, never silently defaulted.
+    public let parallelAttention: Bool
+
     public init(segmentBatching: Bool, top5Diagnostic: Bool,
                 matvecTiledQ4: Bool = false, matvecTiledQ6: Bool = false,
                 rmsnormTiled: Bool = false, matvecTiledF32: Bool = false,
                 vectorizedLoads: Bool = false,
-                gpuCacheAppend: Bool = false) {
+                gpuCacheAppend: Bool = false,
+                parallelAttention: Bool = false) {
         self.segmentBatching = segmentBatching
         self.top5Diagnostic = top5Diagnostic
         self.matvecTiledQ4 = matvecTiledQ4
@@ -86,11 +96,13 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
         self.matvecTiledF32 = matvecTiledF32
         self.vectorizedLoads = vectorizedLoads
         self.gpuCacheAppend = gpuCacheAppend
+        self.parallelAttention = parallelAttention
     }
 
     private enum CodingKeys: String, CodingKey {
         case segmentBatching, top5Diagnostic, matvecTiledQ4, matvecTiledQ6
         case rmsnormTiled, matvecTiledF32, vectorizedLoads, gpuCacheAppend
+        case parallelAttention
     }
 
     public init(from decoder: Decoder) throws {
@@ -103,6 +115,10 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
             throw DecodingError.keyNotFound(CodingKeys.gpuCacheAppend, DecodingError.Context(
                 codingPath: c.codingPath, debugDescription: "gpuCacheAppend missing (pre-axis artifact)"))
         }
+        guard let parallelAttention = try c.decodeIfPresent(Bool.self, forKey: .parallelAttention) else {
+            throw DecodingError.keyNotFound(CodingKeys.parallelAttention, DecodingError.Context(
+                codingPath: c.codingPath, debugDescription: "parallelAttention missing (pre-axis artifact)"))
+        }
         self.segmentBatching = try c.decode(Bool.self, forKey: .segmentBatching)
         self.top5Diagnostic = try c.decode(Bool.self, forKey: .top5Diagnostic)
         self.matvecTiledQ4 = try c.decode(Bool.self, forKey: .matvecTiledQ4)
@@ -111,6 +127,7 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
         self.matvecTiledF32 = try c.decode(Bool.self, forKey: .matvecTiledF32)
         self.vectorizedLoads = try c.decode(Bool.self, forKey: .vectorizedLoads)
         self.gpuCacheAppend = gpuCacheAppend
+        self.parallelAttention = parallelAttention
     }
 }
 
@@ -144,6 +161,125 @@ public struct GemmaForgeCandidateResult: Codable, Equatable, Sendable {
         self.kernelsPerToken = kernelsPerToken
         self.buffersPerToken = buffersPerToken
         self.note = note
+    }
+}
+
+/// Model-configuration fingerprint captured from the preparing
+/// runner's Gemma4Config. Equality of this fingerprint plus structural
+/// graph equality are the CHEAP reuse gates; they never replace the
+/// full one-time validation performed during preparation.
+public struct GemmaConfigFingerprint: Equatable, Sendable {
+    public let vocabSize: Int
+    public let hiddenSize: Int
+    public let layerCount: Int
+    public let expertCount: Int
+    public let expertUsedCount: Int
+    public let expertIntermediate: Int
+    public let sharedIntermediate: Int
+    public let maxContext: Int
+    public let globalLayers: Set<Int>
+
+    public init(_ c: Gemma4Config) {
+        self.vocabSize = c.vocabSize
+        self.hiddenSize = c.hiddenSize
+        self.layerCount = c.layerCount
+        self.expertCount = c.expertCount
+        self.expertUsedCount = c.topKExperts
+        self.expertIntermediate = c.expertIntermediate
+        self.sharedIntermediate = c.sharedIntermediate
+        self.maxContext = c.maxContext
+        self.globalLayers = Set(c.globalLayers)
+    }
+}
+
+/// Immutable PREPARED execution: the canonical SSA lowering of ONE
+/// graph validated against the mapped GGUF at prepare time, bound to
+/// ONE exact retained runner object with the SSA value table
+/// precomputed once.
+///
+/// All expensive qualification — GemmaGraph.validate against the real
+/// GGUF, canonical lowering, SSA dataflow validation — happens ONCE in
+/// `prepare`. Fast reuse performs NO hashing and NO re-lowering: it
+/// compares the runner by object identity (the runner is RETAINED so a
+/// freed-and-reallocated object cannot reuse the address), the graph
+/// by structural equality with the validated immutable copy, and the
+/// config by fingerprint. A mismatch is a hard rejection before any
+/// GPU work; a prepared execution can never run on a different runner,
+/// even one with an identical configuration.
+///
+/// NOT Sendable: it retains a non-Sendable runner. The runner is
+/// already serial per request; removing the conformance rather than
+/// declaring an unsafe unchecked conformance keeps the compiler from
+/// blessing a data race that does not exist in the intended use.
+/// Construction is private — the only path to an instance is `prepare`,
+/// which throws on any failure, so no partially qualified
+/// representation can exist.
+public struct GemmaPreparedExecution {
+    /// The validated canonical SSA schedule this preparation executes.
+    public let ssa: GemmaSSAIR
+    /// The EXACT runner object this preparation is bound to, retained
+    /// for its lifetime so ObjectIdentifier reuse after deallocation is
+    /// impossible — identity comparison is against the live object.
+    let runner: Gemma4Runner
+    /// Immutable copy of the validated graph; reuse compares structural
+    /// equality against this copy (Equatable, no digest hashing).
+    let boundGraph: GemmaGraphIR
+    /// Config fingerprint captured at prepare time.
+    let configFingerprint: GemmaConfigFingerprint
+    /// Precomputed immutable value table (id -> value), built once.
+    public let byID: [String: GemmaSSAIR.Value]
+
+    private init(ssa: GemmaSSAIR, runner: Gemma4Runner, graph: GemmaGraphIR,
+                 configFingerprint: GemmaConfigFingerprint,
+                 byID: [String: GemmaSSAIR.Value]) {
+        self.ssa = ssa
+        self.runner = runner
+        self.boundGraph = graph
+        self.configFingerprint = configFingerprint
+        self.byID = byID
+    }
+
+    /// One-time preparation: validates the graph against the runner's
+    /// mapped GGUF + config, lowers canonically, dataflow-validates the
+    /// SSA, and captures the binding (exact runner object, immutable
+    /// graph copy, config fingerprint) plus the precomputed value
+    /// table. Throws on any failure.
+    public static func prepare(graph: GemmaGraphIR,
+                               runner: Gemma4Runner) throws -> GemmaPreparedExecution {
+        try GemmaGraph.validate(graph, config: runner.config, file: runner.ggufFile)
+        let ssa = try GemmaSSA.lower(graph)
+        try GemmaSSA.validate(ssa, config: graph.config)
+        return GemmaPreparedExecution(
+            ssa: ssa, runner: runner, graph: graph,
+            configFingerprint: GemmaConfigFingerprint(runner.config),
+            byID: valueTable(ssa))
+    }
+
+    /// Builds the id -> value dictionary for a schedule (shared by the
+    /// prepared path and the ordinary lowering paths so both dispatch
+    /// from identical operand tables).
+    public static func valueTable(_ ssa: GemmaSSAIR) -> [String: GemmaSSAIR.Value] {
+        var table = [String: GemmaSSAIR.Value]()
+        for v in ssa.values { table[v.id] = v }
+        return table
+    }
+
+    /// Fast reuse gate: runner object identity + config fingerprint +
+    /// structural graph equality. No engine-identity hashing, no graph
+    /// digesting, no lowering. Rejected before any GPU work on mismatch.
+    func assertBound(to runner: Gemma4Runner, graph: GemmaGraphIR) throws {
+        guard runner === self.runner else {
+            throw GemmaForgeError.invalidPlan(
+                "prepared execution is bound to a different runner")
+        }
+        guard GemmaConfigFingerprint(runner.config) == configFingerprint else {
+            throw GemmaForgeError.invalidPlan(
+                "prepared execution model configuration mismatch")
+        }
+        guard graph == boundGraph else {
+            throw GemmaForgeError.invalidPlan(
+                "prepared execution graph mismatch")
+        }
     }
 }
 
@@ -312,6 +448,19 @@ public enum GemmaForge {
                                 gpuCacheAppend: true),
             GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
                                 vectorizedLoads: true, gpuCacheAppend: true),
+            // PRODUCTION parallel attention (bounded new pass): the runner's
+            // production par64 pipeline (original 64-lane kernel, numerically
+            // unmodified) serves eligible attention geometry; ineligible
+            // geometry falls back to the incumbent g4_attn and counts a
+            // production fallback. Stacked on the selected bit-identical
+            // batched VL baseline, and on batched VL + GPU cache append —
+            // all existing numerical gates (<1e-4, exact greedy) unchanged
+            // and no forced winner.
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                vectorizedLoads: true, parallelAttention: true),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                vectorizedLoads: true, gpuCacheAppend: true,
+                                parallelAttention: true),
         ]
     }
 
@@ -344,33 +493,48 @@ public enum GemmaForge {
     public static func executeGraph(_ graph: GemmaGraphIR, runner: Gemma4Runner,
                                     tokenIds: [Int],
                                     candidate: GemmaForgeCandidate,
-                                    schedule: GemmaSSAIR? = nil) throws
+                                    schedule: GemmaSSAIR? = nil,
+                                    prepared: GemmaPreparedExecution? = nil) throws
             -> (argmax: Int, logits: [Float], gpuMicros: Double, kernels: Int,
                 buffers: Int) {
         guard !tokenIds.isEmpty else { throw GemmaForgeError.executionFailed("empty tokens") }
-        // Untrusted graphs never reach execution: full validation against
-        // the actual GGUF + config first (unknown ops/layers/tensors are
-        // rejected before any raw cache indexing).
-        try GemmaGraph.validate(graph, config: runner.config, file: runner.ggufFile)
-        // Lower + validate the typed SSA schedule ONCE per request — or
-        // execute the plan artifact's embedded schedule operands directly
-        // (dataflow-validated here against the same config).
+        // Untrusted graphs never reach execution: full validation
+        // against the actual GGUF + config (unknown ops/layers/tensors
+        // rejected before any raw cache indexing). The PREPARED path
+        // skips this because prepare already validated THIS exact graph
+        // — the binding check below establishes (runner object
+        // identity + structural graph equality + config fingerprint)
+        // that the graph IS the one validated at prepare time. The
+        // ordinary paths are unchanged.
         let ssa: GemmaSSAIR
-        if let schedule {
-            try GemmaSSA.validate(schedule, config: graph.config)
-            // Public schedule execution additionally requires EXACT
-            // equality with the canonical lowering of THIS validated
-            // graph (tensor bindings and geometry checked against the
-            // mapped GGUF via GemmaGraph.validate above) — a hand-built
-            // look-alike schedule is rejected before any GPU work.
-            let canonical = try GemmaSSA.lower(graph)
-            guard schedule == canonical else {
-                throw GemmaForgeError.invalidGraph(
-                    "schedule is not the canonical lowering of this graph")
+        let byID: [String: GemmaSSAIR.Value]
+        if let prepared {
+            guard schedule == nil else {
+                throw GemmaForgeError.executionFailed(
+                    "pass either a prepared execution or a raw schedule, not both")
             }
-            ssa = schedule
+            try prepared.assertBound(to: runner, graph: graph)
+            ssa = prepared.ssa
+            byID = prepared.byID
         } else {
-            ssa = try GemmaSSA.lower(graph)
+            try GemmaGraph.validate(graph, config: runner.config, file: runner.ggufFile)
+            if let schedule {
+                try GemmaSSA.validate(schedule, config: graph.config)
+                // Public schedule execution additionally requires EXACT
+                // equality with the canonical lowering of THIS validated
+                // graph (tensor bindings and geometry checked against the
+                // mapped GGUF via GemmaGraph.validate above) — a hand-built
+                // look-alike schedule is rejected before any GPU work.
+                let canonical = try GemmaSSA.lower(graph)
+                guard schedule == canonical else {
+                    throw GemmaForgeError.invalidGraph(
+                        "schedule is not the canonical lowering of this graph")
+                }
+                ssa = schedule
+            } else {
+                ssa = try GemmaSSA.lower(graph)
+            }
+            byID = GemmaPreparedExecution.valueTable(ssa)
         }
         let gpuBefore = runner.gpuMicrosTotal
         let dispatchBefore = runner.dispatchCountTotal
@@ -385,7 +549,8 @@ public enum GemmaForge {
                       pos < runner.maxContext else {
                     throw GemmaForgeError.executionFailed("token/position out of bounds")
                 }
-                argmax = try executeToken(ssa, runner, token: token, position: pos,
+                argmax = try executeToken(ssa, byID: byID, runner,
+                                          token: token, position: pos,
                                           candidate: candidate)
                 runner.advancePosition()
                 logits = try runner.read(runner.bufLogits, runner.config.vocabSize)
@@ -408,32 +573,52 @@ public enum GemmaForge {
     public static func executeGraphContinue(_ graph: GemmaGraphIR,
                                             runner: Gemma4Runner, token: Int,
                                             candidate: GemmaForgeCandidate,
-                                            schedule: GemmaSSAIR? = nil) throws
+                                            schedule: GemmaSSAIR? = nil,
+                                            prepared: GemmaPreparedExecution? = nil) throws
             -> (argmax: Int, logits: [Float], gpuMicros: Double, kernels: Int,
                 buffers: Int) {
-        try GemmaGraph.validate(graph, config: runner.config, file: runner.ggufFile)
+        // Prepared decode path: the full GGUF validation, lowering, and
+        // value-table build happened once at prepare time; reuse here is
+        // the cheap binding check (exact runner object identity, config
+        // fingerprint, structural graph equality) — no per-token
+        // hashing or lowering. Token/position bounds guards below are
+        // unchanged on every path. Ordinary paths validate as before.
+        let ssa: GemmaSSAIR
+        let byID: [String: GemmaSSAIR.Value]
+        if let prepared {
+            guard schedule == nil else {
+                throw GemmaForgeError.executionFailed(
+                    "pass either a prepared execution or a raw schedule, not both")
+            }
+            try prepared.assertBound(to: runner, graph: graph)
+            ssa = prepared.ssa
+            byID = prepared.byID
+        } else {
+            try GemmaGraph.validate(graph, config: runner.config, file: runner.ggufFile)
+            if let schedule {
+                try GemmaSSA.validate(schedule, config: graph.config)
+                let canonical = try GemmaSSA.lower(graph)
+                guard schedule == canonical else {
+                    throw GemmaForgeError.invalidGraph(
+                        "schedule is not the canonical lowering of this graph")
+                }
+                ssa = schedule
+            } else {
+                ssa = try GemmaSSA.lower(graph)
+            }
+            byID = GemmaPreparedExecution.valueTable(ssa)
+        }
         guard token >= 0, token < runner.config.vocabSize,
               runner.contextPosition() < runner.maxContext else {
             throw GemmaForgeError.executionFailed("token/position out of bounds")
-        }
-        let ssa: GemmaSSAIR
-        if let schedule {
-            try GemmaSSA.validate(schedule, config: graph.config)
-            let canonical = try GemmaSSA.lower(graph)
-            guard schedule == canonical else {
-                throw GemmaForgeError.invalidGraph(
-                    "schedule is not the canonical lowering of this graph")
-            }
-            ssa = schedule
-        } else {
-            ssa = try GemmaSSA.lower(graph)
         }
         let gpuBefore = runner.gpuMicrosTotal
         let dispatchBefore = runner.dispatchCountTotal
         let buffersBefore = runner.submittedBuffers
         let position = runner.contextPosition()
         do {
-            let argmax = try executeToken(ssa, runner, token: token, position: position,
+            let argmax = try executeToken(ssa, byID: byID, runner,
+                                          token: token, position: position,
                                           candidate: candidate)
             runner.advancePosition()
             let logits = try runner.read(runner.bufLogits, runner.config.vocabSize)
@@ -447,18 +632,23 @@ public enum GemmaForge {
         }
     }
 
-    private static func executeToken(_ ssa: GemmaSSAIR, _ runner: Gemma4Runner,
+    /// Executes one token from the SSA operands. The value table
+    /// (`byID`) is supplied by the caller: either the immutable table
+    /// retained by a GemmaPreparedExecution, or one built once per
+    /// public request — never rebuilt per token inside this function.
+    private static func executeToken(_ ssa: GemmaSSAIR,
+                                     byID: [String: GemmaSSAIR.Value],
+                                     _ runner: Gemma4Runner,
                                      token: Int, position: Int,
                                      candidate: GemmaForgeCandidate) throws -> Int {
         let config = runner.config
-        // The schedule was lowered (and validated) ONCE by the caller; the
-        // executor dispatches kernels from the SSA OPERANDS. Buffers are
-        // resolved per operand kind (vector values only — KV/routing state
-        // never touches this path), in-place ops are validated by the
-        // lowering to alias their input's buffer, and the final logits are
-        // read from the FINAL ARTIFACT OUTPUT VALUE, not a fixed buffer.
-        var byID = [String: GemmaSSAIR.Value]()
-        for v in ssa.values { byID[v.id] = v }
+        // The schedule was lowered, validated, and turned into a value
+        // table ONCE by the caller; the executor dispatches kernels from
+        // the SSA OPERANDS. Buffers are resolved per operand kind (vector
+        // values only — KV/routing state never touches this path),
+        // in-place ops are validated by the lowering to alias their
+        // input's buffer, and the final logits are read from the FINAL
+        // ARTIFACT OUTPUT VALUE, not a fixed buffer.
         func vb(_ id: String) throws -> MTLBuffer {
             guard let value = byID[id], value.kind == .vector else {
                 throw GemmaForgeError.executionFailed(
@@ -494,6 +684,7 @@ public enum GemmaForge {
         runner.f32TiledKernel = candidate.matvecTiledF32
         runner.vectorizedLoads = candidate.vectorizedLoads
         runner.gpuCacheAppendKernel = candidate.gpuCacheAppend
+        runner.parallelAttentionKernel = candidate.parallelAttention
         defer {
             runner.autoSegment = false
             runner.q4TiledKernel = false
@@ -502,6 +693,7 @@ public enum GemmaForge {
             runner.f32TiledKernel = false
             runner.vectorizedLoads = false
             runner.gpuCacheAppendKernel = false
+            runner.parallelAttentionKernel = false
         }
         var routerState = [Int: (topIdx: [Int], weights: [Float])]()
 
@@ -878,6 +1070,14 @@ public enum GemmaForge {
                                                    runner.config.vocabSize))
             prevTok = ev.argmaxToken
         }
+        // One PREPARED execution per runner, built ONCE outside the timed
+        // candidate loop: full GGUF validation + canonical lowering + SSA
+        // dataflow validation + value-table build happen a single time;
+        // every candidate measurement then reuses the cheap binding check
+        // (exact runner object identity + config fingerprint + structural
+        // graph equality). All existing correctness/validation gates are
+        // unchanged.
+        let prep = try GemmaPreparedExecution.prepare(graph: graph, runner: runner)
         var results: [GemmaForgeCandidateResult] = []
         func median(_ v: [Double]) -> Double {
             let s = v.sorted()
@@ -890,7 +1090,8 @@ public enum GemmaForge {
             // Correctness gate: raw logits within 1e-4 rel of the
             // reference executor and identical greedy argmax.
             let (argmax, logits, _, _, _) = try executeGraph(
-                graph, runner: runner, tokenIds: prompt, candidate: candidate)
+                graph, runner: runner, tokenIds: prompt, candidate: candidate,
+                prepared: prep)
             guard argmax == refArgmax else {
                 results.append(GemmaForgeCandidateResult(
                     candidate: candidate, correct: false,
@@ -925,11 +1126,12 @@ public enum GemmaForge {
             // sequence at the true decode positions on a fresh prompt
             // context, gated per step (exact next token + full logits).
             _ = try executeGraph(graph, runner: runner, tokenIds: prompt,
-                                 candidate: candidate)
+                                 candidate: candidate, prepared: prep)
             var prev = refArgmax
             for w in 0..<warmupTokens {
                 let (n, wl, _, _, _) = try executeGraphContinue(
-                    graph, runner: runner, token: prev, candidate: candidate)
+                    graph, runner: runner, token: prev, candidate: candidate,
+                    prepared: prep)
                 let want = refDecodeLogits[w]
                 guard n == refDecodeSeq[w],
                       wl.count == want.count, wl.allSatisfy({ $0.isFinite }),
@@ -951,7 +1153,8 @@ public enum GemmaForge {
                 let tok = replay.indices.contains(run) ? replay[run] : prev
                 let t0 = DispatchTime.now()
                 let (next, stepLogits, gpu, kernels, buffers) = try executeGraphContinue(
-                    graph, runner: runner, token: tok, candidate: candidate)
+                    graph, runner: runner, token: tok, candidate: candidate,
+                    prepared: prep)
                 let wall = Double(DispatchTime.now().uptimeNanoseconds
                                   - t0.uptimeNanoseconds) / 1000
                 // Per-step gate vs the independent reference logits —

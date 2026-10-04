@@ -1156,19 +1156,121 @@ public final class Gemma4Runner {
         return result
     }
 
-    /// DIAGNOSTIC ONLY. The one shared attention dispatch hook, used by BOTH
-    /// the standard forward path and the SSA (GemmaForge) executor path.
+    // MARK: - production parallel-attention runtime plumbing
+
+    /// PRODUCTION parallel-attention axis, default false. When true, the
+    /// shared attention dispatch hook serves eligible calls with the
+    /// original 64-lane par64 kernel (AttentionDiagnostic.candidateSource,
+    /// NUMERICALLY UNMODIFIED) compiled into an INDEPENDENT pipeline on
+    /// this runner's OWN device — a separate object from the cached
+    /// incumbent g4_attn entry and from any diagnostic-slot candidate.
+    /// Engine identity binding of the installed candidate goes through
+    /// GemmaForge; the axis-independent shader identity is surfaced
+    /// unconditionally in `engineIdentity()` below.
+    public internal(set) var parallelAttentionKernel = false
+    /// Lazily compiled once per runner (zero eager pipeline-compile cost at
+    /// init): the first eligible dispatch with the axis enabled compiles
+    /// and caches the production par64 pipeline. Never stored in the
+    /// shared `pipelines` dictionary, so the pipeline identity key list
+    /// in engineIdentity() is unchanged.
+    internal private(set) var parallelAttentionPipelineState: MTLComputePipelineState?
+    /// PRODUCTION dispatch counters (independent of the DIAGNOSTIC
+    /// AttentionDiagnostic.counters): eligible geometry served by the
+    /// production par64 pipeline, and axis-enabled calls whose geometry
+    /// was ineligible and safely fell back to the incumbent g4_attn.
+    public private(set) var parallelAttentionAppliedCount = 0
+    public private(set) var parallelAttentionFallbackCount = 0
+
+    /// Zeroes the production parallel-attention counters (qualification
+    /// and attribution windows read them as deltas).
+    public func parallelAttentionCountersReset() {
+        parallelAttentionAppliedCount = 0
+        parallelAttentionFallbackCount = 0
+    }
+
+    /// Compiles (once) the production parallel-attention pipeline from the
+    /// SAME unmodified candidateSource (the actual constant in
+    /// AttentionLowering.swift), with default compiler options, on the
+    /// runner's OWN device, under its own production label — never the
+    /// diagnostic slot, never diagnostic counters. Hardware limits are
+    /// validated against the ACTUAL compiled pipeline (threadgroup width
+    /// and static threadgroup memory); violations fail closed as
+    /// Gemma4Error (shaderCompileFailed / functionMissing / badTensorGeometry
+    /// — the existing enum cases).
+    internal func parallelAttentionPipeline() throws -> MTLComputePipelineState {
+        if let cached = parallelAttentionPipelineState { return cached }
+        let device = self.device
+        let library: MTLLibrary
+        do { library = try device.makeLibrary(source: AttentionDiagnostic.candidateSource, options: nil) }
+        catch { throw Gemma4Error.shaderCompileFailed("parallel attention: \(error)") }
+        guard let fn = library.makeFunction(name: AttentionDiagnostic.kernelName) else {
+            throw Gemma4Error.functionMissing(AttentionDiagnostic.kernelName)
+        }
+        let desc = MTLComputePipelineDescriptor()
+        desc.computeFunction = fn
+        desc.label = AttentionDiagnostic.productionLabel
+        let pipe: MTLComputePipelineState
+        do { pipe = try device.makeComputePipelineState(descriptor: desc, options: [], reflection: nil) }
+        catch { throw Gemma4Error.shaderCompileFailed("parallel attention pipeline: \(error)") }
+        guard pipe.maxTotalThreadsPerThreadgroup >= AttentionDiagnostic.threads,
+              pipe.staticThreadgroupMemoryLength <= device.maxThreadgroupMemoryLength else {
+            throw Gemma4Error.badTensorGeometry(
+                "parallel attention pipeline illegal (max threads \(pipe.maxTotalThreadsPerThreadgroup), "
+                + "threadgroup memory \(pipe.staticThreadgroupMemoryLength))")
+        }
+        parallelAttentionPipelineState = pipe
+        return pipe
+    }
+
+    /// PRODUCTION parallel dispatch: only when the axis is enabled. Uses the
+    /// EXISTING exact host eligibility predicate and the pipeline's own
+    /// device limits. Axis off: returns false, nothing counted. Ineligible
+    /// geometry: records a PRODUCTION fallback counter and returns false —
+    /// the caller runs the unchanged incumbent g4_attn (safe fallback). No
+    /// diagnostic counter is ever touched. Eligible geometry dispatches one
+    /// threadgroup per query head with AttentionDiagnostic.threads lanes
+    /// through the SAME ordered compute-segment path as every other kernel
+    /// (dispatchPipeline: deferred segment, accounting, and completion
+    /// checks unchanged).
+    internal func attentionProductionParallelDispatch(qHeads: Int, kvHeads: Int, headDim: Int, position: Int,
+                                                      window: Int,
+                                                      bind: (MTLComputeCommandEncoder) -> Void) throws -> Bool {
+        guard parallelAttentionKernel else { return false }
+        let pipe = try parallelAttentionPipeline()
+        guard AttentionDiagnostic.eligible(qHeads: qHeads, kvHeads: kvHeads, headDim: headDim,
+                                           position: position, window: window,
+                                           maxThreads: pipe.maxTotalThreadsPerThreadgroup) else {
+            parallelAttentionFallbackCount += 1
+            return false
+        }
+        parallelAttentionAppliedCount += 1
+        try dispatchPipeline(pipe, name: AttentionDiagnostic.kernelName, groups: qHeads,
+                             threads: AttentionDiagnostic.threads, bind)
+        return true
+    }
+
+    /// The one shared attention dispatch hook, used by BOTH the standard
+    /// forward path and the SSA (GemmaForge) executor path.
     /// - The caller passes the exact incumbent g4_attn bindings (indices
     ///   0...5), so the binding ABI stays identical.
-    /// - No candidate installed: returns false and counts nothing; the caller
-    ///   runs the unchanged incumbent dispatch.
-    /// - Geometry not eligible: records a fallback and returns false; the
-    ///   caller again runs the incumbent.
-    /// - Otherwise: records applied, dispatches one threadgroup per query head
-    ///   with AttentionDiagnostic.threads lanes, and returns true.
+    /// - DIAGNOSTIC candidate installed (withAttentionDiagnostic): exactly
+    ///   the previous diagnostic behavior — eligibility, DIAGNOSTIC
+    ///   counters, dispatch — unchanged and kept fully separate from
+    ///   production state.
+    /// - No diagnostic candidate installed: the PRODUCTION parallel-attention
+    ///   axis is consulted (attentionProductionParallelDispatch). With the
+    ///   axis off it returns false counting nothing; with the axis on and
+    ///   geometry ineligible it records a production fallback; otherwise
+    ///   the production par64 pipeline dispatches one threadgroup per
+    ///   query head with AttentionDiagnostic.threads lanes and returns
+    ///   true.
     internal func attentionDiagnosticDispatch(qHeads: Int, kvHeads: Int, headDim: Int, position: Int, window: Int,
                                               bind: (MTLComputeCommandEncoder) -> Void) throws -> Bool {
-        guard let candidate = pipelines[AttentionDiagnostic.slotKey] else { return false }
+        guard let candidate = pipelines[AttentionDiagnostic.slotKey] else {
+            return try attentionProductionParallelDispatch(qHeads: qHeads, kvHeads: kvHeads,
+                                                           headDim: headDim, position: position,
+                                                           window: window, bind: bind)
+        }
         guard AttentionDiagnostic.eligible(qHeads: qHeads, kvHeads: kvHeads, headDim: headDim,
                                            position: position, window: window,
                                            maxThreads: candidate.maxTotalThreadsPerThreadgroup) else {
@@ -2481,7 +2583,7 @@ public final class Gemma4Runner {
     public func engineIdentity() throws -> String {
         let msl = SHA256.hex(SHA256.hash(Array(Self.shaderSource.utf8)))
         let candidates = GemmaForge.candidates()
-            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)/\($0.gpuCacheAppend)" }
+            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)/\($0.gpuCacheAppend)/\($0.parallelAttention)" }
             .sorted().joined(separator: ",")
         return "gemma-graph-executor-v1|exe=" + (try Self.executableDigest())
             + "|msl=" + msl
@@ -2497,6 +2599,9 @@ public final class Gemma4Runner {
             + "|expertPrefetch=\(expertCache != nil && expertPrefetch ? "free-only" : "none")"
             + "|q4gen=\(q4GeneratedArtifactDigest ?? "none")"
             + "|rmsgen=\(rmsGeneratedArtifactDigest ?? "none")"
+            + "|parAttn=" + AttentionDiagnostic.kernelName
+            + "@\(AttentionDiagnostic.threads)"
+            + "#\(AttentionDiagnostic.candidateSourceSha256())"
     }
 
     /// Measured hardware profile of the device this runner holds.
@@ -2708,9 +2813,11 @@ public final class Gemma4Runner {
                               UInt32(kvHeads), UInt32(headDim))
         var q = SIMD2<UInt32>(UInt32(config.qHeads),
                               UInt32(isGlobal ? 0 : config.slidingWindow))
-        // DIAGNOSTIC ONLY: the shared attention diagnostic hook, also used by the
-        // SSA path. With no candidate installed it returns false without
-        // counting, and the unchanged incumbent dispatch below runs.
+        // The one shared attention dispatch hook (also used by the SSA path):
+        // an installed DIAGNOSTIC candidate keeps its exact prior behavior;
+        // otherwise the PRODUCTION parallel-attention axis serves eligible
+        // geometry (64-lane par64, same ordered compute segment); anything
+        // else falls through to the unchanged incumbent g4_attn dispatch.
         let attentionDiagnosticHandled = try attentionDiagnosticDispatch(
             qHeads: Int(config.qHeads), kvHeads: Int(kvHeads), headDim: Int(headDim),
             position: Int(position), window: Int(isGlobal ? 0 : config.slidingWindow),
