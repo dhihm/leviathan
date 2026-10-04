@@ -17,8 +17,8 @@ Leviathan is a personal project building a local LLM inference engine for Mac GP
 - Normal Forge and inference can now activate and reuse the verified MoE/Q4 composite: the measured batch reduced matched decode wall by 50.8%, reaching 6.47–6.50 tokens/s on the current M1 Max probe ([composite details](docs/COMPOSITE_FORGE_BATCH.md)).
 - Exact-order cooperative RMS now participates in bounded Forge composition and passed three full-model fixtures; measured gains and timing instability are recorded together ([RMS batch](docs/RMS_Q6_FORGE_BATCH.md), [Ollama comparison scope](docs/OLLAMA_COMPARISON_SCOPE.md)).
 - [Q6 SIMD Forge batch](docs/Q6_SIMD_FORGE.md): full production/reload and three prepared-serving gates passed; four fixed comparison pairs improved, with 10.68% median decode time reduction. Remaining performance gap and bottlenecks are documented.
-- [Shared RMS statistics experiment](docs/RMS_STATISTICS_EXPERIMENT.md): 1,056 experiment checks and three serving gates passed; four fixed pairs improved by a median 3.21%, but the declared every-pair performance threshold was missed. The implementation is preserved in a private experiment branch for the next optimization batch.
-- Correctness gates and test coverage throughout — currently 923 checks ([detailed progress](docs/FORGE_PROGRESS.md)).
+- [Shared RMS statistics lowering](docs/RMS_STATISTICS_EXPERIMENT.md) is included in main by explicit user decision. The release build, 1,056 checks and three serving gates passed; four fixed pairs improved by a median 3.21%, while the earlier every-pair performance threshold remained unmet.
+- Correctness gates and test coverage throughout — currently 1,056 checks ([detailed progress](docs/FORGE_PROGRESS.md)).
 - Performance: closing the gap with Ollama and broader Python model coverage are in progress.
 
 [MIT](LICENSE); model weights keep their upstream terms.

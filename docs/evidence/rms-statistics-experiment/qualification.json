@@ -1,5 +1,5 @@
 {
-  "scope": "Correctness-qualified private phase35 experiment, not performance-promoted. Allfourfixed pairs improve, but pair4misses the predeclared>2%everypair publication threshold. Main runtime remains published phase34; source and full artifacts retained in the private experiment branch/local measurement directory.",
+  "scope": "Correctness-qualified phase35 shared RMS pass, included in main by explicit user decision at 2026-10-04 11:15 UTC despite missing the earlier every-pair performance criterion. Original fixed results and failures remain unchanged.",
   "sourceCommit": "2562e0edceda99e64e4dd0e0635e01a853d3a6ae",
   "sourceBranch": "experiment/rms-statistics-phase35",
   "baselineCommit": "f1160e85e1d6eae4385f8ddfb83a310a59b6ab56",
@@ -764,6 +764,12 @@
     "passed": false,
     "allPairsImprove": true,
     "medianPairedWallReductionPercent": 3.2082130545595833,
-    "publicationDisposition": "Private source experiment and main evidence only; no main runtime/default candidate promotion."
+    "publicationDisposition": "User-selected inclusion in main; the earlier every-pair>2% criterion remains failed."
+  },
+  "userInclusionDecision": {
+    "timestampUTC": "2026-10-04T11:15:00Z",
+    "instruction": "Include the RMS improvement in main.",
+    "sourceCommit": "2562e0edceda99e64e4dd0e0635e01a853d3a6ae",
+    "criterionRelabeledAsPassed": false
   }
 }
