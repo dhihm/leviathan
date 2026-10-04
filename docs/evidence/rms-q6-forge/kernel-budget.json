@@ -1,0 +1,135 @@
+{
+  "baselineCommit": "f58ecff13e7a1808c1d1b17719371a515fec4eb2",
+  "warmup": "One complete32-token generation before normal31decode budget; intrusive replay after normal generation",
+  "scope": "Current composed E4/width32/GPUKV/par state mirrored with existing diagnostic installation APIs. Temporary canonical SwiftPM-linked driver. Intrusive intervals differ from normal batched costs and cannot be treated as wall shares.",
+  "normalBatchedTotalsMicros": {
+    "encode": 34362.7666015625,
+    "flush": 4640216.0947265625,
+    "flushHost": 772003.9280185997,
+    "gpu": 3868212.1667079628,
+    "readCopy": 20788.9267578125,
+    "residual": 164512.216796875,
+    "wall": 4863709,
+    "writeCopy": 3828.9951171875
+  },
+  "normalDispatchesPerToken": 1289.0,
+  "intrusiveFullLogitWorstNormalizedDiff": 0,
+  "ranking": [
+    {
+      "calls": 10261,
+      "gpuMicros": 2641496.315598488,
+      "name": "g4_rmsnorm_vl",
+      "diagnosticPercent": 41.77267267979784,
+      "callsPerToken": 331.0
+    },
+    {
+      "calls": 31,
+      "gpuMicros": 1013200.3747858107,
+      "name": "g4_q6_matvec",
+      "diagnosticPercent": 16.022769884267937,
+      "callsPerToken": 1.0
+    },
+    {
+      "calls": 6355,
+      "gpuMicros": 956011.7619112134,
+      "name": "g4_q4_matvec",
+      "diagnosticPercent": 15.11838807895735,
+      "callsPerToken": 205.0
+    },
+    {
+      "calls": 930,
+      "gpuMicros": 658577.9576562345,
+      "name": "g4_f32_matvec",
+      "diagnosticPercent": 10.414764274645803,
+      "callsPerToken": 30.0
+    },
+    {
+      "calls": 1860,
+      "gpuMicros": 351242.57765710354,
+      "name": "moegen_gu_E4_R32",
+      "diagnosticPercent": 5.554556764299073,
+      "callsPerToken": 60.0
+    },
+    {
+      "calls": 1860,
+      "gpuMicros": 180067.13688373566,
+      "name": "moegen_dn_E4_R32",
+      "diagnosticPercent": 2.8475851073554868,
+      "callsPerToken": 60.0
+    },
+    {
+      "calls": 9300,
+      "gpuMicros": 170774.08591285348,
+      "name": "g4_axpy",
+      "diagnosticPercent": 2.7006246235906683,
+      "callsPerToken": 300.0
+    },
+    {
+      "calls": 930,
+      "gpuMicros": 104916.32437333465,
+      "name": "g4_attn_par64_diag",
+      "diagnosticPercent": 1.6591487373783538,
+      "callsPerToken": 30.0
+    },
+    {
+      "calls": 1860,
+      "gpuMicros": 103577.1663300693,
+      "name": "g4_rope",
+      "diagnosticPercent": 1.637971266761603,
+      "callsPerToken": 60.0
+    },
+    {
+      "calls": 1860,
+      "gpuMicros": 45877.67133489251,
+      "name": "moegen_act_E4",
+      "diagnosticPercent": 0.7255103619365071,
+      "callsPerToken": 60.0
+    },
+    {
+      "calls": 1860,
+      "gpuMicros": 38226.624485105276,
+      "name": "g4_scale",
+      "diagnosticPercent": 0.6045165623893942,
+      "callsPerToken": 60.0
+    },
+    {
+      "calls": 930,
+      "gpuMicros": 20471.88114374876,
+      "name": "g4_add",
+      "diagnosticPercent": 0.3237427154857819,
+      "callsPerToken": 30.0
+    },
+    {
+      "calls": 930,
+      "gpuMicros": 19353.747367858887,
+      "name": "g4_gelu_up",
+      "diagnosticPercent": 0.306060526812393,
+      "callsPerToken": 30.0
+    },
+    {
+      "calls": 930,
+      "gpuMicros": 16443.833708763123,
+      "name": "g4_cache_append",
+      "diagnosticPercent": 0.26004309718734375,
+      "callsPerToken": 30.0
+    },
+    {
+      "calls": 31,
+      "gpuMicros": 2935.2083802223206,
+      "name": "g4_softcap",
+      "diagnosticPercent": 0.046417440823212475,
+      "callsPerToken": 1.0
+    },
+    {
+      "calls": 31,
+      "gpuMicros": 330.5850550532341,
+      "name": "g4_q6_embed_row",
+      "diagnosticPercent": 0.005227878311252868,
+      "callsPerToken": 1.0
+    }
+  ],
+  "normalGPUPercent": 79.53214648960213,
+  "gpuOnlyHypotheticalMaxHostFixed": 4.8857101673704575,
+  "selectedBatch": "Exact-order cooperative RMSNorm staging/apply and bounded compositions with existing tiledQ6 and tiledF32; unchanged full numerical gates select/fallback",
+  "expectedGain": "No promised TPS. Intrusive per-kernel percentages are ranking evidence, not normal GPU shares. Separate matched whole-batch evaluation decides."
+}

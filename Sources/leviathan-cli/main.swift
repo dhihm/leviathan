@@ -830,7 +830,7 @@ case "forge":
                     preparedExec = prep
                     print("prepared execution: ON (prepared.ssa asserted equal to plan.schedule)")
                 }
-                print("selected candidate flags: batching=\(planOpt!.selected.segmentBatching ? 1 : 0) tiledQ4=\(planOpt!.selected.matvecTiledQ4 ? 1 : 0) tiledQ6=\(planOpt!.selected.matvecTiledQ6 ? 1 : 0) rmsTiled=\(planOpt!.selected.rmsnormTiled ? 1 : 0) f32Tiled=\(planOpt!.selected.matvecTiledF32 ? 1 : 0) vecLoads=\(planOpt!.selected.vectorizedLoads ? 1 : 0) gpuCacheAppend=\(planOpt!.selected.gpuCacheAppend ? 1 : 0) parallelAttention=\(planOpt!.selected.parallelAttention ? 1 : 0)")
+                print("selected candidate flags: batching=\(planOpt!.selected.segmentBatching ? 1 : 0) tiledQ4=\(planOpt!.selected.matvecTiledQ4 ? 1 : 0) tiledQ6=\(planOpt!.selected.matvecTiledQ6 ? 1 : 0) rmsTiled=\(planOpt!.selected.rmsnormTiled ? 1 : 0) f32Tiled=\(planOpt!.selected.matvecTiledF32 ? 1 : 0) vecLoads=\(planOpt!.selected.vectorizedLoads ? 1 : 0) gpuCacheAppend=\(planOpt!.selected.gpuCacheAppend ? 1 : 0) parallelAttention=\(planOpt!.selected.parallelAttention ? 1 : 0) rmsCoop=\(planOpt!.selected.rmsnormCooperative ? 1 : 0)")
                 print(String(format: "identity validation prep: %.1f ms (graph parse + GGUF hash + plan load)",
                              ms(ContinuousClock.now - prepStart)))
             }
@@ -1044,6 +1044,7 @@ case "forge":
                 }
             }
             print("parallel attention totals: applied \(runner.parallelAttentionAppliedCount), fallback \(runner.parallelAttentionFallbackCount)")
+            print("rms cooperative totals: applied \(runner.rmsCooperativeAppliedCount), fallback \(runner.rmsCooperativeFallbackCount)")
             if compositeOpts != nil {
                 // Actual-run evidence that the composite lowering executed:
                 // batched MoE stage dispatches (GU/ACT/DN), ordered axpy

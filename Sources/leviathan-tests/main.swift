@@ -2228,7 +2228,7 @@ do {
                  $0["selected"] = ["segmentBatching": true, "top5Diagnostic": false,
                                    "matvecTiledQ4": true, "matvecTiledQ6": true,
                                    "rmsnormTiled": true, "matvecTiledF32": true, "vectorizedLoads": true,
-                                   "gpuCacheAppend": false, "parallelAttention": false]
+                                   "rmsnormCooperative": false, "gpuCacheAppend": false, "parallelAttention": false]
              })
     // Wrong CURRENT inputs (not plan mutations) are rejected too.
     check("foreign current gguf digest rejected", (try? GemmaForge.validatePlanIdentity(
@@ -3351,8 +3351,13 @@ do {
                      inDim, notBitEqual, outDim, worstQ4, worstOracle))
     }
 
+    // cooperative: Bool = false is an OPTIONAL parameter — the default
+    // path (all pre-existing call sites) is byte-for-byte the OLD
+    // helper behavior; cooperative=true dispatches ONE threadgroup per
+    // vector with the hardware-derived thread count and dynamic
+    // threadgroup memory from the PUBLIC RMSCooperative enum.
     func runRms(_ p: MTLComputePipelineState, x: [Float], w: [Float]?,
-                vectors: Int, inPlace: Bool) throws -> [[Float]] {
+                vectors: Int, inPlace: Bool, cooperative: Bool = false) throws -> [[Float]] {
         let n = x.count / vectors
         let xb = device.makeBuffer(bytes: x, length: x.count * 4,
                                    options: .storageModeShared)!
@@ -3375,10 +3380,29 @@ do {
         enc.setBuffer(wb, offset: 0, index: 4)
         enc.setBuffer(xb, offset: 0, index: 5)
         enc.setBuffer(yb, offset: 0, index: 6)
-        let width = p.maxTotalThreadsPerThreadgroup
-        let groups = (vectors + width - 1) / width
-        enc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
-                                 threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+        if cooperative {
+            // Hardware-derived schedule, never a GPU-name guess: threads
+            // from the ACTUAL compiled pipeline's threadExecutionWidth,
+            // bounded by its max threads per threadgroup and n/4.
+            let threads = RMSCooperative.threadCount(
+                n: n, executionWidth: p.threadExecutionWidth,
+                maxThreads: p.maxTotalThreadsPerThreadgroup)
+            let tgLen = RMSCooperative.threadgroupMemoryLength(n: n)
+            guard threads > 0, tgLen > 0,
+                  p.staticThreadgroupMemoryLength <= device.maxThreadgroupMemoryLength,
+                  tgLen <= device.maxThreadgroupMemoryLength
+                      - p.staticThreadgroupMemoryLength else {
+                throw Q4TiledTestError("cooperative schedule invalid for n \(n)")
+            }
+            enc.setThreadgroupMemoryLength(tgLen, index: 0)
+            enc.dispatchThreadgroups(MTLSize(width: vectors, height: 1, depth: 1),
+                                     threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1))
+        } else {
+            let width = p.maxTotalThreadsPerThreadgroup
+            let groups = (vectors + width - 1) / width
+            enc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
+                                     threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+        }
         enc.endEncoding()
         cmd.commit()
         cmd.waitUntilCompleted()
@@ -3417,6 +3441,79 @@ do {
                       $0.bitPattern == $1.bitPattern }
               })
     }
+
+    // Cooperative RMSNorm: build the ACTUAL production pipeline from
+    // the PUBLIC RMSCooperative enum source on the test device, then
+    // assert EXACT bit equality against the incumbent rmsVL kernel for
+    // every tested geometry (256/704/2816 x weighted/unweighted x
+    // out-of-place/in-place, multi-vector). The bit-equality gate is
+    // not weakened: exact bitPattern comparison, no tolerance.
+    let rmsCoopLibrary = try device.makeLibrary(source: RMSCooperative.source,
+                                                options: nil)
+    guard let rmsCoopFn = rmsCoopLibrary.makeFunction(name: RMSCooperative.kernelName) else {
+        throw Q4TiledTestError("RMS cooperative kernel \(RMSCooperative.kernelName) missing")
+    }
+    let rmsCoop = try device.makeComputePipelineState(function: rmsCoopFn)
+    check("rms cooperative source pipeline compiled", rmsCoop.threadExecutionWidth > 0)
+    for (n, vectors, weighted, inPlace) in [(256, 4, true, false),
+                                            (256, 2, false, true),
+                                            (256, 2, true, true),
+                                            (256, 3, false, false),
+                                            (704, 3, true, true),
+                                            (704, 2, false, false),
+                                            (704, 2, true, false),
+                                            (704, 4, false, true),
+                                            (2816, 2, true, false),
+                                            (2816, 2, false, true),
+                                            (2816, 3, true, true),
+                                            (2816, 2, false, false)] {
+        var x = [Float](repeating: 0, count: n * vectors)
+        for i in 0..<x.count {
+            x[i] = (i % 2 == 0 ? 1.0 : -1.0) * Float(rng.next() % 1000) / 1000.0
+        }
+        var w: [Float]? = nil
+        if weighted {
+            w = [Float](repeating: 0, count: n)
+            for i in 0..<n { w![i] = i % 2 == 0 ? 0.5 : -0.5 }
+        }
+        let ref = try runRms(rmsVL, x: x, w: w, vectors: vectors, inPlace: inPlace)
+        let coop = try runRms(rmsCoop, x: x, w: w, vectors: vectors,
+                              inPlace: inPlace, cooperative: true)
+        check("rmsnorm coop finite (n \(n), vectors \(vectors), weighted=\(weighted), inPlace=\(inPlace))",
+              coop.flatMap { $0 }.allSatisfy(\.isFinite))
+        check("rmsnorm coop BIT-IDENTICAL to vl kernel (n \(n), vectors \(vectors), weighted=\(weighted), inPlace=\(inPlace))",
+              ref.count == coop.count && zip(ref, coop).allSatisfy {
+                  $0.count == $1.count && zip($0, $1).allSatisfy {
+                      $0.bitPattern == $1.bitPattern }
+              })
+    }
+
+    // Hardened derivation guard cases: invalid n / executionWidth /
+    // maxThreads return 0 (never trap, never a silent nonzero), and
+    // the documented M1 Max schedule is preserved exactly.
+    checkEqual("threadCount invalid n returns 0",
+               RMSCooperative.threadCount(n: 0, executionWidth: 32, maxThreads: 1024), 0)
+    checkEqual("threadCount negative n returns 0",
+               RMSCooperative.threadCount(n: -256, executionWidth: 32, maxThreads: 1024), 0)
+    checkEqual("threadCount invalid width returns 0",
+               RMSCooperative.threadCount(n: 256, executionWidth: 0, maxThreads: 1024), 0)
+    checkEqual("threadCount invalid maxThreads returns 0",
+               RMSCooperative.threadCount(n: 256, executionWidth: 32, maxThreads: 0), 0)
+    checkEqual("threadCount gigantic width clamps to maxThreads",
+               RMSCooperative.threadCount(n: 8192, executionWidth: Int.max / 2,
+                                          maxThreads: 1024), 1024)
+    checkEqual("threadCount M1 Max derivation preserved (n >= 256 -> 64)",
+               RMSCooperative.threadCount(n: 256, executionWidth: 32, maxThreads: 1024), 64)
+    checkEqual("threadCount M1 Max derivation preserved (n = 2816 -> 64)",
+               RMSCooperative.threadCount(n: 2816, executionWidth: 32, maxThreads: 1024), 64)
+    checkEqual("threadgroupMemoryLength invalid n returns 0",
+               RMSCooperative.threadgroupMemoryLength(n: 0), 0)
+    checkEqual("threadgroupMemoryLength non-multiple-of-4 returns 0",
+               RMSCooperative.threadgroupMemoryLength(n: 258), 0)
+    checkEqual("threadgroupMemoryLength gigantic n returns 0",
+               RMSCooperative.threadgroupMemoryLength(n: Int.max), 0)
+    checkEqual("threadgroupMemoryLength exact for n = 256",
+               RMSCooperative.threadgroupMemoryLength(n: 256), 1040)
 
     // Coarse per-kernel timing (record only — one dedicated command
     // buffer per call, so this understates batched throughput; the
@@ -5174,12 +5271,31 @@ do {
     let legacyNoPA = "{\"segmentBatching\":true,\"top5Diagnostic\":false,\"matvecTiledQ4\":false,\"matvecTiledQ6\":false,\"rmsnormTiled\":false,\"matvecTiledF32\":false,\"vectorizedLoads\":false,\"gpuCacheAppend\":false}"
     check("legacy artifact without parallelAttention rejected",
           (try? dec.decode(GemmaForgeCandidate.self, from: Data(legacyNoPA.utf8))) == nil)
+    // rmsnormCooperative axis: explicit Codable key, roundtrip, default
+    // false, and missing-key rejection for legacy artifacts (the new
+    // key is NEVER silently defaulted — the intended legacy rejections
+    // above stay missing-key rejections).
+    let rc = GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                 vectorizedLoads: true, rmsnormCooperative: true)
+    let rcj = String(data: try enc.encode(rc), encoding: .utf8) ?? ""
+    check("rmsnormCooperative JSON reflects true", rcj.contains("\"rmsnormCooperative\":true"))
+    check("rmsnormCooperative JSON roundtrip",
+          (try? dec.decode(GemmaForgeCandidate.self, from: enc.encode(rc))) == rc)
+    check("rmsnormCooperative default false",
+          !GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false).rmsnormCooperative)
+    let legacyNoRC = "{\"segmentBatching\":true,\"top5Diagnostic\":false,\"matvecTiledQ4\":false,\"matvecTiledQ6\":false,\"rmsnormTiled\":false,\"matvecTiledF32\":false,\"vectorizedLoads\":false,\"gpuCacheAppend\":false,\"parallelAttention\":false}"
+    check("legacy artifact without rmsnormCooperative rejected",
+          (try? dec.decode(GemmaForgeCandidate.self, from: Data(legacyNoRC.utf8))) == nil)
     let cands = GemmaForge.candidates()
-    checkEqual("bounded candidate count", cands.count, 17)
-    checkEqual("gpuCacheAppend candidates", cands.filter { $0.gpuCacheAppend }.count, 3)
-    checkEqual("parallelAttention candidates", cands.filter { $0.parallelAttention }.count, 2)
+    checkEqual("bounded candidate count", cands.count, 24)
+    checkEqual("gpuCacheAppend candidates", cands.filter { $0.gpuCacheAppend }.count, 10)
+    checkEqual("parallelAttention candidates", cands.filter { $0.parallelAttention }.count, 9)
+    checkEqual("rmsnormCooperative candidates", cands.filter { $0.rmsnormCooperative }.count, 4)
+    check("no legal candidate enables rmsnormCooperative and rmsnormTiled together",
+          !cands.contains { $0.rmsnormCooperative && $0.rmsnormTiled })
     check("old baseline default false", !cands[0].gpuCacheAppend && !cands[1].gpuCacheAppend
-          && !cands[0].parallelAttention && !cands[1].parallelAttention)
+          && !cands[0].parallelAttention && !cands[1].parallelAttention
+          && !cands[0].rmsnormCooperative && !cands[1].rmsnormCooperative)
 } catch {
     failed += 1
     print("FAIL cache-append candidate JSON: \(error)")

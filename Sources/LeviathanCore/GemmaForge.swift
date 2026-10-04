@@ -82,12 +82,26 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
     /// missing this field is rejected, never silently defaulted.
     public let parallelAttention: Bool
 
+    /// Exact-order cooperative RMSNorm (default false): cooperative
+    /// staging into dynamic threadgroup memory, lane-0 sum-of-squares in
+    /// the EXACT incumbent kernel order (no reassociated tree reduction),
+    /// and a parallel per-element apply with the identical x*inv*(scale)
+    /// association. Bit equality against the original kernel on hardware
+    /// is asserted by the test suite for the tested geometries (256/704/
+    /// 2816, weighted/unweighted, in/out-of-place, multivector); the full
+    /// Forge gates decide selection, unchanged and fail-closed. Never
+    /// combined with rmsnormTiled in any legal candidate. Explicit
+    /// Codable key — an artifact missing this field is rejected, never
+    /// silently defaulted.
+    public let rmsnormCooperative: Bool
+
     public init(segmentBatching: Bool, top5Diagnostic: Bool,
                 matvecTiledQ4: Bool = false, matvecTiledQ6: Bool = false,
                 rmsnormTiled: Bool = false, matvecTiledF32: Bool = false,
                 vectorizedLoads: Bool = false,
                 gpuCacheAppend: Bool = false,
-                parallelAttention: Bool = false) {
+                parallelAttention: Bool = false,
+                rmsnormCooperative: Bool = false) {
         self.segmentBatching = segmentBatching
         self.top5Diagnostic = top5Diagnostic
         self.matvecTiledQ4 = matvecTiledQ4
@@ -97,12 +111,13 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
         self.vectorizedLoads = vectorizedLoads
         self.gpuCacheAppend = gpuCacheAppend
         self.parallelAttention = parallelAttention
+        self.rmsnormCooperative = rmsnormCooperative
     }
 
     private enum CodingKeys: String, CodingKey {
         case segmentBatching, top5Diagnostic, matvecTiledQ4, matvecTiledQ6
         case rmsnormTiled, matvecTiledF32, vectorizedLoads, gpuCacheAppend
-        case parallelAttention
+        case parallelAttention, rmsnormCooperative
     }
 
     public init(from decoder: Decoder) throws {
@@ -119,6 +134,10 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
             throw DecodingError.keyNotFound(CodingKeys.parallelAttention, DecodingError.Context(
                 codingPath: c.codingPath, debugDescription: "parallelAttention missing (pre-axis artifact)"))
         }
+        guard let rmsnormCooperative = try c.decodeIfPresent(Bool.self, forKey: .rmsnormCooperative) else {
+            throw DecodingError.keyNotFound(CodingKeys.rmsnormCooperative, DecodingError.Context(
+                codingPath: c.codingPath, debugDescription: "rmsnormCooperative missing (pre-axis artifact)"))
+        }
         self.segmentBatching = try c.decode(Bool.self, forKey: .segmentBatching)
         self.top5Diagnostic = try c.decode(Bool.self, forKey: .top5Diagnostic)
         self.matvecTiledQ4 = try c.decode(Bool.self, forKey: .matvecTiledQ4)
@@ -128,6 +147,7 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
         self.vectorizedLoads = try c.decode(Bool.self, forKey: .vectorizedLoads)
         self.gpuCacheAppend = gpuCacheAppend
         self.parallelAttention = parallelAttention
+        self.rmsnormCooperative = rmsnormCooperative
     }
 }
 
@@ -482,6 +502,45 @@ public enum GemmaForge {
             GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
                                 vectorizedLoads: true, gpuCacheAppend: true,
                                 parallelAttention: true),
+            // Exact-order cooperative RMSNorm (bounded new pass): the
+            // incumbent RMS kernel is the largest single GPU-time
+            // hotspot (41.77% RMS across 331 calls/token — one thread
+            // per vector, serial reads and serial apply). The
+            // cooperative kernel stages the input into dynamic
+            // threadgroup memory, keeps the lane-0 sum-of-squares in the
+            // EXACT incumbent order (no reassociated tree), and applies
+            // per element in parallel with the identical association —
+            // hardware bit equality is asserted by the test suite for
+            // the tested geometries; the FULL gates decide selection.
+            // The 7 distinct non-empty combinations of {rmsCoop, Q6
+            // tiled, F32 tiled} on the ALWAYS batched + VL + GPU-KV +
+            // parallel-attention baseline (never rmsnormTiled, never
+            // tiled Q4). Total candidate set: 24.
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                vectorizedLoads: true, gpuCacheAppend: true,
+                                parallelAttention: true, rmsnormCooperative: true),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                matvecTiledQ6: true, vectorizedLoads: true,
+                                gpuCacheAppend: true, parallelAttention: true),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                matvecTiledF32: true, vectorizedLoads: true,
+                                gpuCacheAppend: true, parallelAttention: true),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                matvecTiledQ6: true, matvecTiledF32: false,
+                                vectorizedLoads: true, gpuCacheAppend: true,
+                                parallelAttention: true, rmsnormCooperative: true),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                matvecTiledF32: true, vectorizedLoads: true,
+                                gpuCacheAppend: true, parallelAttention: true,
+                                rmsnormCooperative: true),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                matvecTiledQ6: true, matvecTiledF32: true,
+                                vectorizedLoads: true, gpuCacheAppend: true,
+                                parallelAttention: true),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                matvecTiledQ6: true, matvecTiledF32: true,
+                                vectorizedLoads: true, gpuCacheAppend: true,
+                                parallelAttention: true, rmsnormCooperative: true),
         ]
     }
 
@@ -706,6 +765,7 @@ public enum GemmaForge {
         runner.vectorizedLoads = candidate.vectorizedLoads
         runner.gpuCacheAppendKernel = candidate.gpuCacheAppend
         runner.parallelAttentionKernel = candidate.parallelAttention
+        runner.rmsCooperativeKernel = candidate.rmsnormCooperative
         defer {
             runner.autoSegment = false
             runner.q4TiledKernel = false
@@ -715,6 +775,7 @@ public enum GemmaForge {
             runner.vectorizedLoads = false
             runner.gpuCacheAppendKernel = false
             runner.parallelAttentionKernel = false
+            runner.rmsCooperativeKernel = false
         }
         var routerState = [Int: (topIdx: [Int], weights: [Float])]()
 

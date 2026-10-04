@@ -1,0 +1,127 @@
+{
+  "baselineCommit": "f58ecff13e7a1808c1d1b17719371a515fec4eb2",
+  "regression": {
+    "passed": 892,
+    "failed": 0
+  },
+  "binarySha256": "2fd2b16900503c021b86e2f3fdf4573472602146d323755d06d03193b57f5926",
+  "modelSha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+  "modelBytes": 14439363584,
+  "modelDownloaded": false,
+  "hardware": {
+    "deviceName": "Apple M1 Max",
+    "maxTotalThreadsPerThreadgroup": 1024,
+    "recommendedMaxWorkingSetSize": 26800603136,
+    "threadExecutionWidth": 32
+  },
+  "fullStages": [
+    {
+      "name": "fresh",
+      "exit": 0,
+      "elapsedSeconds": 863.7535626250319
+    },
+    {
+      "name": "reload",
+      "exit": 0,
+      "elapsedSeconds": 100.97581758303568
+    }
+  ],
+  "sourcesUnchanged": true,
+  "binaryUnchanged": true,
+  "composite": {
+    "digest": "e813d9f70714f1a0e0bbd4bc3c49268b4106daeccb3d18507e74d922a03e8c15",
+    "width": 32,
+    "productionSelected": true,
+    "fixtures": [
+      {
+        "gatedSteps": 32,
+        "historyDigest": "16278460089cf39265625aeb61cec8a5f979e70739f4313864a236ad7e8f0fdb",
+        "name": "en-chat",
+        "promptTokenCount": 21
+      },
+      {
+        "gatedSteps": 32,
+        "historyDigest": "73a51337695ba1b79d0f0f2bc68e30ac568168202a3ea9bb66ba2f87c985bc01",
+        "name": "kr-chat",
+        "promptTokenCount": 23
+      },
+      {
+        "gatedSteps": 32,
+        "historyDigest": "64c3ddb249ebf34b868afffb1172ae14380bc70b4d3526c2722a22fd46ac912f",
+        "name": "raw-hello",
+        "promptTokenCount": 2
+      }
+    ],
+    "worstNormalizedByFinalist": [
+      0,
+      0
+    ]
+  },
+  "forge": {
+    "planDigest": "1c6ffccf39887a6f6582e88a9176ef3fcc6760f2c29aa7c84a7830e096c985ec",
+    "fullGateTokens": 32,
+    "selected": {
+      "gpuCacheAppend": true,
+      "matvecTiledF32": false,
+      "matvecTiledQ4": false,
+      "matvecTiledQ6": false,
+      "parallelAttention": true,
+      "rmsnormCooperative": true,
+      "rmsnormTiled": false,
+      "segmentBatching": true,
+      "top5Diagnostic": false,
+      "vectorizedLoads": true
+    },
+    "fullRejections": [
+      "candidate GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: false, matvecTiledQ6: false, rmsnormTiled: false, matvecTiledF32: true, vectorizedLoads: true, gpuCacheAppend: true, parallelAttention: true, rmsnormCooperative: true) rejected: step 13 worst rel 1.091e-04 >= 1e-4"
+    ],
+    "freshAndReloadPassed": true
+  },
+  "serving": {
+    "scope": "Actual CLI prepared execution with public verified composite installation. Separate untimed full-logit gates across rawHello and canonical English/Korean chat,32generated IDs,all262144logits,<1e-4 andexactIDs. Reference serial runner carries same verified E4/width install; no Ollama logits comparison.",
+    "fixtures": [
+      {
+        "fixture": "raw-hello",
+        "exit": 0,
+        "elapsedSeconds": 48.196098832879215,
+        "gatePassed": true,
+        "generationCompleted": true,
+        "generatedCount": 32,
+        "promptTokenCount": 2,
+        "generatedIDs": "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "log": "serving-raw-hello.log",
+        "rmsApplied": 21846,
+        "rmsFallback": 0
+      },
+      {
+        "fixture": "en-chat",
+        "exit": 0,
+        "elapsedSeconds": 61.90373062482104,
+        "gatePassed": true,
+        "generationCompleted": true,
+        "generatedCount": 32,
+        "promptTokenCount": 21,
+        "generatedIDs": "9259 236888 564 1093 577 5293 531 1601 611 236761 236743 108 3689 563 580 822 3666 236881 1599 740 2679 786 496 2934 236764 2679 573 1601 607 496 4209 568",
+        "log": "serving-en-chat.log",
+        "rmsApplied": 34424,
+        "rmsFallback": 0
+      },
+      {
+        "fixture": "kr-chat",
+        "exit": 0,
+        "elapsedSeconds": 81.42802658304572,
+        "gatePassed": true,
+        "generationCompleted": true,
+        "generatedCount": 32,
+        "promptTokenCount": 23,
+        "generatedIDs": "61659 236888 113648 22478 63949 9554 237774 61487 86595 237223 94070 94106 54846 5386 50860 18229 77094 236764 75115 25121 238144 71160 237281 143474 237384 57517 240482 237482 66609 88440 190710 74221",
+        "log": "serving-kr-chat.log",
+        "rmsApplied": 35748,
+        "rmsFallback": 0
+      }
+    ],
+    "binarySha256": "2fd2b16900503c021b86e2f3fdf4573472602146d323755d06d03193b57f5926",
+    "binaryUnchanged": true,
+    "sourceUnchanged": true
+  }
+}

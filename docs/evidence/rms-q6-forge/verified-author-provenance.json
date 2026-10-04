@@ -1,0 +1,21 @@
+{
+  "baseline": "f58ecff13e7a1808c1d1b17719371a515fec4eb2",
+  "patches": [
+    "applicable-patch.json",
+    "type-matrix-applied.json",
+    "argument-order-applied.json",
+    "fixture-repair-applied.json",
+    "test-name-applied.json"
+  ],
+  "exactReplayMatches": true,
+  "newFiles": [
+    "Sources/LeviathanCore/RMSCooperative.swift"
+  ],
+  "sourceHashes": {
+    "Sources/LeviathanCore/RMSCooperative.swift": "e6764152515eeba18cbf3f71573dc904ac8a5aae9a74285a87f19fabd7d33e62",
+    "Sources/LeviathanCore/Gemma4.swift": "4306d96f83a7ddbbfa1c2652186c1a2ba24caa353913430eeaecd1a93ad8b2dd",
+    "Sources/LeviathanCore/GemmaForge.swift": "c0a691f40072abd14fe740215eeae56aa9ff587255f924460e880a3a90cb6483",
+    "Sources/leviathan-cli/main.swift": "436946c4eccb51f4d24c03640b8959467c6783d6af50dd3cdaa0143c3acad09e",
+    "Sources/leviathan-tests/main.swift": "35a50ce7233ccdb87145a0a4541318cee08ec3c86749ca61ec54dd1b8b366a29"
+  }
+}

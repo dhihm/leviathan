@@ -761,6 +761,19 @@ public final class Gemma4Runner {
     /// single-thread reduce is the measured 44% GPU-time hotspot).
     public var rmsTiledKernel = false
     internal var rmsTileWidth = 64
+    /// PRODUCTION cooperative RMSNorm axis (default false). When true,
+    /// eligible rmsnorm() calls dispatch the exact-order cooperative
+    /// kernel from the public RMSCooperative enum source: cooperative
+    /// staging into dynamic threadgroup memory, a lane-0 sum-of-squares
+    /// in the EXACT incumbent g4_rmsnorm_vl order (no reassociation),
+    /// and a parallel per-element apply with the identical
+    /// x*inv*(scale) association — bit-exact against the original
+    /// kernel on hardware for the tested geometries. Ineligible
+    /// geometry falls back to the incumbent chain and counts a
+    /// production fallback. Mutually exclusive with rmsTiledKernel
+    /// (a dispatch with both enabled is REJECTED, never silently
+    /// resolved).
+    public internal(set) var rmsCooperativeKernel = false
     /// Tiled cooperative F32 matvec (MoE router ffn_gate_inp — the
     /// one-thread-per-row scalar kernel is a measured GPU hotspot).
     public var f32TiledKernel = false
@@ -1186,6 +1199,104 @@ public final class Gemma4Runner {
     public func parallelAttentionCountersReset() {
         parallelAttentionAppliedCount = 0
         parallelAttentionFallbackCount = 0
+    }
+
+    /// Lazily compiled once per runner: the cooperative RMSNorm pipeline
+    /// from the public RMSCooperative enum source (its own MSL, its own
+    /// library). NEVER stored in the shared `pipelines` dictionary, so
+    /// the pipeline identity key list in engineIdentity() is unchanged —
+    /// the axis identity is bound explicitly via the |rmsCoop= segment
+    /// (kernel name, schedule derivation version, source SHA-256).
+    internal private(set) var rmsCooperativePipelineState: MTLComputePipelineState?
+    /// PRODUCTION cooperative RMSNorm counters: eligible calls served by
+    /// the cooperative pipeline, and axis-enabled calls whose geometry
+    /// was ineligible and safely fell back to the incumbent chain.
+    public private(set) var rmsCooperativeAppliedCount = 0
+    public private(set) var rmsCooperativeFallbackCount = 0
+
+    /// Zeroes the production cooperative-RMSNorm counters.
+    public func rmsCooperativeCountersReset() {
+        rmsCooperativeAppliedCount = 0
+        rmsCooperativeFallbackCount = 0
+    }
+
+    /// Compiles (once) the cooperative RMSNorm pipeline from the PUBLIC
+    /// RMSCooperative enum source with default compiler options on the
+    /// runner's OWN device. Compilation failure fails CLOSED as
+    /// Gemma4Error (shaderCompileFailed / functionMissing).
+    internal func rmsCooperativePipeline() throws -> MTLComputePipelineState {
+        if let cached = rmsCooperativePipelineState { return cached }
+        let device = self.device
+        let library: MTLLibrary
+        do { library = try device.makeLibrary(source: RMSCooperative.source, options: nil) }
+        catch { throw Gemma4Error.shaderCompileFailed("rms cooperative: \(error)") }
+        guard let fn = library.makeFunction(name: RMSCooperative.kernelName) else {
+            throw Gemma4Error.functionMissing(RMSCooperative.kernelName)
+        }
+        guard let pipe = try? device.makeComputePipelineState(function: fn) else {
+            throw Gemma4Error.shaderCompileFailed("rms cooperative pipeline")
+        }
+        rmsCooperativePipelineState = pipe
+        return pipe
+    }
+
+    /// PRODUCTION cooperative RMSNorm dispatch: only when the axis is
+    /// enabled. Geometry eligibility (n multiple of 4, 0 < n <= 8192,
+    /// scaled weight at a 16-byte aligned offset — the same production
+    /// rmsVectorLoadGuards predicate) and the total dynamic+static
+    /// threadgroup-memory budget are checked against the ACTUAL compiled
+    /// pipeline and device; the thread count is hardware-derived (2x the
+    /// pipeline's threadExecutionWidth, bounded by the pipeline maximum
+    /// and n/4), never a GPU-name guess. Buffer spans, offsets, weight
+    /// spans and eps are validated by the caller (rmsnorm) BEFORE this
+    /// hook. Ineligible geometry: records a PRODUCTION fallback counter
+    /// and returns false — the caller runs the unchanged incumbent chain
+    /// (safe fallback; eligibility is never silently reported as
+    /// application). Enabling BOTH the cooperative and tiled RMS axes is
+    /// REJECTED as badTensorGeometry, never silently resolved. Eligible
+    /// geometry dispatches one threadgroup per vector through the SAME
+    /// ordered compute-segment path as every other kernel
+    /// (dispatchPipeline: deferred segment, accounting, and completion
+    /// checks unchanged). In-place x == y is legal by construction: all
+    /// threads stage the full input, barrier, lane 0 sums the staged
+    /// float4s, barrier, and every write goes through the staged copy.
+    internal func rmsnormCooperativeDispatch(n: Int, vectors: Int, scaled: Bool, wOff: UInt64,
+                                              _ bind: (MTLComputeCommandEncoder) -> Void) throws -> Bool {
+        guard rmsCooperativeKernel else { return false }
+        if rmsTiledKernel {
+            throw Gemma4Error.badTensorGeometry(
+                "rmsnormCooperative and rmsnormTiled cannot both be enabled")
+        }
+        guard RMSCooperative.eligible(n: n),
+              Self.rmsVectorLoadGuards(n: n, scaled: scaled, wOff: wOff) else {
+            rmsCooperativeFallbackCount += 1
+            return false
+        }
+        let pipe = try rmsCooperativePipeline()
+        let threads = RMSCooperative.threadCount(
+            n: n, executionWidth: pipe.threadExecutionWidth,
+            maxThreads: pipe.maxTotalThreadsPerThreadgroup)
+        let tgLen = RMSCooperative.threadgroupMemoryLength(n: n)
+        // HARDENED guards: the hardened derivations return 0 on invalid
+        // or gigantic inputs (never a trap); the dynamic+static budget
+        // is checked overflow-safely against the real pipeline static
+        // length and device cap (tgLen <= (maxN + 4) * 4 is bounded, so
+        // the subtraction cannot underflow). Any guard failure is a
+        // recorded fallback, never a silent application.
+        guard threads > 0, tgLen > 0,
+              pipe.staticThreadgroupMemoryLength <= device.maxThreadgroupMemoryLength,
+              tgLen <= device.maxThreadgroupMemoryLength
+                  - pipe.staticThreadgroupMemoryLength else {
+            rmsCooperativeFallbackCount += 1
+            return false
+        }
+        rmsCooperativeAppliedCount += 1
+        try dispatchPipeline(pipe, name: RMSCooperative.kernelName,
+                             groups: vectors, threads: threads) { enc in
+            enc.setThreadgroupMemoryLength(tgLen, index: 0)
+            bind(enc)
+        }
+        return true
     }
 
     /// Compiles (once) the production parallel-attention pipeline from the
@@ -2361,6 +2472,12 @@ public final class Gemma4Runner {
             try dispatchPipeline(gen.pipeline, name: gen.schedule.kernelName,
                                  groups: vectors, threads: gen.schedule.threadsPerVector,
                                  bindNorm)
+        } else if try rmsnormCooperativeDispatch(n: n, vectors: vectors,
+                                                 scaled: weightTensor != nil,
+                                                 wOff: wOff, bindNorm) {
+            // Cooperative RMSNorm (Forge candidate): either dispatched
+            // by the helper or a counted safe fallback to the chain
+            // below. The generated-kernel family above keeps precedence.
         } else if rmsTiledKernel {
             // Tiled cooperative variant (Forge candidate; the single-
             // thread-per-vector reduce is the measured 44% GPU hotspot).
@@ -2591,7 +2708,7 @@ public final class Gemma4Runner {
         // above — and is therefore unsafe and removed.
         let msl = SHA256.hex(SHA256.hash(Array(Self.shaderSource.utf8)))
         let candidates = GemmaForge.candidates()
-            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)/\($0.gpuCacheAppend)/\($0.parallelAttention)" }
+            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)/\($0.gpuCacheAppend)/\($0.parallelAttention)/\($0.rmsnormCooperative)" }
             .sorted().joined(separator: ",")
         return "gemma-graph-executor-v1|exe=" + (try Self.executableDigest())
             + "|msl=" + msl
@@ -2610,6 +2727,9 @@ public final class Gemma4Runner {
             + "|parAttn=" + AttentionDiagnostic.kernelName
             + "@\(AttentionDiagnostic.threads)"
             + "#\(AttentionDiagnostic.candidateSourceSha256())"
+            + "|rmsCoop=" + RMSCooperative.kernelName
+            + "@v\(RMSCooperative.scheduleVersion)"
+            + "#\(RMSCooperative.sourceSha256())"
             + compositeLoweringIdentity()
     }
 
