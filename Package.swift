@@ -19,5 +19,15 @@ let package = Package(
             dependencies: ["LeviathanCore"],
             path: "Sources/leviathan-tests"
         ),
+        .executableTarget(
+            name: "leviathan-forge-helper",
+            dependencies: ["LeviathanCore"],
+            path: "Sources/leviathan-forge-helper"
+        ),
+        .executableTarget(
+            name: "leviathan-dag-helper",
+            dependencies: ["LeviathanCore"],
+            path: "Sources/leviathan-dag-helper"
+        ),
     ]
 )

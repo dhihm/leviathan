@@ -32,6 +32,15 @@ execution stays on the original Swift/Metal backend (no MLX, no MPS
 runner wrapper, no new dependencies). The example weights are random
 initializations, not a trained model.
 
+**Generic Python-to-actual-input execution** is now connected through the
+[Python Forge runtime](tools/forge_run/README.md): one `build` command accepts
+a trusted `nn.Module` file, an example input and a real input, captures the
+ATen graph, qualifies and measures legal GPU candidates against a verified
+baseline, saves a bound selection, and runs the input. A separate `run`
+process validates the bundle and reuses that selection on another input.
+The supported subset remains static FP32 Linear/ReLU chains with at most
+16 MiB of weights. See [implementation and validation](docs/PYTHON_FORGE_RUNTIME.md).
+
 **The Gemma routed-MoE expert region is now captured and lowered through
 this frontend too (pass 13)**: a user-authored `nn.Module` region
 (no-bias linear / split / GELU tanh / mul / stack over the routed
@@ -629,3 +638,7 @@ by their upstream licenses and are not covered by this repository's MIT
 grant.
 
 The [bounded attention Forge experiment](docs/ATTENTION_FORGE_EXPERIMENT.md) documents the diagnostic kernel, local selection workflow, correctness gates, measured limits, and reproducibility evidence.
+
+The [static value DAG Forge experiment](docs/DAG_FORGE_RUNTIME.md) adds actual Python residual/fanout graphs, safe fusion, measured baseline selection, and bound fresh-process artifacts. It remains a bounded FP32 module experiment.
+
+The [loaded DAG runtime](docs/LOADED_DAG_RUNTIME.md) retains one validated model and Metal helper across real inputs, separating initial preparation from measured request latency.
