@@ -8612,6 +8612,157 @@ func runModelDigestCacheGates() {
 
 runModelDigestCacheGates()
 
+// MARK: - command-buffer timeline diagnostics
+
+@MainActor
+func runCommandTimelineGates() {
+    typealias CT = Gemma4CommandTimeline
+    func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+            gs: Double, ge: Double, completed: Bool = true) -> CT.Event {
+        CT.Event(sequence: seq, site: .directDispatch, kernelCount: 1, encodeSeconds: encode,
+                 hostBeforeCommit: bc, hostAfterCommit: ac, hostAfterWait: aw,
+                 gpuStart: gs, gpuEnd: ge, completed: completed, statusRaw: completed ? 4 : 5)
+    }
+    func analyze(_ events: [CT.Event], dropped: Int = 0) -> CT.Summary {
+        CT.analyze(CT.Trace(capacity: CT.maxCapacity, droppedCount: dropped, events: events))
+    }
+    func reasons(_ events: [CT.Event]) -> [CT.RejectionReason] {
+        analyze(events).rejections.map(\.reason)
+    }
+
+    // Known synthetic timeline (binary-exact values, so totals compare exactly).
+    let e1 = ev(1, encode: 0.5, bc: 10.0, ac: 10.25, aw: 13.0, gs: 11.0, ge: 12.5)
+    let e2 = ev(2, bc: 14.0, ac: 14.5, aw: 17.0, gs: 15.0, ge: 16.0)
+    let e3 = ev(3, bc: 18.0, ac: 18.5, aw: 21.0, gs: 19.0, ge: 20.0)
+    let good = analyze([e1, e2])
+    checkEqual("ct valid events accepted", good.validEventCount, 2)
+    check("ct valid events have no rejections", good.rejections.isEmpty)
+    check("ct encode total sums known encodes only",
+          good.encodeSeconds == 0.5 && good.encodeUnknownCount == 1)
+    check("ct commit-call total", good.commitCallSeconds == 0.75)
+    check("ct wait-call total", good.waitCallSeconds == 5.25)
+    check("ct GPU interval total", good.gpuSeconds == 2.5)
+    check("ct commit-to-GPU-start total", good.commitToGpuStartSeconds == 2.0)
+    check("ct GPU-end-to-wait-return total", good.gpuEndToWaitReturnSeconds == 1.5)
+    check("ct host span", good.hostSpanSeconds == 7.0)
+    check("ct previous GPU end to next commit gap",
+          good.gaps == [CT.Gap(fromSequence: 1, toSequence: 2,
+                               gpuEndToNextCommitSeconds: 1.5,
+                               gpuEndToWaitReturnSeconds: 0.5,
+                               waitReturnToNextCommitSeconds: 1.0)])
+    check("ct gap totals", good.gapTotalSeconds == 1.5 && good.gapMaxSeconds == 1.5
+          && good.gapPairsSkipped == 0)
+    check("ct complete trace is not truncated",
+          !good.truncated && good.droppedCount == 0 && good.missingSequenceCount == 0)
+
+    // Invalid timestamps are rejected, never clamped.
+    check("ct zero GPU start rejected",
+          reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 0, ge: 12.5)]) == [.nonPositiveTimestamp])
+    check("ct zero GPU end rejected",
+          reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 0)]) == [.nonPositiveTimestamp])
+    check("ct non-finite GPU end rejected",
+          reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: .nan)]) == [.nonFinite])
+    check("ct infinite host timestamp rejected",
+          reasons([ev(1, bc: 10, ac: 10.25, aw: .infinity, gs: 11, ge: 12.5)]) == [.nonFinite])
+    check("ct non-finite encode rejected",
+          reasons([ev(1, encode: .nan, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 12.5)]) == [.nonFinite])
+    check("ct GPU start before host commit rejected",
+          reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 9.5, ge: 12.5)]) == [.gpuOutsideHostBounds])
+    check("ct GPU end after host wait rejected",
+          reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 13.5)]) == [.gpuOutsideHostBounds])
+    check("ct reversed GPU interval rejected",
+          reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 12.5, ge: 11)]) == [.gpuReversed])
+    check("ct reversed host order rejected",
+          reasons([ev(1, bc: 10, ac: 9.75, aw: 13, gs: 11, ge: 12.5)]) == [.hostOrderReversed])
+    check("ct negative encode rejected",
+          reasons([ev(1, encode: -0.25, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 12.5)]) == [.negativeEncode])
+    check("ct incomplete command buffer rejected",
+          reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 12.5, completed: false)]) == [.notCompleted])
+    check("ct overlapping history rejected",
+          reasons([e1, ev(2, bc: 12.75, ac: 13.0, aw: 15.0, gs: 13.5, ge: 14.5)]) == [.overlapsPrevious])
+    check("ct repeated sequence rejected", reasons([e1, e1]) == [.sequenceNotIncreasing])
+
+    // Missing / rejected neighbors are never bridged by a derived gap.
+    let acrossMissing = analyze([e1, ev(3, bc: 14.0, ac: 14.5, aw: 17.0, gs: 15.0, ge: 16.0)])
+    check("ct missing sequence is counted and not bridged by a gap",
+          acrossMissing.missingSequenceCount == 1 && acrossMissing.gaps.isEmpty
+          && acrossMissing.gapPairsSkipped == 1 && acrossMissing.validEventCount == 2)
+    let acrossRejected = analyze([e1, ev(2, bc: 14.0, ac: 14.5, aw: 17.0, gs: 0, ge: 16.0), e3])
+    check("ct rejected neighbor is not bridged by a gap",
+          acrossRejected.validEventCount == 2 && acrossRejected.gaps.isEmpty
+          && acrossRejected.gapPairsSkipped == 1 && acrossRejected.missingSequenceCount == 0)
+    checkEqual("ct leading missing sequence is counted", analyze([e2]).missingSequenceCount, 1)
+    check("ct dropped events mark truncation", analyze([e1, e2], dropped: 3).truncated)
+
+    // Bounded recorder: keeps the first `capacity` events, counts the rest.
+    do {
+        var recorder = try CT.Recorder(capacity: 2)
+        for i in 0..<5 {
+            let t = Double(i) * 4 + 1
+            recorder.record(site: .deferredFlush, kernelCount: i, encodeSeconds: nil,
+                            hostBeforeCommit: t, hostAfterCommit: t + 0.25, hostAfterWait: t + 2,
+                            gpuStart: t + 0.5, gpuEnd: t + 1.5, completed: true, statusRaw: 4)
+        }
+        let trace = recorder.trace()
+        check("ct recorder keeps at most capacity events",
+              trace.events.map(\.sequence) == [1, 2])
+        check("ct recorder counts dropped events", trace.droppedCount == 3 && trace.truncated)
+        let summary = CT.analyze(trace)
+        check("ct summary reports truncation",
+              summary.truncated && summary.droppedCount == 3
+              && summary.validEventCount == 2 && summary.gaps.count == 1)
+    } catch {
+        failed += 1; print("FAIL: ct recorder — threw " + String(describing: error))
+    }
+    for bad in [0, -1, CT.maxCapacity + 1] {
+        do {
+            _ = try CT.Recorder(capacity: bad)
+            failed += 1; print("FAIL: ct recorder capacity \(bad) accepted")
+        } catch let error as Gemma4CommandTimelineError {
+            check("ct recorder capacity \(bad) rejected", error == .invalidCapacity(bad))
+        } catch {
+            failed += 1; print("FAIL: ct recorder capacity — unexpected " + String(describing: error))
+        }
+    }
+    checkEqual("ct default recorder capacity", CT.Recorder().capacity, CT.maxCapacity)
+
+    // Codable roundtrips.
+    do {
+        let trace = CT.Trace(capacity: 8, droppedCount: 1, events: [e1, e2])
+        let decodedTrace = try JSONDecoder().decode(CT.Trace.self,
+                                                    from: JSONEncoder().encode(trace))
+        check("ct trace Codable roundtrip", decodedTrace == trace)
+        let summary = analyze([e1, ev(2, bc: 14.0, ac: 14.5, aw: 17.0, gs: 0, ge: 16.0), e3])
+        let decodedSummary = try JSONDecoder().decode(CT.Summary.self,
+                                                      from: JSONEncoder().encode(summary))
+        check("ct summary Codable roundtrip", decodedSummary == summary)
+    } catch {
+        failed += 1; print("FAIL: ct Codable roundtrip — threw " + String(describing: error))
+    }
+
+    // Real device: GPU timestamps must validate inside their host bounds.
+    do {
+        let trace = try CT.deviceProbe(commandBuffers: 3)
+        let summary = CT.analyze(trace)
+        check("ct device probe records every command buffer",
+              trace.events.count == 3 && !trace.truncated)
+        let valid = summary.validEventCount == 3 && summary.rejections.isEmpty
+        check("ct device probe GPU timestamps validate inside host bounds", valid)
+        if !valid {
+            print("  ct device probe rejections: " + String(describing: summary.rejections))
+        }
+        check("ct device probe derives non-negative adjacent gaps",
+              summary.gaps.count == 2
+              && summary.gaps.allSatisfy { $0.gpuEndToNextCommitSeconds >= 0 })
+    } catch Gemma4Error.metalUnavailable {
+        print("SKIP: ct device probe — Metal unavailable")
+    } catch {
+        failed += 1; print("FAIL: ct device probe — threw " + String(describing: error))
+    }
+}
+
+runCommandTimelineGates()
+
 // MARK: - Summary
 
 print("\(passed) passed, \(failed) failed")

@@ -1,0 +1,29 @@
+{
+  "scope": "Opt-in command timeline diagnosis only; not a throughput qualification or production artifact activation",
+  "sourceBase": "f5eb37f2921e49109a1a6f10e4e40fe0b8764a6c",
+  "model": "existing Gemma 26B-A4B Q4_0, no download or fresh hash",
+  "runtime": "same modern all-segment prepared SSA candidate, Q4 width32, MoE E4/R32, router divisor1; fresh public verification install, no retagging old artifacts",
+  "fixtures": [
+    {
+      "name": "raw-hello",
+      "text": "Hello",
+      "chat": false
+    },
+    {
+      "name": "en-chat",
+      "text": "Hello, can you help me today?",
+      "chat": true
+    },
+    {
+      "name": "kr-chat",
+      "text": "안녕하세요, 오늘 날씨는 어떤가요?",
+      "chat": true
+    }
+  ],
+  "generatedIDs": 32,
+  "strictGate": "off vs on full262144 finite logits at each of32 outputs, exact greedy IDs, worst abs(delta)/max(1,abs(reference)) < 1e-4; both arms frozen baseline ID equality",
+  "traceWindow": "31 continuation steps only after prefill, bounded event store; retain every trace, all dropped/invalid reports",
+  "timingInterpretation": "actual GPU-start/end host-clock validity checked against host precommit/postwait; GPU-end-to-next-host-commit is observed submission gap, not CPU busy or attribution to another process; no improvement inference under failed A/A floor",
+  "telemetry": "only vm_stat, pmset-g-therm/batt, aggregate uptime outside decode; no process enumeration, app stopping or resource cleanup",
+  "nextGate": "derive bottleneck classification from retained diagnostic trace; any semantic optimization externally authored, reviewed, full strict gates and separate reproducibility prerequisite"
+}

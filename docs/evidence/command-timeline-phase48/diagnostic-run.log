@@ -1,0 +1,4 @@
+FIXTURE_GATE_AND_TRACE_PASS raw-hello: 1147 valid commands, worst serial 7.529184222221375e-05, toggle 0.0
+FIXTURE_GATE_AND_TRACE_PASS en-chat: 1147 valid commands, worst serial 3.740191459655762e-05, toggle 0.0
+FIXTURE_GATE_AND_TRACE_PASS kr-chat: 1147 valid commands, worst serial 3.272294998168945e-05, toggle 0.0
+THREE_FIXTURE_COMMAND_TIMELINE_DIAGNOSIS_COMPLETE

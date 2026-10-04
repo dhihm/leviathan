@@ -752,6 +752,59 @@ public final class Gemma4Runner {
         Double(DispatchTime.now().uptimeNanoseconds) / 1000
     }
 
+    // MARK: - command-buffer timeline diagnostics (opt-in)
+
+    /// Opt-in command-buffer timeline trace (OFF by default). When ON, the
+    /// three existing commit/wait sites (flushOpenSegment, and the direct
+    /// branches of dispatch() and dispatchPipeline()) record host
+    /// timestamps around the existing commit()/waitUntilCompleted() calls
+    /// plus the buffer's raw gpuStartTime/gpuEndTime into a bounded
+    /// recorder. Same kernels, command buffers, order and waits; no
+    /// completion handlers, readbacks or extra flushes. When OFF each site
+    /// only branches on this flag (no clock reads, no appends). Buffers
+    /// committed elsewhere, or before enabling (e.g. during init), are not
+    /// recorded. Toggling while a deferred segment is open marks that
+    /// segment's kernel count and encode time unknown (nil).
+    public var commandTimelineEnabled = false {
+        didSet {
+            ctPendingKernels = 0
+            ctPendingEncodeSeconds = 0
+            ctPendingPartial = openEnc != nil
+        }
+    }
+    private var ctRecorder = Gemma4CommandTimeline.Recorder()
+    /// Kernel count / encode time accumulated for the open deferred
+    /// segment (accumulated only while ON; zeroed at every flush/discard).
+    private var ctPendingKernels = 0
+    private var ctPendingEncodeSeconds = 0.0
+    private var ctPendingPartial = false
+
+    /// Clears the recorded timeline (events, sequence numbering, drop
+    /// count) with a bound of 1...Gemma4CommandTimeline.maxCapacity
+    /// events. An invalid capacity throws and keeps the current recorder.
+    public func commandTimelineReset(capacity: Int = Gemma4CommandTimeline.maxCapacity) throws {
+        ctRecorder = try Gemma4CommandTimeline.Recorder(capacity: capacity)
+    }
+
+    /// Value copy of the recorded events and drop count; derive totals
+    /// and gaps with Gemma4CommandTimeline.analyze.
+    public func commandTimelineSnapshot() -> Gemma4CommandTimeline.Trace {
+        ctRecorder.trace()
+    }
+
+    private func ctRecord(_ site: Gemma4CommandTimeline.Site, kernelCount: Int?,
+                          encodeSeconds: Double?, beforeCommit: Double,
+                          afterCommit: Double, afterWait: Double,
+                          cmd: MTLCommandBuffer) {
+        ctRecorder.record(site: site, kernelCount: kernelCount,
+                          encodeSeconds: encodeSeconds,
+                          hostBeforeCommit: beforeCommit, hostAfterCommit: afterCommit,
+                          hostAfterWait: afterWait,
+                          gpuStart: cmd.gpuStartTime, gpuEnd: cmd.gpuEndTime,
+                          completed: cmd.status == .completed && cmd.error == nil,
+                          statusRaw: Int(cmd.status.rawValue))
+    }
+
     /// When true, Q4_0 matvecs dispatch the tiled cooperative kernel
     /// (a Forge candidate — gated against the FP64 oracle and measured
     /// on real hardware before selection). Public so the profiling CLI
@@ -2249,10 +2302,27 @@ public final class Gemma4Runner {
         defer { if breakdownInstrumentation { brFlushMicros += Self.brNow() - brT0 } }
         openCmd = nil
         openEnc = nil
+        let ctTrace = commandTimelineEnabled
+        let ctEndEncodeStart = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
         enc.endEncoding()
+        let ctBeforeCommit = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
         cmd.commit()
+        let ctAfterCommit = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
         submittedBuffers += 1
         cmd.waitUntilCompleted()
+        if ctTrace {
+            let ctAfterWait = Gemma4CommandTimeline.hostSeconds()
+            let known = !ctPendingPartial
+            ctRecord(.deferredFlush,
+                     kernelCount: known ? ctPendingKernels : nil,
+                     encodeSeconds: known
+                         ? ctPendingEncodeSeconds + (ctBeforeCommit - ctEndEncodeStart) : nil,
+                     beforeCommit: ctBeforeCommit, afterCommit: ctAfterCommit,
+                     afterWait: ctAfterWait, cmd: cmd)
+        }
+        ctPendingKernels = 0
+        ctPendingEncodeSeconds = 0
+        ctPendingPartial = false
         guard cmd.status == .completed, cmd.error == nil else {
             throw Gemma4Error.commandBufferFailed(
                 "deferred segment: status \(cmd.status.rawValue), \(String(describing: cmd.error))")
@@ -2271,6 +2341,9 @@ public final class Gemma4Runner {
         openEnc = nil
         openCmd = nil
         autoSegment = false
+        ctPendingKernels = 0
+        ctPendingEncodeSeconds = 0
+        ctPendingPartial = false
         // The discarded segment never executes — its expert-slice pins
         // cannot be waiting on GPU reads and are released wholesale.
         expertCache?.discardAllPins()
@@ -2337,6 +2410,8 @@ public final class Gemma4Runner {
         // UInt32.max and width >= 1, so this cannot overflow.
         let groups = (grid - 1) / width + 1
         if let deferredEnc = openEnc {
+            let ctDeferred = commandTimelineEnabled
+            let ctEncodeT0 = ctDeferred ? Gemma4CommandTimeline.hostSeconds() : 0
             let brT0 = breakdownInstrumentation ? Self.brNow() : 0
             defer { if breakdownInstrumentation { brEncodeMicros += Self.brNow() - brT0 } }
             deferredEnc.setComputePipelineState(pipeline)
@@ -2344,8 +2419,14 @@ public final class Gemma4Runner {
             deferredEnc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
                                              threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
             dispatchCountTotal += 1   // count kernels, not buffers
+            if ctDeferred {
+                ctPendingEncodeSeconds += Gemma4CommandTimeline.hostSeconds() - ctEncodeT0
+                ctPendingKernels += 1
+            }
             return
         }
+        let ctTrace = commandTimelineEnabled
+        let ctEncodeStart = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
         guard let cmd = queue.makeCommandBuffer(),
               let enc = cmd.makeComputeCommandEncoder() else {
             throw Gemma4Error.metalUnavailable
@@ -2355,9 +2436,18 @@ public final class Gemma4Runner {
         enc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
                                  threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
         enc.endEncoding()
+        let ctBeforeCommit = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
         cmd.commit()
+        let ctAfterCommit = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
         submittedBuffers += 1
         cmd.waitUntilCompleted()
+        if ctTrace {
+            let ctAfterWait = Gemma4CommandTimeline.hostSeconds()
+            ctRecord(.directDispatch, kernelCount: 1,
+                     encodeSeconds: ctBeforeCommit - ctEncodeStart,
+                     beforeCommit: ctBeforeCommit, afterCommit: ctAfterCommit,
+                     afterWait: ctAfterWait, cmd: cmd)
+        }
         guard cmd.status == .completed, cmd.error == nil else {
             throw Gemma4Error.commandBufferFailed(
                 "kernel \(name): status \(cmd.status.rawValue), \(String(describing: cmd.error))")
@@ -2420,6 +2510,8 @@ public final class Gemma4Runner {
         let width = threads
         if openEnc == nil, autoSegment { try beginSegment() }
         if let deferredEnc = openEnc {
+            let ctDeferred = commandTimelineEnabled
+            let ctEncodeT0 = ctDeferred ? Gemma4CommandTimeline.hostSeconds() : 0
             let brT0 = breakdownInstrumentation ? Self.brNow() : 0
             defer { if breakdownInstrumentation { brEncodeMicros += Self.brNow() - brT0 } }
             deferredEnc.setComputePipelineState(pipeline)
@@ -2428,8 +2520,14 @@ public final class Gemma4Runner {
                 MTLSize(width: groups, height: 1, depth: 1),
                 threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
             dispatchCountTotal += 1
+            if ctDeferred {
+                ctPendingEncodeSeconds += Gemma4CommandTimeline.hostSeconds() - ctEncodeT0
+                ctPendingKernels += 1
+            }
             return
         }
+        let ctTrace = commandTimelineEnabled
+        let ctEncodeStart = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
         guard let cmd = queue.makeCommandBuffer(),
               let enc = cmd.makeComputeCommandEncoder() else {
             throw Gemma4Error.metalUnavailable
@@ -2439,9 +2537,18 @@ public final class Gemma4Runner {
         enc.dispatchThreadgroups(MTLSize(width: groups, height: 1, depth: 1),
                                  threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
         enc.endEncoding()
+        let ctBeforeCommit = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
         cmd.commit()
+        let ctAfterCommit = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
         submittedBuffers += 1
         cmd.waitUntilCompleted()
+        if ctTrace {
+            let ctAfterWait = Gemma4CommandTimeline.hostSeconds()
+            ctRecord(.directDispatchPipeline, kernelCount: 1,
+                     encodeSeconds: ctBeforeCommit - ctEncodeStart,
+                     beforeCommit: ctBeforeCommit, afterCommit: ctAfterCommit,
+                     afterWait: ctAfterWait, cmd: cmd)
+        }
         guard cmd.status == .completed, cmd.error == nil else {
             throw Gemma4Error.commandBufferFailed(
                 "kernel \(name): status \(cmd.status.rawValue), \(String(describing: cmd.error))")

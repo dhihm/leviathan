@@ -1,0 +1,56 @@
+{
+  "actualOwnedCLIProcesses": 8,
+  "syntheticFileBytes": 1048576,
+  "initialComputations": 1,
+  "cacheHits": 7,
+  "results": [
+    {
+      "index": 0,
+      "exit": 0,
+      "stdout": "model file SHA-256 8f990ba0b577b51cf009ea049368c16bbda1b21e1b93be07a824758bb253c39b for /private/tmp/leviathan-cache-concurrent-9zgl3vsy/model.bin: cache hit (historically hashed at 2026-10-04T21:27:05Z, source initial, 1048576 bytes); model bytes NOT re-read now and NOT freshly verified; same-path weight edits require --rehash-model\ncache record: /tmp/leviathan-cache-concurrent-9zgl3vsy/cache/66b250bfc1ab3c01d9f09899682423a4316d46abb840ea95c1c515560a5a027c.json\n",
+      "stderr": ""
+    },
+    {
+      "index": 1,
+      "exit": 0,
+      "stdout": "model file SHA-256 8f990ba0b577b51cf009ea049368c16bbda1b21e1b93be07a824758bb253c39b for /private/tmp/leviathan-cache-concurrent-9zgl3vsy/model.bin: computed now from 1048576 bytes (initial cache miss); cached for reuse\ncache record: /tmp/leviathan-cache-concurrent-9zgl3vsy/cache/66b250bfc1ab3c01d9f09899682423a4316d46abb840ea95c1c515560a5a027c.json\n",
+      "stderr": ""
+    },
+    {
+      "index": 2,
+      "exit": 0,
+      "stdout": "model file SHA-256 8f990ba0b577b51cf009ea049368c16bbda1b21e1b93be07a824758bb253c39b for /private/tmp/leviathan-cache-concurrent-9zgl3vsy/model.bin: cache hit (historically hashed at 2026-10-04T21:27:05Z, source initial, 1048576 bytes); model bytes NOT re-read now and NOT freshly verified; same-path weight edits require --rehash-model\ncache record: /tmp/leviathan-cache-concurrent-9zgl3vsy/cache/66b250bfc1ab3c01d9f09899682423a4316d46abb840ea95c1c515560a5a027c.json\n",
+      "stderr": ""
+    },
+    {
+      "index": 3,
+      "exit": 0,
+      "stdout": "model file SHA-256 8f990ba0b577b51cf009ea049368c16bbda1b21e1b93be07a824758bb253c39b for /private/tmp/leviathan-cache-concurrent-9zgl3vsy/model.bin: cache hit (historically hashed at 2026-10-04T21:27:05Z, source initial, 1048576 bytes); model bytes NOT re-read now and NOT freshly verified; same-path weight edits require --rehash-model\ncache record: /tmp/leviathan-cache-concurrent-9zgl3vsy/cache/66b250bfc1ab3c01d9f09899682423a4316d46abb840ea95c1c515560a5a027c.json\n",
+      "stderr": ""
+    },
+    {
+      "index": 4,
+      "exit": 0,
+      "stdout": "model file SHA-256 8f990ba0b577b51cf009ea049368c16bbda1b21e1b93be07a824758bb253c39b for /private/tmp/leviathan-cache-concurrent-9zgl3vsy/model.bin: cache hit (historically hashed at 2026-10-04T21:27:05Z, source initial, 1048576 bytes); model bytes NOT re-read now and NOT freshly verified; same-path weight edits require --rehash-model\ncache record: /tmp/leviathan-cache-concurrent-9zgl3vsy/cache/66b250bfc1ab3c01d9f09899682423a4316d46abb840ea95c1c515560a5a027c.json\n",
+      "stderr": ""
+    },
+    {
+      "index": 5,
+      "exit": 0,
+      "stdout": "model file SHA-256 8f990ba0b577b51cf009ea049368c16bbda1b21e1b93be07a824758bb253c39b for /private/tmp/leviathan-cache-concurrent-9zgl3vsy/model.bin: cache hit (historically hashed at 2026-10-04T21:27:05Z, source initial, 1048576 bytes); model bytes NOT re-read now and NOT freshly verified; same-path weight edits require --rehash-model\ncache record: /tmp/leviathan-cache-concurrent-9zgl3vsy/cache/66b250bfc1ab3c01d9f09899682423a4316d46abb840ea95c1c515560a5a027c.json\n",
+      "stderr": ""
+    },
+    {
+      "index": 6,
+      "exit": 0,
+      "stdout": "model file SHA-256 8f990ba0b577b51cf009ea049368c16bbda1b21e1b93be07a824758bb253c39b for /private/tmp/leviathan-cache-concurrent-9zgl3vsy/model.bin: cache hit (historically hashed at 2026-10-04T21:27:05Z, source initial, 1048576 bytes); model bytes NOT re-read now and NOT freshly verified; same-path weight edits require --rehash-model\ncache record: /tmp/leviathan-cache-concurrent-9zgl3vsy/cache/66b250bfc1ab3c01d9f09899682423a4316d46abb840ea95c1c515560a5a027c.json\n",
+      "stderr": ""
+    },
+    {
+      "index": 7,
+      "exit": 0,
+      "stdout": "model file SHA-256 8f990ba0b577b51cf009ea049368c16bbda1b21e1b93be07a824758bb253c39b for /private/tmp/leviathan-cache-concurrent-9zgl3vsy/model.bin: cache hit (historically hashed at 2026-10-04T21:27:05Z, source initial, 1048576 bytes); model bytes NOT re-read now and NOT freshly verified; same-path weight edits require --rehash-model\ncache record: /tmp/leviathan-cache-concurrent-9zgl3vsy/cache/66b250bfc1ab3c01d9f09899682423a4316d46abb840ea95c1c515560a5a027c.json\n",
+      "stderr": ""
+    }
+  ]
+}

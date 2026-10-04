@@ -18,4 +18,6 @@ An independent non-ASCII-path Swift/Python check exposed inconsistent fallback s
 
 Known limits: deleting the parent directory as well as the model can produce different fallback resolution across languages, and non-ASCII cache records written by the unpublished pre-NFC draft are not migrated. ASCII paths, including the existing real model seed, remain byte-identical. No speed improvement or current Ollama ratio is claimed. Previous seven-block resident baseline spread remains 23.8144%, above the fixed 5% reproducibility gate, with observed global paging. Performance work continues after identity-policy integration.
 
+Additional independent checks launched eight simultaneous owned CLI processes against one 1 MiB synthetic file: one initial computation and seven cache hits. The actual retired phase41 plan was rejected for its missing required policy without constructing a model runner.
+
 Evidence is under `docs/evidence/cached-model-digest-phase47/`.
