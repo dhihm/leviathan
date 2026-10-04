@@ -37,13 +37,22 @@ first-to-last intervals, matching Leviathan's decode accounting of
 generated-1 steps after the first token). Client chunk timestamps are
 recorded with the caveat that HTTP chunk receipt is buffered/coalesced
 and is NOT a token-receipt-interval claim. Text/count only; no hidden
-token-ID claims. Same digest linkage, /api/ps, ps-RSS (KiB/1024,
+token-ID claims. Model identity policy cached-explicit-refresh-v1: the
+GGUF SHA-256 comes from the shared model digest cache
+(tools/baseline/model_digest_cache.py; hashed once on a cache miss or on
+an explicit LEVIATHAN_REHASH_MODEL=1 refresh, never re-read on a hit, so
+it is a historical digest rather than a fresh verification). The Ollama
+blob is never opened or hashed; its file-name digest is declared metadata
+and is only compared with the cached GGUF digest. Same /api/ps, ps-RSS (KiB/1024,
 post-request point samples, max across rounds — not a peak claim),
 loadavg, and no-page-cache-purge rules as tools/baseline/ollama_warmcold.
 The user's own 11434 daemon is never touched. Model unloaded + verified
 at the end. Bounds: 128 chunks, 1 MiB/line, 8 MiB total per request.
 """
-import hashlib, json, os, re, subprocess, sys, time, urllib.request
+import json, os, re, subprocess, sys, time, urllib.request
+
+from model_digest_cache import MalformedRecord
+from model_identity import MODEL_FILE_VERIFICATION, resolve_model_identity
 
 MAX_CHUNKS, MAX_LINE, MAX_TOTAL = 128, 1 << 20, 8 << 20
 PORT = 11498
@@ -184,16 +193,6 @@ def rss_samples_mib():
         out["error"] = repr(e)
     return out
 
-def sha256_file(path, chunk=1 << 24):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while True:
-            b = f.read(chunk)
-            if not b:
-                break
-            h.update(b)
-    return h.hexdigest()
-
 def load_average():
     try:
         o = subprocess.run(["sysctl", "-n", "vm.loadavg"],
@@ -224,14 +223,17 @@ def main(out_path, daemon_log):
     blob_path = show.get("details", {}).get("parent_model")
     if not blob_path or not os.path.exists(blob_path):
         sys.exit(f"parent_model blob missing: {blob_path!r}")
-    blob_digest = os.path.basename(blob_path).removeprefix("sha256-")
     gguf = os.environ.get(
         "GGUF", "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/"
                 "gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf")
-    t0 = time.monotonic()
-    gguf_digest = sha256_file(gguf)
-    if blob_digest != gguf_digest:
-        sys.exit(f"digest mismatch: ollama blob {blob_digest} != gguf {gguf_digest}")
+    # GGUF SHA-256 from the shared digest cache (hashed once on a miss or on
+    # an explicit LEVIATHAN_REHASH_MODEL=1 refresh; a hit reads no model
+    # bytes). The Ollama blob is never opened or hashed.
+    try:
+        identity = resolve_model_identity(gguf, blob_path)
+    except MalformedRecord as e:
+        sys.exit(f"model digest cache: {e}")
+    print(json.dumps({"model_file_identity": identity}, sort_keys=True))
     if model_loaded():
         sys.exit("model already loaded at start; run a keep_alive:0 request "
                  "first or wait for unload so the control round pays the load")
@@ -263,10 +265,8 @@ def main(out_path, daemon_log):
                                      "task-owned 11498 daemon; single slot "
                                      "also confirmed by runner.parallel=1 "
                                      "in the debug log"},
-              "gguf": gguf, "gguf_sha256": gguf_digest,
-              "ollama_blob_sha256": blob_digest,
-              "digest_linkage": "ollama model blob sha256 == authorized GGUF sha256 (byte-linked)",
-              "digest_computed_s": round(time.monotonic() - t0, 1),
+              "model_file_verification": MODEL_FILE_VERIFICATION,
+              "model_file_identity": identity,
               "loadavg_start": load_average(),
               "num_predict": NUM_PREDICT,
               "measured_rounds": MEASURED_ROUNDS,

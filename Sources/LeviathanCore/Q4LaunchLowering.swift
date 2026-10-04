@@ -394,14 +394,18 @@ public enum Q4LaunchGatePolicy {
 // MARK: - Composite artifact
 
 /// The phase-15 composite: Q4 launch geometry ON TOP of the accepted
-/// E4_R32 MoE baseline. Identity binds model, executable, hardware,
+/// E4_R32 MoE baseline. Identity binds the cached model-file SHA-256
+/// (ModelDigestCache: hashed once, refreshed only explicitly), executable, hardware,
 /// toolchain, the primitive MSL source, the launch width, AND the whole
 /// E4 baseline identity (region graph, emitted source SHA, schedule,
 /// immutable model binding). A stale phase-13 MoE artifact is NEVER
 /// re-signed or re-bound: the E4 source is RE-COMPILED here and must
 /// hash equal to the recorded accepted emission.
 public struct Q4LaunchArtifact: Codable, Equatable, Sendable {
-    public static let schema = 1
+    /// 3: cached model-file SHA-256 with the cached-explicit-refresh-v1
+    /// policy; schema-1 and schema-2 artifacts are rejected and must be
+    /// re-selected.
+    public static let schema = 3
     /// The accepted phase-13 E4_R32 emitted-source SHA (pinned).
     public static let baselineMoeSourceSha256 =
         "c6f7a659cc0254950341d1acf360866e358792bcdb8c46ffb5222ddc24b1b5a8"
@@ -419,7 +423,13 @@ public struct Q4LaunchArtifact: Codable, Equatable, Sendable {
     public let regionGraphSha256: String
     public let hardware: ForgeHardwareProfile
     public let toolchain: String
+    /// Actual SHA-256 of the model file from the shared ModelDigestCache
+    /// (computed once from the bytes, reused without re-reading, refreshed
+    /// only explicitly). Historical, not a fresh per-run verification.
     public let ggufDigest: String
+    /// Model-file digest policy (schema 3): required on decode, covered by
+    /// artifactDigest; only cached-explicit-refresh-v1 is representable.
+    public var modelFileVerification: ModelFileVerificationPolicy = ModelFileIdentity.policy
     public let executableDigest: String
     public let graphDigest: String
     public let hotShapes: [Q4LaunchHotShape]
@@ -544,6 +554,7 @@ public struct Q4LaunchArtifact: Codable, Equatable, Sendable {
         }
         guard toolchain == Forge.toolchainIdentifier,
               ggufDigest == self.ggufDigest,
+              modelFileVerification == ModelFileIdentity.policy,
               executableDigest == self.executableDigest,
               moeIsLowercaseHex64(ggufDigest), moeIsLowercaseHex64(executableDigest),
               moeIsLowercaseHex64(graphDigest),
@@ -1168,7 +1179,7 @@ public enum Q4LaunchSelect {
                                    diagnostic: false, saveTo: url)
         let reloaded = try Q4LaunchArtifact.load(from: url)
         try runner.installQ4LaunchGenerated(artifact: reloaded,
-                                            ggufDigest: try GemmaForge.fileDigest(ggufURL),
+                                            ggufDigest: artifact.ggufDigest,
                                             region: region,
                                             graphDigest: try GemmaGraph.digest(graph))
         defer {
@@ -1236,7 +1247,8 @@ public enum Q4LaunchSelect {
             regionGraphSha256: region.graphSha256,
             hardware: hardware,
             toolchain: Forge.toolchainIdentifier,
-            ggufDigest: try GemmaForge.fileDigest(ggufURL),
+            // Actual model SHA-256 from the shared cache (hashed once, reused).
+            ggufDigest: try ModelDigestCache.shared.digest(for: ggufURL).sha256,
             executableDigest: try Gemma4Runner.executableDigest(),
             graphDigest: graphDigest,
             hotShapes: shapes,

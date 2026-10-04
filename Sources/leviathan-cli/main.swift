@@ -53,6 +53,13 @@ func usage() -> Never {
           runtime agents; strict bounds and fail-closed HTTP parsing.
       gemma-profile --file <model.gguf> --prompt-ids 2,9259
           Per-tensor and per-kernel GPU-time attribution.
+      model-digest --file <model.gguf> [--cache-only] [--rehash-model]
+          Shared model SHA-256 cache report (no GPU). A cache hit reads no
+          model bytes; a miss hashes the file once; --cache-only never
+          hashes; --rehash-model refreshes explicitly.
+      --rehash-model (model commands, with --file or --gguf)
+          Re-hash the model file once before the workflow; otherwise model
+          digests are reused from the cache and never re-read automatically.
     """)
     exit(64)
 }
@@ -60,6 +67,16 @@ func usage() -> Never {
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write("error: \(message)\n".data(using: .utf8)!)
     exit(1)
+}
+
+/// Resolves the model file's SHA-256 through the shared persisted digest
+/// cache and prints exactly how it was obtained (cache hit with its
+/// historical timestamp, initial computation, or explicit refresh). A hit
+/// never reads the model bytes and is never presented as fresh.
+func cachedModelDigest(_ url: URL) throws -> String {
+    let lookup = try ModelDigestCache.shared.digest(for: url)
+    print(lookup.disclosure)
+    return lookup.sha256
 }
 
 func requireValue(_ flag: String, _ args: [String]) -> String {
@@ -117,6 +134,37 @@ func demoInput(dim: Int, batch: Int, seed: UInt64) -> [Float] {
 
 let args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else { usage() }
+
+// Explicit model digest refresh. `--rehash-model` re-hashes the model file
+// named by --file or --gguf exactly once, before the requested workflow,
+// and stores the result in the shared ModelDigestCache; every nested lookup
+// in the workflow then reuses that refreshed record. Without it, model
+// digests come from the cache (hashed only on an initial miss) and are
+// never re-read automatically. The option is rejected for commands that do
+// not use a model digest instead of being silently ignored, and help never
+// hashes anything.
+let modelDigestCommands: Set<String> = [
+    "gemma-generate", "gemma-forge", "gemma-serve", "q4-lower", "moe-lower",
+    "rms-lower", "gemma-q4gen-gate", "gemma-rmsgen-gate", "model-digest",
+]
+if args.contains("--rehash-model") {
+    guard modelDigestCommands.contains(command) else {
+        fail("--rehash-model is not supported by command '" + command + "'")
+    }
+    let fileFlag = args.contains("--file")
+    let ggufFlag = args.contains("--gguf")
+    guard fileFlag != ggufFlag else {
+        fail("--rehash-model requires exactly one of --file or --gguf")
+    }
+    let modelPath = requireValue(fileFlag ? "--file" : "--gguf", args)
+    do {
+        let refreshed = try ModelDigestCache.shared.digest(
+            for: URL(fileURLWithPath: modelPath), refresh: true)
+        print(refreshed.disclosure)
+    } catch {
+        fail("--rehash-model failed: " + String(describing: error))
+    }
+}
 
 /// Parses the optional --backend flag into a backend runner. Valid values:
 /// metal (default), cpu-accelerate, cpu-scalar. Anything else is an error,
@@ -782,12 +830,11 @@ case "forge":
                 }
                 graphOpt = try GemmaGraph.parse(graphData)
                 // Composite state binding: after the standard graph/plan
-                // reads and the GGUF hash, BEFORE the engine digest and
+                // reads and the cached model digest lookup, BEFORE the engine digest and
                 // plan-identity validation. allowSelection false — this is
                 // inference / timed generation, never selection. One-shot
                 // preparatory work only (no per-token IO or hashing).
-                print("hashing GGUF for composite + plan identity (streaming, one pass)…")
-                let ggufDigest = try GemmaForge.fileDigest(fileURL)
+                let ggufDigest = try cachedModelDigest(fileURL)
                 if let comp = compositeOpts {
                     let regionJSON = try readMoERegionBounded(comp.moeRegionPath)
                     _ = try MoERegionIR.parse(regionJSON)
@@ -831,7 +878,7 @@ case "forge":
                     print("prepared execution: ON (prepared.ssa asserted equal to plan.schedule)")
                 }
                 print("selected candidate flags: batching=\(planOpt!.selected.segmentBatching ? 1 : 0) tiledQ4=\(planOpt!.selected.matvecTiledQ4 ? 1 : 0) tiledQ6=\(planOpt!.selected.matvecTiledQ6 ? 1 : 0) rmsTiled=\(planOpt!.selected.rmsnormTiled ? 1 : 0) f32Tiled=\(planOpt!.selected.matvecTiledF32 ? 1 : 0) vecLoads=\(planOpt!.selected.vectorizedLoads ? 1 : 0) gpuCacheAppend=\(planOpt!.selected.gpuCacheAppend ? 1 : 0) parallelAttention=\(planOpt!.selected.parallelAttention ? 1 : 0) rmsCoop=\(planOpt!.selected.rmsnormCooperative ? 1 : 0) q6Coop=\(planOpt!.selected.matvecCooperativeQ6 ? 1 : 0) rmsStats=\(planOpt!.selected.rmsStatisticsReuse ? 1 : 0) routerGPU=\(planOpt!.selected.routerGPUResidency ? 1 : 0) routerDiv=\(planOpt!.selected.routerLaunchDivisor)")
-                print(String(format: "identity validation prep: %.1f ms (graph parse + GGUF hash + plan load)",
+                print(String(format: "identity validation prep: %.1f ms (graph parse + cached model digest lookup + plan load)",
                              ms(ContinuousClock.now - prepStart)))
             }
             if let plan = planOpt, let graph = graphOpt, args.contains("--gate") {
@@ -1566,7 +1613,9 @@ case "forge":
                 // The op is ALSO re-validated against the actual GGUF
                 // tensor directory here — not just the artifact's own copy.
                 try artifact.op.validateAgainst(file: try GGUFReader.read(ggufURL))
-                let digest = try GemmaForge.fileDigest(ggufURL)
+                // Model SHA-256 from the shared digest cache (hashed once;
+                // reused without re-reading unless --rehash-model).
+                let digest = try cachedModelDigest(ggufURL)
                 try artifact.validate(op: artifact.op,
                                       hardware: Q4CurrentHardware.profile(),
                                       ggufDigest: digest,
@@ -1736,7 +1785,7 @@ case "forge":
                     fail("graph file unreadable: \(graphPath)")
                 }
                 let graph = try GemmaGraph.parse(graphData)
-                let ggufDigest = try GemmaForge.fileDigest(fileURL)
+                let ggufDigest = try cachedModelDigest(fileURL)
                 let graphDigest = try GemmaGraph.digest(graph)
                 let runner = try Gemma4Runner(fileAt: fileURL)
                 try artifact.validate(region: region,
@@ -1969,7 +2018,7 @@ case "forge":
                 }
                 try artifact.validate(region: artifact.region,
                                       hardware: MoECurrentHardware.profile(),
-                                      ggufDigest: try GemmaForge.fileDigest(ggufURL),
+                                      ggufDigest: try cachedModelDigest(ggufURL),
                                       executableDigest: try Gemma4Runner.executableDigest())
                 let status = artifact.modelGate == nil
                     ? "component-only (diagnostic; not installable)"
@@ -2116,8 +2165,9 @@ case "forge":
                     from: URL(fileURLWithPath: artifactPath))
                 let fileURL = URL(fileURLWithPath: ggufPath)
                 // Identity + full production gate policy BEFORE any heavy
-                // reference work (public install enforces productionValid).
-                let ggufDigest = try GemmaForge.fileDigest(fileURL)
+                // reference work (public install enforces productionValid). The
+                // model SHA-256 comes from the shared digest cache.
+                let ggufDigest = try cachedModelDigest(fileURL)
                 let graphHandle = try FileHandle(
                     forReadingFrom: URL(fileURLWithPath: graphPath))
                 defer { try? graphHandle.close() }
@@ -2312,7 +2362,9 @@ case "forge":
                 // The op is ALSO re-validated against the actual GGUF
                 // tensor directory here — not just the artifact's own copy.
                 try artifact.op.validateAgainst(file: try GGUFReader.read(ggufURL))
-                let digest = try GemmaForge.fileDigest(ggufURL)
+                // Model SHA-256 from the shared digest cache (hashed once;
+                // reused without re-reading unless --rehash-model).
+                let digest = try cachedModelDigest(ggufURL)
                 try artifact.validate(op: artifact.op,
                                       hardware: RMSCurrentHardware.profile(),
                                       ggufDigest: digest,
@@ -2479,8 +2531,9 @@ case "forge":
             print("reference greedy ids (\(steps)): \(refIds.map(String.init).joined(separator: " "))")
 
             // Install the artifact (full identity check; fail closed —
-            // an invalid artifact aborts before any generated execution).
-            let ggufDigest = try GemmaForge.fileDigest(fileURL)
+            // an invalid artifact aborts before any generated execution). The
+            // model SHA-256 comes from the shared digest cache.
+            let ggufDigest = try cachedModelDigest(fileURL)
             do {
                 try runner.installQ4GeneratedKernel(artifact: artifact,
                                                     ggufDigest: ggufDigest)
@@ -2692,7 +2745,7 @@ case "forge":
             let steps = refLogits.count
             print("reference greedy ids (\(steps)): \(refIds.map(String.init).joined(separator: " "))")
 
-            let ggufDigest = try GemmaForge.fileDigest(fileURL)
+            let ggufDigest = try cachedModelDigest(fileURL)
             do {
                 try runner.installRmsGeneratedKernel(artifact: artifact,
                                                      ggufDigest: ggufDigest)
@@ -2975,12 +3028,11 @@ case "forge":
             // helper: existing Q4LaunchSelect workflow (hardware-derived
             // width + E4 composite), PUBLIC atomic install, invalid artifact
             // fails closed, no-win leaves the incumbent. Invoked AFTER the
-            // runner exists and the GGUF hash is computed, but BEFORE the
+            // runner exists and the cached model digest is resolved, but BEFORE the
             // engine digest / hardware profile / Forge plan-cache identity
             // and selection — the installed composite state is part of what
             // the forge then measures and gates.
-            print("hashing GGUF for composite + plan identity (streaming, one pass)…")
-            let ggufDigest = try GemmaForge.fileDigest(fileURL)
+            let ggufDigest = try cachedModelDigest(fileURL)
             if let comp = compositeOpts, let regionJSON = compositeRegion {
                 let compTokenizer = try GemmaTokenizer(gguf: preFile)
                 let result = try GemmaCompositeForge.prepare(
@@ -3609,8 +3661,7 @@ case "forge":
                                           expertCacheBudgetBytes: expertBudget)
             let hardware = runner.hardwareProfile()
             let engine = GemmaForge.engineDigest(try runner.engineIdentity())
-            print("hashing GGUF for plan identity (streaming, one pass)…")
-            let ggufDigest = try GemmaForge.fileDigest(fileURL)
+            let ggufDigest = try cachedModelDigest(fileURL)
             let plan = try GemmaForge.loadPlan(from: URL(fileURLWithPath: planPath))
             try GemmaForge.validatePlanIdentity(plan, graph: graph,
                                                 ggufDigest: ggufDigest,
@@ -4075,6 +4126,28 @@ case "forge":
             print("SERVE_DONE")
         } catch {
             fail("gemma-serve failed: \(error)")
+        }
+
+    case "model-digest":
+        // Independent inspection of the shared model digest cache; no GPU
+        // and no runner. Without --cache-only a cache miss hashes the file
+        // once (initial computation); --cache-only never reads model bytes
+        // and reports a missing record as missing. With --rehash-model the
+        // refresh above already ran and printed its result.
+        let digestURL = URL(fileURLWithPath: requireValue("--file", args))
+        do {
+            if args.contains("--cache-only") {
+                guard let record = try ModelDigestCache.shared.cachedRecord(for: digestURL) else {
+                    fail("no cached digest for " + ModelDigestCache.canonicalPath(for: digestURL)
+                         + "; run model-digest without --cache-only or with --rehash-model")
+                }
+                print(ModelDigestLookup(record: record, origin: .cacheHit).disclosure)
+            } else if !args.contains("--rehash-model") {
+                print(try ModelDigestCache.shared.digest(for: digestURL).disclosure)
+            }
+            print("cache record: " + ModelDigestCache.shared.recordURL(for: digestURL).path)
+        } catch {
+            fail("model-digest failed: " + String(describing: error))
         }
 
     case "gemma-profile":

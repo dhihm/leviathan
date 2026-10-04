@@ -1429,7 +1429,10 @@ public enum MoEGatePolicy {
 // MARK: - Artifact
 
 public struct MoELoweringArtifact: Codable, Equatable, Sendable {
-    public static let schema = 1
+    /// 3: cached model-file SHA-256 with the cached-explicit-refresh-v1
+    /// policy; schema-1 and schema-2 artifacts are rejected and must be
+    /// re-forged.
+    public static let schema = 3
 
     public let artifactSchema: Int
     public let codegenVersion: String
@@ -1446,7 +1449,13 @@ public struct MoELoweringArtifact: Codable, Equatable, Sendable {
     public let sourceSha256: String
     public let hardware: ForgeHardwareProfile
     public let toolchain: String
+    /// Actual SHA-256 of the model file from the shared ModelDigestCache
+    /// (computed once from the bytes, reused without re-reading, refreshed
+    /// only explicitly). Historical, not a fresh per-run verification.
     public let ggufDigest: String
+    /// Model-file digest policy (schema 3): required on decode, covered by
+    /// artifactDigest; only cached-explicit-refresh-v1 is representable.
+    public var modelFileVerification: ModelFileVerificationPolicy = ModelFileIdentity.policy
     public let executableDigest: String
     public let componentResults: [MoEComponentResult]
     public let incumbentWorstRelToOracle: Double
@@ -1553,6 +1562,7 @@ public struct MoELoweringArtifact: Codable, Equatable, Sendable {
             throw MoELoweringError.invalidArtifact("toolchain mismatch")
         }
         guard ggufDigest == self.ggufDigest, moeIsLowercaseHex64(ggufDigest),
+              modelFileVerification == ModelFileIdentity.policy,
               executableDigest == self.executableDigest,
               moeIsLowercaseHex64(executableDigest) else {
             throw MoELoweringError.invalidArtifact("GGUF/executable digest mismatch")
@@ -1953,7 +1963,8 @@ public enum MoELoweringForge {
             throw MoELoweringError.componentGateFailed(
                 results.map { "\($0.schedule): \($0.note)" }.joined(separator: "; "))
         }
-        let ggufDigest = try GemmaForge.fileDigest(ggufURL)
+        // Actual model SHA-256 from the shared cache (hashed once, reused).
+        let ggufDigest = try ModelDigestCache.shared.digest(for: ggufURL).sha256
         let artifact = try MoELoweringArtifact.withDigest(MoELoweringArtifact(
             artifactSchema: MoELoweringArtifact.schema,
             codegenVersion: MoEKernelEmitter.codegenVersion,
@@ -2260,7 +2271,9 @@ public enum MoELoweringForge {
             fixtures: fixtureRecords, results: modelResults,
             incumbentWallPerFixture: incWalls, incumbentGpuPerFixture: incGpus,
             performanceSelected: performanceSelected, policyNote: policyNote)
-        let ggufDigest = try GemmaForge.fileDigest(ggufURL)
+        // The component forge already resolved the cached model SHA-256;
+        // that single value is passed through (no second lookup).
+        let ggufDigest = componentArtifact.ggufDigest
         let artifact = try MoELoweringArtifact.withDigest(MoELoweringArtifact(
             artifactSchema: componentArtifact.artifactSchema,
             codegenVersion: componentArtifact.codegenVersion,

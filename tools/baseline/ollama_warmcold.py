@@ -2,7 +2,8 @@
 """Matched warm/cold Ollama acceptance baseline (stdlib only).
 
 Protocol (matches Leviathan's resident gemma-generate --repeat harness):
-  - same GGUF via the installed Ollama 0.23.0 server (model gemma4-task5),
+  - the GGUF declared for the installed Ollama 0.23.0 server model
+    gemma4-task5 (GGUF SHA-256 from the shared cache; blob not hashed),
   - raw prompt "Hello", greedy (temperature 0, top_k 1, top_p 1,
     repeat_penalty 1, seed 42), num_predict 8, num_ctx 4096, streaming,
   - COLD rounds (default 3): keep_alive 0 so the model unloads after each
@@ -24,13 +25,20 @@ Samples cover the serve processes AND the per-model runner child (found
 by the GGUF blob path in its command line) while the model is resident.
 ps RSS is KiB (divisor 1024); these are point samples with the runner's
 shared runtime overhead included — not a residency or peak-memory claim.
-Preflight verifies the model blob is byte-linked to the authorized GGUF:
-the sha256 of /api/show's parent_model blob path must equal the sha256 of
-the authorized GGUF file (computed once here, ~14.4 GiB read), and no
-leviathan-cli process may be resident (sequential GPU use).
+Model identity policy cached-explicit-refresh-v1: the GGUF SHA-256 comes
+from the shared model digest cache (hashed once on a cache miss or on an
+explicit LEVIATHAN_REHASH_MODEL=1 refresh, never re-read on a hit, so it
+is a historical digest rather than a fresh verification). /api/show's
+parent_model blob is never opened or hashed; the digest in its file name
+is declared metadata, only compared with the cached GGUF digest, never
+certified as the blob's current bytes. Preflight still requires that
+no leviathan-cli process is resident (sequential GPU use).
 Bounds: 64 chunks, 1 MiB/line, 4 MiB total per request; 300 s unload poll.
 """
-import hashlib, json, os, subprocess, sys, time, urllib.request
+import json, os, subprocess, sys, time, urllib.request
+
+from model_digest_cache import MalformedRecord
+from model_identity import MODEL_FILE_VERIFICATION, resolve_model_identity
 
 MAX_CHUNKS, MAX_LINE, MAX_TOTAL = 64, 1 << 20, 4 << 20
 PORT = 11499
@@ -160,16 +168,6 @@ def rss_samples_mib():
         out["error"] = repr(e)
     return out
 
-def sha256_file(path, chunk=1 << 24):
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while True:
-            b = f.read(chunk)
-            if not b:
-                break
-            h.update(b)
-    return h.hexdigest()
-
 def load_average():
     try:
         o = subprocess.run(["sysctl", "-n", "vm.loadavg"],
@@ -180,7 +178,8 @@ def load_average():
 
 def main(out_path):
     # Preflight, in order: task-owned daemon alive on 11499, no resident
-    # leviathan-cli (sequential GPU), model exists, GGUF digest linkage.
+    # leviathan-cli (sequential GPU), model exists, cached GGUF SHA-256 plus
+    # declared blob metadata (the blob is never hashed).
     try:
         with urllib.request.urlopen(
                 f"http://localhost:{PORT}/api/version", timeout=30) as r:
@@ -202,14 +201,17 @@ def main(out_path):
     blob_path = show.get("details", {}).get("parent_model")
     if not blob_path or not os.path.exists(blob_path):
         sys.exit(f"parent_model blob missing: {blob_path!r}")
-    blob_digest = os.path.basename(blob_path).removeprefix("sha256-")
     gguf = os.environ.get(
         "GGUF", "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/"
                 "gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf")
-    t0 = time.monotonic()
-    gguf_digest = sha256_file(gguf)
-    if blob_digest != gguf_digest:
-        sys.exit(f"digest mismatch: ollama blob {blob_digest} != gguf {gguf_digest}")
+    # GGUF SHA-256 from the shared digest cache (hashed once on a miss or on
+    # an explicit LEVIATHAN_REHASH_MODEL=1 refresh; a hit reads no model
+    # bytes). The Ollama blob is never opened or hashed.
+    try:
+        identity = resolve_model_identity(gguf, blob_path)
+    except MalformedRecord as e:
+        sys.exit(f"model digest cache: {e}")
+    print(json.dumps({"model_file_identity": identity}, sort_keys=True))
     if model_loaded():
         sys.exit("model already loaded at start; run a keep_alive:0 request "
                  "first or wait for unload so round 1 is honestly cold")
@@ -224,10 +226,8 @@ def main(out_path):
                                      "TTFT/prefill numbers are therefore "
                                      "NOT strictly like-for-like; decode "
                                      "per-token medians are comparable."),
-              "gguf": gguf, "gguf_sha256": gguf_digest,
-              "ollama_blob_sha256": blob_digest,
-              "digest_linkage": "ollama model blob sha256 == authorized GGUF sha256 (byte-linked)",
-              "digest_computed_s": round(time.monotonic() - t0, 1),
+              "model_file_verification": MODEL_FILE_VERIFICATION,
+              "model_file_identity": identity,
               "show_details": show.get("details"),
               "cold_note": ("model unloaded between rounds (verified via "
                             "/api/ps); OS page cache NOT purged — storage "

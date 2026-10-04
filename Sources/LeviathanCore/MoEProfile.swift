@@ -40,15 +40,20 @@ import Metal
 /// field is either an identity, a measured number, or a checked boolean;
 /// nothing here approves an artifact or changes the default serving path.
 public struct MoEProfileReport: Codable, Equatable, Sendable {
-    public static let schema = 1
+    /// 3: the cached model-file SHA-256 (ModelDigestCache) with the
+    /// cached-explicit-refresh-v1 policy; older reports are rejected.
+    public static let schema = 3
 
     public let profileSchema: Int
     public let codegenVersion: String
-    /// Identity binding (root captures file hashes externally too): the
-    /// running executable, the actual GGUF, the measured hardware, the
-    /// region graph, and the freshly emitted MSL source.
+    /// Identity binding: the running executable, the cached model-file
+    /// SHA-256 (ModelDigestCache: hashed once, reused without re-reading,
+    /// refreshed only explicitly — historical, not freshly verified) with
+    /// its policy, the measured hardware, the region graph, and the
+    /// freshly emitted MSL source.
     public let executableSha256: String
-    public let ggufSha256: String
+    public let modelFileSha256: String
+    public let modelFileVerification: ModelFileVerificationPolicy
     public let deviceName: String
     public let maxTotalThreadsPerThreadgroup: Int
     public let threadExecutionWidth: Int
@@ -569,7 +574,8 @@ public enum MoELoweringProfile {
             profileSchema: MoEProfileReport.schema,
             codegenVersion: MoEKernelEmitter.codegenVersion,
             executableSha256: try Gemma4Runner.executableDigest(),
-            ggufSha256: try GemmaForge.fileDigest(ggufURL),
+            modelFileSha256: try ModelDigestCache.shared.digest(for: ggufURL).sha256,
+            modelFileVerification: ModelFileIdentity.policy,
             deviceName: hw.deviceName,
             maxTotalThreadsPerThreadgroup: hw.maxTotalThreadsPerThreadgroup,
             threadExecutionWidth: hw.threadExecutionWidth,

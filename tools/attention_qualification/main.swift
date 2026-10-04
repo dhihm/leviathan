@@ -52,15 +52,25 @@
 //       - the component matrix, fixture quality, counters and dispatch
 //         evidence;
 //       - raw paired walls and UTC timestamps;
-//       - SHA-256 identities of the executable bytes, the GGUF (streamed in
-//         4 MiB chunks, never loaded whole), the region JSON, the graph
-//         JSON, the candidate source, the incumbent shader source, the E4
-//         baseline MoE source, the engine identity string and the canonical
-//         hardware profile JSON;
+//       - SHA-256 identities of the executable bytes (streamed in 4 MiB
+//         chunks), the region JSON, the graph JSON, the candidate source,
+//         the incumbent shader source, the E4 baseline MoE source, the
+//         engine identity string and the canonical hardware profile JSON;
+//       - the model (GGUF) file as its actual SHA-256 from the shared
+//         ModelDigestCache (cached-explicit-refresh-v1): hashed once from
+//         the bytes and reused without re-reading or stat/mtime checks, so
+//         it is a historical digest, not a per-run verification; same-path
+//         weight edits require --rehash-model;
 //       - OS and architecture facts;
 //       - productionQualified=false.
 //     Files use fixed ids, never paths. An artifact that contains the local
 //     user name, the home path or an input path is refused.
+//     Schema v2 replaced the v1 GGUF SHA-256 and byte-count record with
+//     the typed unverified record; v1 artifacts fail the strict decode and
+//     must be re-selected. No old hash is ever carried over as a policy.
+//     Schema v3 records the cached GGUF SHA-256 with the
+//     cached-explicit-refresh-v1 policy; v1 and v2 artifacts fail the strict
+//     decode and must be re-selected.
 //
 //   --validate-artifact
 //     Bounds, canonical form, digest, schema, policy, evidence and full
@@ -85,6 +95,7 @@
 //   attnqual --select --gguf PATH --region PATH --graph PATH --artifact NEW_PATH
 //   attnqual --validate-artifact --gguf PATH --region PATH --graph PATH --artifact PATH
 //   attnqual --verify-artifact --gguf PATH --region PATH --graph PATH --artifact PATH
+//   Any mode accepts --rehash-model to refresh the cached GGUF SHA-256 once first.
 // Exit codes:
 //   0 = all requested gates or validations passed
 //   1 = a gate failed (candidate rejected; --select writes no artifact)
@@ -113,7 +124,7 @@ enum Tool {
     static let referenceArmName = "E4 + Q4 width 64 + incumbent g4_attn"
     static let candidateArmName = "E4 + Q4 width 64 + ATTENTION g4_attn_par64_diag"
     static let label = "diagnostic bounded attention Forge"
-    static let schema = "leviathan.diagnostic-attention-forge-selection.v1"
+    static let schema = "leviathan.diagnostic-attention-forge-selection.v3"
     static let policyVersion = "attention-forge-policy-1"
     static let componentCases = 18
     static let fixtureNames = ["en_chat", "kr_chat", "raw_hello"]
@@ -130,6 +141,7 @@ enum Tool {
         "Quality evidence covers 3 fixed fixtures x 32 greedy steps with short histories; long histories, other prompts, other models and other hardware are not qualified.",
         "Timing evidence is 3 paired AB/BA/AB warm raw_hello 31-step decode walls in one process; it is not a throughput benchmark, not a comparison with any other engine, and makes no occupancy claim.",
         "The SHA-256 digest is content integrity only, not authenticity; this user-editable JSON is never an independent authorization.",
+        "The GGUF identity is its SHA-256 from the shared model digest cache (cached-explicit-refresh-v1): computed once from the actual bytes and reused without re-reading, stat or mtime checks; it is not re-verified per run, and same-path weight edits are detected only after an explicit --rehash-model refresh.",
         "productionQualified is always false; the artifact is never installed and changes no production default or production artifact.",
         "Compile options are the fixed nil (defaults) used by AttentionDiagnostic.compile, recorded as a constant rather than introspected from Metal.",
     ]
@@ -181,9 +193,19 @@ struct FileIdentityRecord: Codable, Equatable {
     let bytes: Int
 }
 
+/// The model file is recorded by its fixed id, its SHA-256 from the shared
+/// ModelDigestCache (a historical computation, not re-read per run), and
+/// the single cached-explicit-refresh policy. v1 (sha256/bytes) and v2
+/// (unverified) records fail the strict decode.
+struct ModelFileRecord: Codable, Equatable {
+    let id: String
+    let sha256: String
+    let verification: ModelFileVerificationPolicy
+}
+
 struct FilesRecord: Codable, Equatable {
     let executable: FileIdentityRecord
-    let gguf: FileIdentityRecord
+    let gguf: ModelFileRecord
     let region: FileIdentityRecord
     let graph: FileIdentityRecord
 }
@@ -443,8 +465,9 @@ func canonicalEncoder() -> JSONEncoder {
     return e
 }
 
-/// Streams a file through SHA-256 in bounded chunks of at most 4 MiB, so the
-/// 14 GB GGUF is never read into memory as a whole.
+/// Streams a file through SHA-256 in bounded chunks of at most 4 MiB. Used
+/// for the executable, region and graph files only; the GGUF digest comes
+/// from the shared ModelDigestCache.
 func streamFileIdentity(id: String, url: URL) throws -> FileIdentityRecord {
     let handle = try FileHandle(forReadingFrom: url)
     defer { try? handle.close() }
@@ -471,7 +494,10 @@ func currentFiles(_ inp: Inputs) throws -> FilesRecord {
     let exe = (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])).resolvingSymlinksInPath()
     return try FilesRecord(
         executable: streamFileIdentity(id: "executable", url: exe),
-        gguf: streamFileIdentity(id: "gguf", url: URL(fileURLWithPath: inp.gguf)),
+        gguf: ModelFileRecord(
+            id: "gguf",
+            sha256: ModelDigestCache.shared.digest(for: URL(fileURLWithPath: inp.gguf)).sha256,
+            verification: ModelFileIdentity.policy),
         region: streamFileIdentity(id: "region", url: URL(fileURLWithPath: inp.region)),
         graph: streamFileIdentity(id: "graph", url: URL(fileURLWithPath: inp.graph)))
 }
@@ -528,7 +554,7 @@ func currentRuntimeIdentity(_ runner: Gemma4Runner) throws -> RuntimeIdentityRec
 func identityMismatches(_ a: IdentityRecord, files: FilesRecord, sources: SourcesRecord, os: OSRecord) -> [String] {
     var m: [String] = []
     if a.files.executable != files.executable { m.append("executable") }
-    if a.files.gguf != files.gguf { m.append("gguf") }
+    if a.files.gguf != files.gguf { m.append("modelFile") }
     if a.files.region != files.region { m.append("region") }
     if a.files.graph != files.graph { m.append("graph") }
     if a.sources.candidateSourceSha256 != sources.candidateSourceSha256
@@ -642,9 +668,12 @@ func validatePayload(_ p: ArtifactPayload) -> [String] {
         "productionQualified must be false")
     req(p.limitations == Tool.limitations, "limitations text modified")
     let id = p.identity
-    let fileList = [id.files.executable, id.files.gguf, id.files.region, id.files.graph]
-    req(fileList.map { $0.id } == ["executable", "gguf", "region", "graph"], "unknown file identity ids")
+    let fileList = [id.files.executable, id.files.region, id.files.graph]
+    req(fileList.map { $0.id } == ["executable", "region", "graph"], "unknown file identity ids")
     req(fileList.allSatisfy { isSha256Hex($0.sha256) && $0.bytes > 0 }, "malformed file identity")
+    req(id.files.gguf.id == "gguf" && id.files.gguf.verification == ModelFileIdentity.policy
+        && isSha256Hex(id.files.gguf.sha256),
+        "malformed model file identity or unknown verification policy")
     let s = id.sources
     req(s.candidateKernel == Tool.kernel, "unknown candidate kernel")
     req(isSha256Hex(s.candidateSourceSha256) && s.candidateSourceBytes > 0, "malformed candidate source identity")
@@ -1235,8 +1264,11 @@ func runFull(runner: Gemma4Runner, candidate: MTLComputePipelineState,
 
 func emitIdentity(_ mode: String, _ id: IdentityRecord) {
     emit(["stage": "attention_forge_identity", "label": Tool.label, "mode": mode,
-          "executableSha256": id.files.executable.sha256, "ggufSha256": id.files.gguf.sha256,
-          "ggufBytes": id.files.gguf.bytes, "regionSha256": id.files.region.sha256,
+          "executableSha256": id.files.executable.sha256,
+          "modelFileSha256": id.files.gguf.sha256,
+          "modelFileVerification": id.files.gguf.verification.rawValue,
+          "modelFileIdentity": "GGUF SHA-256 from the shared digest cache (hashed once; a cache hit is a historical digest, not re-read this run)",
+          "regionSha256": id.files.region.sha256,
           "graphSha256": id.files.graph.sha256,
           "candidateSourceSha256": id.sources.candidateSourceSha256,
           "incumbentShaderSourceSha256": id.sources.incumbentShaderSourceSha256,
@@ -1350,7 +1382,8 @@ func runVerify(_ inp: Inputs, runGates: Bool) throws -> Int32 {
     }
     emit(["stage": "attention_forge_identity_validation", "label": Tool.label, "mode": mode,
           "identity_validation": "passed", "artifactDigest": envelope.digest, "candidateCompiled": false,
-          "note": "executable, gguf, region, graph, sources, OS, engine, hardware and geometry identity validated before any candidate compile or GPU candidate use; digest is integrity only, not authenticity"])
+          "modelFileVerification": a.identity.files.gguf.verification.rawValue,
+          "note": "executable, cached GGUF SHA-256, region, graph, sources, OS, engine, hardware and geometry identity validated before any candidate compile or GPU candidate use; the GGUF SHA-256 is a cached historical computation (cached-explicit-refresh-v1), not re-read this run; digest is integrity only, not authenticity"])
     if !runGates {
         emitSummary(mode, "identity_validation_passed", true, ["artifactDigest": envelope.digest])
         return 0
@@ -1405,6 +1438,7 @@ func usageText() -> String {
         "       attnqual --select --gguf PATH --region PATH --graph PATH --artifact NEW_PATH",
         "       attnqual --validate-artifact --gguf PATH --region PATH --graph PATH --artifact PATH",
         "       attnqual --verify-artifact --gguf PATH --region PATH --graph PATH --artifact PATH",
+        "       (any mode accepts --rehash-model to refresh the cached GGUF SHA-256 once first)",
     ].joined(separator: "\n")
 }
 
@@ -1425,12 +1459,16 @@ func mainEntry() -> Int32 {
     let optionNames = ["--gguf", "--region", "--graph", "--artifact"]
     var mode: String? = nil
     var opts: [String: String] = [:]
+    var rehashModel = false
     var i = 0
     while i < args.count {
         let a = args[i]
         if modes.contains(a) {
             guard mode == nil else { print(usageText()); return 2 }
             mode = a
+        } else if a == "--rehash-model" {
+            guard !rehashModel else { print(usageText()); return 2 }
+            rehashModel = true
         } else if optionNames.contains(a) {
             i += 1
             guard i < args.count, opts[a] == nil else { print(usageText()); return 2 }
@@ -1449,6 +1487,14 @@ func mainEntry() -> Int32 {
     if m == "--full" && (region == nil || graph == nil) { print(usageText()); return 2 }
     if !forgeMode && artifact != nil { print(usageText()); return 2 }
     do {
+        if rehashModel {
+            // Explicit refresh, exactly once before the requested mode; every
+            // later lookup in this run reuses the refreshed record.
+            let refreshed = try ModelDigestCache.shared.digest(
+                for: URL(fileURLWithPath: ggufPath), refresh: true)
+            emit(["stage": "model_digest_refresh", "sha256": refreshed.sha256,
+                  "disclosure": refreshed.disclosure])
+        }
         if forgeMode {
             guard let r = region, let g = graph, let p = artifact else { print(usageText()); return 2 }
             let inputs = Inputs(gguf: ggufPath, region: r, graph: g, artifact: p)

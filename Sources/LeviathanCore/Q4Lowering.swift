@@ -1012,7 +1012,10 @@ public struct Q4ModelGateRecord: Codable, Equatable, Sendable {
 }
 
 public struct Q4LoweringArtifact: Codable, Equatable, Sendable {
-    public static let schema = 1
+    /// 3: cached model-file SHA-256 with the cached-explicit-refresh-v1
+    /// policy; schema-1 and schema-2 artifacts are rejected and must be
+    /// re-forged.
+    public static let schema = 3
 
     public let artifactSchema: Int
     public let codegenVersion: String
@@ -1028,8 +1031,13 @@ public struct Q4LoweringArtifact: Codable, Equatable, Sendable {
     /// Hardware the schedule was derived and gated on.
     public let hardware: ForgeHardwareProfile
     public let toolchain: String
-    /// GGUF content digest at forge time (empty when the op is unbound).
+    /// Actual cached SHA-256 of the model file (ModelDigestCache; hashed
+    /// once, refreshed only explicitly) when the artifact is model-bound;
+    /// empty for an unbound synthetic component forge (no file is bound).
     public let ggufDigest: String
+    /// Model-file digest policy (schema 3): required on decode, covered by
+    /// artifactDigest; only cached-explicit-refresh-v1 is representable.
+    public var modelFileVerification: ModelFileVerificationPolicy = ModelFileIdentity.policy
     /// Digest of the forging executable — a rebuilt binary re-forges.
     public let executableDigest: String
     /// Component gate record: per-candidate oracle results and the
@@ -1124,6 +1132,9 @@ public struct Q4LoweringArtifact: Codable, Equatable, Sendable {
         }
         guard ggufDigest == self.ggufDigest else {
             throw Q4LoweringError.invalidArtifact("GGUF digest mismatch")
+        }
+        guard modelFileVerification == ModelFileIdentity.policy else {
+            throw Q4LoweringError.invalidArtifact("model-file verification policy mismatch")
         }
         guard executableDigest == self.executableDigest else {
             throw Q4LoweringError.invalidArtifact("executable digest mismatch")
@@ -1222,7 +1233,8 @@ public enum Q4LoweringForge {
             let f = try GGUFReader.read(ggufURL)
             try op.validateAgainst(file: f)
             file = f
-            ggufDigest = try GemmaForge.fileDigest(ggufURL)
+            // Actual model SHA-256 from the shared cache (hashed once, reused).
+            ggufDigest = try ModelDigestCache.shared.digest(for: ggufURL).sha256
         }
         let workingSet = Int(clamping: device.recommendedMaxWorkingSetSize)
         let blocksPerRow = op.inDim / Q4_0.valuesPerBlock
@@ -1484,7 +1496,9 @@ public enum Q4LoweringForge {
             throw Q4LoweringError.invalidOp("orchestration requires a bound tensor")
         }
         try op.validateAgainst(file: runner.ggufFile)
-        let ggufDigest = try GemmaForge.fileDigest(ggufURL)
+        // Actual model SHA-256 from the shared cache; the nested component
+        // forge reuses the same record without reading the model again.
+        let ggufDigest = try ModelDigestCache.shared.digest(for: ggufURL).sha256
 
         // ---- 1. component phase ----
         let (componentArtifact, componentResults, incumbentRel) = try forge(

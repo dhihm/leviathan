@@ -1,0 +1,19 @@
+{
+  "swiftToPython": true,
+  "pythonToSwift": true,
+  "unicodeHangulPath": true,
+  "cachedAfterMutationAndDeletion": true,
+  "modelBytes": "small synthetic abc/abcd only",
+  "runs": [
+    {
+      "exit": 0,
+      "stdout": "model file SHA-256 88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589 for /private/tmp/leviathan-interop-final-fuxc3lzx/\uace0\ub798.bin: cache hit (historically hashed at 2026-10-04T21:23:53Z, source explicit-refresh, 4 bytes); model bytes NOT re-read now and NOT freshly verified; same-path weight edits require --rehash-model\ncache record: /tmp/leviathan-interop-final-fuxc3lzx/cache/3db278f4781824849701ab0b27232db321e338b5195ef109e43093e29bf2b3e3.json\n",
+      "stderr": ""
+    },
+    {
+      "exit": 0,
+      "stdout": "model file SHA-256 88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589 for /private/tmp/leviathan-interop-final-fuxc3lzx/\uace0\ub798.bin: cache hit (historically hashed at 2026-10-04T21:23:53Z, source explicit-refresh, 4 bytes); model bytes NOT re-read now and NOT freshly verified; same-path weight edits require --rehash-model\ncache record: /tmp/leviathan-interop-final-fuxc3lzx/cache/3db278f4781824849701ab0b27232db321e338b5195ef109e43093e29bf2b3e3.json\n",
+      "stderr": ""
+    }
+  ]
+}

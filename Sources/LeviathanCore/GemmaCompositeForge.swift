@@ -7,7 +7,8 @@
 //   - the existing artifact identity validation
 //     (Q4LaunchArtifact.validate: self-digest, actual hardware, actual
 //     graph digest, region graph SHA, fresh E4 emission hash, primitive
-//     MSL source, toolchain, model/executable digests, pipeline width
+//     MSL source, toolchain, cached model-file SHA-256 (ModelDigestCache;
+//     hashed once, refreshed only explicitly), executable digest, pipeline width
 //     legality),
 //   - the existing selection workflow (Q4LaunchSelect.selectAndPersist
 //     with diagnostic:false, 32 gen / 31 timed tokens, the caller-supplied

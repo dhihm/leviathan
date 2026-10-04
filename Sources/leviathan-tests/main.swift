@@ -5253,6 +5253,45 @@ if let device = MTLCreateSystemDefaultDevice() {
         try artifact.validate(op: artifact.op, hardware: hwProfile, ggufDigest: "",
                               executableDigest: try Gemma4Runner.executableDigest())
         check("q4 artifact validates round-trip", true)
+        // Policy contract on the real synthesized artifact: the explicit
+        // unverified policy is encoded, required on decode, and the only
+        // representable value; a schema-1 record is rejected even when it
+        // carries the policy.
+        do {
+            let encoded = try JSONEncoder().encode(artifact)
+            let decoded = try JSONDecoder().decode(Q4LoweringArtifact.self, from: encoded)
+            check("q4 artifact policy round-trips through encode/decode",
+                  decoded == artifact && decoded.modelFileVerification == .cachedExplicitRefresh)
+            var obj = (try JSONSerialization.jsonObject(with: encoded) as? [String: Any]) ?? [:]
+            checkEqual("q4 artifact encoding carries the cached explicit-refresh policy",
+                       obj["modelFileVerification"] as? String ?? "", "cached-explicit-refresh-v1")
+            var missing = obj
+            missing.removeValue(forKey: "modelFileVerification")
+            let missingDecoded = try? JSONDecoder().decode(
+                Q4LoweringArtifact.self, from: JSONSerialization.data(withJSONObject: missing))
+            check("q4 artifact without the policy fails to decode", missingDecoded == nil)
+            var claimed = obj
+            claimed["modelFileVerification"] = "sha256-full-file"
+            let claimedDecoded = try? JSONDecoder().decode(
+                Q4LoweringArtifact.self, from: JSONSerialization.data(withJSONObject: claimed))
+            check("q4 artifact claiming verified model content fails to decode",
+                  claimedDecoded == nil)
+            obj["artifactSchema"] = 1
+            let legacy = try JSONDecoder().decode(
+                Q4LoweringArtifact.self, from: JSONSerialization.data(withJSONObject: obj))
+            checkQ4Throws("q4 schema-1 artifact rejected even with the policy",
+                          .invalidArtifact("schema 1")) {
+                try legacy.validate(op: artifact.op, hardware: hwProfile, ggufDigest: "",
+                                    executableDigest: try Gemma4Runner.executableDigest())
+            }
+        }
+        // A real-looking 64-hex model hash never satisfies the identity check.
+        checkQ4Throws("q4 artifact rejects a stale 64-hex model hash",
+                      .invalidArtifact("GGUF digest mismatch")) {
+            try artifact.validate(op: artifact.op, hardware: hwProfile,
+                                  ggufDigest: String(repeating: "e", count: 64),
+                                  executableDigest: try Gemma4Runner.executableDigest())
+        }
         // Tampered source is rejected (JSON-level mutation).
         do {
             let encoded = try JSONEncoder().encode(artifact)
@@ -5473,6 +5512,45 @@ if let device = MTLCreateSystemDefaultDevice() {
         try artifact.validate(op: artifact.op, hardware: hwProfile, ggufDigest: "",
                               executableDigest: try Gemma4Runner.executableDigest())
         check("rms artifact validates round-trip", true)
+        // Policy contract on the real synthesized artifact: the explicit
+        // unverified policy is encoded, required on decode, and the only
+        // representable value; a schema-1 record is rejected even when it
+        // carries the policy.
+        do {
+            let encoded = try JSONEncoder().encode(artifact)
+            let decoded = try JSONDecoder().decode(RMSLoweringArtifact.self, from: encoded)
+            check("rms artifact policy round-trips through encode/decode",
+                  decoded == artifact && decoded.modelFileVerification == .cachedExplicitRefresh)
+            var obj = (try JSONSerialization.jsonObject(with: encoded) as? [String: Any]) ?? [:]
+            checkEqual("rms artifact encoding carries the cached explicit-refresh policy",
+                       obj["modelFileVerification"] as? String ?? "", "cached-explicit-refresh-v1")
+            var missing = obj
+            missing.removeValue(forKey: "modelFileVerification")
+            let missingDecoded = try? JSONDecoder().decode(
+                RMSLoweringArtifact.self, from: JSONSerialization.data(withJSONObject: missing))
+            check("rms artifact without the policy fails to decode", missingDecoded == nil)
+            var claimed = obj
+            claimed["modelFileVerification"] = "sha256-full-file"
+            let claimedDecoded = try? JSONDecoder().decode(
+                RMSLoweringArtifact.self, from: JSONSerialization.data(withJSONObject: claimed))
+            check("rms artifact claiming verified model content fails to decode",
+                  claimedDecoded == nil)
+            obj["artifactSchema"] = 1
+            let legacy = try JSONDecoder().decode(
+                RMSLoweringArtifact.self, from: JSONSerialization.data(withJSONObject: obj))
+            checkRMSThrows("rms schema-1 artifact rejected even with the policy",
+                           .invalidArtifact("schema 1")) {
+                try legacy.validate(op: artifact.op, hardware: hwProfile, ggufDigest: "",
+                                    executableDigest: try Gemma4Runner.executableDigest())
+            }
+        }
+        // A real-looking 64-hex model hash never satisfies the identity check.
+        checkRMSThrows("rms artifact rejects a stale 64-hex model hash",
+                       .invalidArtifact("GGUF digest mismatch")) {
+            try artifact.validate(op: artifact.op, hardware: hwProfile,
+                                  ggufDigest: String(repeating: "e", count: 64),
+                                  executableDigest: try Gemma4Runner.executableDigest())
+        }
         // Tampered source is rejected (JSON-level mutation).
         do {
             let encoded = try JSONEncoder().encode(artifact)
@@ -5986,6 +6064,51 @@ do {
               !MoELoweringProfile.decodeViewIsBounded(negWall, expectedTokens: 3))
         check("moe profile: nonzero fallback rejected",
               !MoELoweringProfile.decodeViewIsBounded(withFallback, expectedTokens: 3))
+
+        // Profile report contract: the explicit policy is required on
+        // decode and no verified value is representable. Decode only: no
+        // profile run, no model read, no performance claim.
+        let profileView = try JSONSerialization.jsonObject(with: JSONEncoder().encode(good))
+        let profileHex = String(repeating: "a", count: 64)
+        let profileObj: [String: Any] = [
+            "profileSchema": MoEProfileReport.schema, "codegenVersion": "test",
+            "executableSha256": profileHex,
+            "modelFileSha256": profileHex,
+            "modelFileVerification": ModelFileIdentity.policy.rawValue,
+            "deviceName": "t", "maxTotalThreadsPerThreadgroup": 1024,
+            "threadExecutionWidth": 32, "recommendedWorkingSetSize": 1 << 30,
+            "regionGraphSha256": profileHex,
+            "schedule": ["batch": 4, "rowsPerGroup": 32],
+            "sourceSha256": profileHex, "expectedSourceSha256": NSNull(),
+            "sourceMatchesExpected": NSNull(), "diagnosticTrialOnly": true,
+            "binding": ["layerCount": 30, "expertCount": 128, "topK": 8,
+                        "guStrideBytes": 2_230_272, "dnStrideBytes": 1_115_136,
+                        "gpuScratchBytes": 157_696],
+            "reference": ["fixtureName": "raw-hello", "promptTokenCount": 2,
+                          "steps": 32, "historyDigest": profileHex,
+                          "vocabSize": 262144],
+            "decode": profileView, "intrusive": NSNull(), "overhead": NSNull()]
+        func decodeProfile(_ o: [String: Any]) -> MoEProfileReport? {
+            guard let data = try? JSONSerialization.data(withJSONObject: o) else { return nil }
+            return try? JSONDecoder().decode(MoEProfileReport.self, from: data)
+        }
+        let profile = decodeProfile(profileObj)
+        check("mfv moe profile decodes with the cached model digest and policy",
+              profile?.modelFileVerification == ModelFileIdentity.policy
+                  && profile?.modelFileSha256 == profileHex)
+        if let profile {
+            let back = try JSONDecoder().decode(MoEProfileReport.self,
+                                                from: JSONEncoder().encode(profile))
+            check("mfv moe profile round-trips with the policy", back == profile)
+        }
+        var profileMissing = profileObj
+        profileMissing.removeValue(forKey: "modelFileVerification")
+        check("mfv moe profile without the policy fails to decode",
+              decodeProfile(profileMissing) == nil)
+        var profileClaimed = profileObj
+        profileClaimed["modelFileVerification"] = "sha256-full-file"
+        check("mfv moe profile claiming verified model content fails to decode",
+              decodeProfile(profileClaimed) == nil)
     }
 
     // Phase-15 Q4 launch geometry: bounded semantic tests (no runner
@@ -6318,8 +6441,11 @@ do {
             "dnTensorStarts": (0..<30).map { 30 * artGuBytes + $0 * artDnBytes },
             "guScratchBytes": 45_056, "actScratchBytes": 22_528,
             "dnScratchBytes": 90_112, "scratchTotalBytes": 157_696]
+        // Current-schema fixture: the current schema, a 64-hex cached model
+        // SHA-256 in the legacy-named ggufDigest field, and the required
+        // cached explicit-refresh policy.
         func artifactDict(width: Int, device: String) -> [String: Any] {
-            ["artifactSchema": 1, "codegenVersion": "q4launch-v1",
+            ["artifactSchema": Q4LaunchArtifact.schema, "codegenVersion": "q4launch-v1",
              "schedule": ["width": width], "kernelName": "g4_q4_matvec",
              "primitiveSourceSha256": String(repeating: "c", count: 64),
              "baselineMoeSourceSha256": Q4LaunchArtifact.baselineMoeSourceSha256,
@@ -6331,6 +6457,7 @@ do {
                           "recommendedMaxWorkingSetSize": 1 << 30],
              "toolchain": Forge.toolchainIdentifier,
              "ggufDigest": String(repeating: "e", count: 64),
+             "modelFileVerification": ModelFileIdentity.policy.rawValue,
              "executableDigest": String(repeating: "f", count: 64),
              "graphDigest": String(repeating: "0", count: 64),
              "hotShapes": [[String: Any]](),
@@ -6371,6 +6498,54 @@ do {
         let badHwDigest = try Q4LaunchArtifact.bodyDigest(badHw)
         check("q4 launch artifact: tampered hardware fails self-digest",
               badHwDigest != d)
+
+        // Current-schema policy contract on the same CPU fixture: the
+        // explicit policy is part of the self-digested body, required on
+        // decode, and the only representable value. The legacy schema-1
+        // fixture below is an explicit copied mutation, not the default.
+        checkEqual("q4 launch artifact: fixture is the current schema",
+                   honest.artifactSchema, Q4LaunchArtifact.schema)
+        checkEqual("q4 launch artifact: legacy-named ggufDigest holds the cached model SHA-256",
+                   honest.ggufDigest, String(repeating: "e", count: 64))
+        checkEqual("q4 launch artifact: decoded policy is cached explicit refresh",
+                   honest.modelFileVerification, .cachedExplicitRefresh)
+        let sortedEncoder = JSONEncoder()
+        sortedEncoder.outputFormatting = [.sortedKeys]
+        let honestBody = try sortedEncoder.encode(honest)
+        let honestObj = (try JSONSerialization.jsonObject(with: honestBody)
+            as? [String: Any]) ?? [:]
+        checkEqual("q4 launch artifact: body encoding carries the explicit policy",
+                   honestObj["modelFileVerification"] as? String ?? "", "cached-explicit-refresh-v1")
+        checkEqual("q4 launch artifact: self-digest is over the policy-bearing body",
+                   d, Array(SHA256.hash(Array(honestBody)))
+                       .map { String(format: "%02x", $0) }.joined())
+        var missingDict = withDigest
+        missingDict.removeValue(forKey: "modelFileVerification")
+        let missingDecoded = try? dec.decode(
+            Q4LaunchArtifact.self, from: JSONSerialization.data(withJSONObject: missingDict))
+        check("q4 launch artifact: missing policy fails to decode", missingDecoded == nil)
+        var claimedDict = withDigest
+        claimedDict["modelFileVerification"] = "sha256-full-file"
+        let claimedDecoded = try? dec.decode(
+            Q4LaunchArtifact.self, from: JSONSerialization.data(withJSONObject: claimedDict))
+        check("q4 launch artifact: verified-claiming policy fails to decode",
+              claimedDecoded == nil)
+        var staleDict = withDigest
+        staleDict["ggufDigest"] = String(repeating: "9", count: 64)
+        let stale = try dec.decode(
+            Q4LaunchArtifact.self,
+            from: try JSONSerialization.data(withJSONObject: staleDict))
+        let staleDigest = try Q4LaunchArtifact.bodyDigest(stale)
+        check("q4 launch artifact: stale 64-hex model hash fails self-digest",
+              staleDigest != d)
+        var legacyDict = artifactDict(width: 32, device: "t")
+        legacyDict["artifactSchema"] = 1
+        legacyDict["ggufDigest"] = String(repeating: "e", count: 64)
+        legacyDict.removeValue(forKey: "modelFileVerification")
+        let legacyDecoded = try? dec.decode(
+            Q4LaunchArtifact.self, from: JSONSerialization.data(withJSONObject: legacyDict))
+        check("q4 launch artifact: legacy schema-1 record without the policy fails to decode",
+              legacyDecoded == nil)
     }
 
     if let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() {
@@ -8089,6 +8264,353 @@ func runShadowCompositionGates() {
 }
 
 runShadowCompositionGates()
+
+// MARK: - Model-file digest policy (cached, explicit refresh)
+
+@MainActor
+func runModelFileVerificationPolicyGates() {
+    func expectInvalidPlan(_ name: String, _ body: () throws -> Void) {
+        do {
+            try body()
+            failed += 1; print("FAIL: " + name + " — expected invalidPlan, got no error")
+        } catch let error as GemmaForgeError {
+            if case .invalidPlan = error {
+                passed += 1
+            } else {
+                failed += 1
+                print("FAIL: " + name + " — expected invalidPlan, got " + String(describing: error))
+            }
+        } catch {
+            failed += 1
+            print("FAIL: " + name + " — unexpected " + String(describing: error))
+        }
+    }
+    func lowerHex(_ bytes: [UInt8]) -> String {
+        bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
+    // Policy serialization: the only representable value is the cached
+    // explicit-refresh policy; the retired intermediate unverified value
+    // and a verified-sounding value do not decode.
+    do {
+        let encoded = try JSONEncoder().encode([ModelFileIdentity.policy])
+        let raw = try JSONSerialization.jsonObject(with: encoded) as? [String]
+        checkEqual("mfv policy serializes as the cached explicit-refresh value",
+                   raw ?? [], ["cached-explicit-refresh-v1"])
+        let decoded = try JSONDecoder().decode([ModelFileVerificationPolicy].self,
+                                               from: encoded)
+        checkEqual("mfv policy round-trips", decoded, [ModelFileIdentity.policy])
+        for retired in ["sha256-full-file", "none-unverified-v1"] {
+            let retiredData = try JSONSerialization.data(withJSONObject: [retired])
+            let retiredDecoded = try? JSONDecoder().decode([ModelFileVerificationPolicy].self,
+                                                           from: retiredData)
+            check("mfv retired policy value does not decode: " + retired, retiredDecoded == nil)
+        }
+    } catch {
+        failed += 1; print("FAIL: mfv policy serialization — threw " + String(describing: error))
+    }
+    checkEqual("mfv current policy is cached explicit refresh",
+               ModelFileIdentity.policy, .cachedExplicitRefresh)
+
+    // The general SHA-256 utility is unchanged (small temp fixtures only).
+    do {
+        let dir = FileManager.default.temporaryDirectory
+        let abcURL = dir.appendingPathComponent("leviathan-mfv-" + UUID().uuidString + ".bin")
+        let emptyURL = dir.appendingPathComponent("leviathan-mfv-" + UUID().uuidString + ".bin")
+        defer {
+            try? FileManager.default.removeItem(at: abcURL)
+            try? FileManager.default.removeItem(at: emptyURL)
+        }
+        try Data("abc".utf8).write(to: abcURL)
+        try Data().write(to: emptyURL)
+        let abcDigest = try GemmaForge.fileDigest(abcURL)
+        let emptyDigest = try GemmaForge.fileDigest(emptyURL)
+        checkEqual("mfv generic fileDigest unchanged (SHA-256 of abc)", abcDigest,
+                   "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        checkEqual("mfv generic fileDigest unchanged (SHA-256 of empty)", emptyDigest,
+                   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    } catch {
+        failed += 1; print("FAIL: mfv generic fileDigest — threw " + String(describing: error))
+    }
+
+    // Schema/identity versions bumped for every model-bound contract.
+    checkEqual("mfv gemma plan schema bumped", GemmaForge.schemaVersion, 3)
+    checkEqual("mfv q4 launch artifact schema bumped", Q4LaunchArtifact.schema, 3)
+    checkEqual("mfv q4 lowering artifact schema bumped", Q4LoweringArtifact.schema, 3)
+    checkEqual("mfv rms lowering artifact schema bumped", RMSLoweringArtifact.schema, 3)
+    checkEqual("mfv moe lowering artifact schema bumped", MoELoweringArtifact.schema, 3)
+    checkEqual("mfv moe profile schema bumped", MoEProfileReport.schema, 3)
+
+    // Plan contract: pre-policy and verified-claiming plans are rejected;
+    // the policy is inside the planDigest-covered encoding.
+    do {
+        let h64 = String(repeating: "a", count: 64)
+        let hw = ForgeHardwareProfile(deviceName: "mfv-synthetic",
+                                      maxTotalThreadsPerThreadgroup: 1024,
+                                      threadExecutionWidth: 32,
+                                      recommendedMaxWorkingSetSize: 1 << 30)
+        let hwObj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(hw))
+        let candObj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(
+            GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false)))
+        let prePolicy: [String: Any] = [
+            "schemaVersion": 1, "graphDigest": h64, "ggufDigest": h64,
+            "engineDigest": h64, "hardware": hwObj, "toolchain": "mfv",
+            "workloadDigest": h64, "promptTokenCount": 2, "decodeTokens": 4,
+            "selected": candObj, "selectedMedianWallMicrosPerToken": 1.5,
+            "selectedMedianGpuMicrosPerToken": 1.5, "results": [Any](),
+            "scheduleDigest": h64, "planDigest": h64,
+        ]
+        func parse(_ obj: [String: Any]) throws -> GemmaForgePlan {
+            try GemmaForge.parsePlan(JSONSerialization.data(withJSONObject: obj))
+        }
+        expectInvalidPlan("mfv pre-policy plan (old schema, no policy field) is rejected") {
+            _ = try parse(prePolicy)
+        }
+        var claimed = prePolicy
+        claimed["modelFileVerification"] = "sha256-full-file"
+        expectInvalidPlan("mfv plan claiming verified model content is rejected") {
+            _ = try parse(claimed)
+        }
+        var intermediate = prePolicy
+        intermediate["schemaVersion"] = 2
+        intermediate["modelFileVerification"] = "none-unverified-v1"
+        expectInvalidPlan("mfv intermediate unverified plan is rejected, not re-tagged") {
+            _ = try parse(intermediate)
+        }
+        var explicit = prePolicy
+        explicit["modelFileVerification"] = ModelFileIdentity.policy.rawValue
+        let plan = try parse(explicit)
+        checkEqual("mfv decoded plan carries the cached explicit-refresh policy",
+                   plan.modelFileVerification, ModelFileIdentity.policy)
+        check("mfv legacy schema 1 is not current (identity gate rejects it)",
+              plan.schemaVersion != GemmaForge.schemaVersion)
+        let resigned = try GemmaForge.resignPlan(plan)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let signedBytes = try encoder.encode(resigned)
+        var signedObj = (try JSONSerialization.jsonObject(with: signedBytes)
+            as? [String: Any]) ?? [:]
+        checkEqual("mfv policy is inside the planDigest-covered encoding",
+                   signedObj["modelFileVerification"] as? String ?? "",
+                   "cached-explicit-refresh-v1")
+        let reResigned = try GemmaForge.resignPlan(resigned)
+        checkEqual("mfv resign is deterministic over the policy-bearing body",
+                   reResigned.planDigest, resigned.planDigest)
+        signedObj.removeValue(forKey: "modelFileVerification")
+        let strippedObj = signedObj
+        expectInvalidPlan("mfv stripping the policy from a signed plan is rejected") {
+            _ = try parse(strippedObj)
+        }
+    } catch {
+        failed += 1; print("FAIL: mfv plan policy contract — threw " + String(describing: error))
+    }
+
+    // No numerical-gate or policy relaxation came with this change.
+    checkEqual("mfv 2% selection policy unchanged", GemmaForge.noiseRelWall, 0.02)
+    checkEqual("mfv q4 launch production gate length unchanged",
+               Q4LaunchGatePolicy.productionGenTokens, 32)
+    checkEqual("mfv q4 launch production timed tokens unchanged",
+               Q4LaunchGatePolicy.productionTimedTokens, 31)
+    checkEqual("mfv q4 launch production fixtures unchanged",
+               Q4LaunchGatePolicy.productionFixtures, ["en-chat", "kr-chat", "raw-hello"])
+    checkEqual("mfv moe production gate length unchanged",
+               MoEGatePolicy.productionGenTokens, 32)
+    checkEqual("mfv moe production timed tokens unchanged",
+               MoEGatePolicy.productionTimedTokens, 31)
+}
+
+runModelFileVerificationPolicyGates()
+
+// MARK: - Shared model digest cache (hash once, reuse, explicit refresh)
+
+@MainActor
+func runModelDigestCacheGates() {
+    let abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    let abcd = "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589"
+    func lowerHex(_ bytes: [UInt8]) -> String {
+        bytes.map { String(format: "%02x", $0) }.joined()
+    }
+    func expectMalformed(_ name: String, _ body: () throws -> Void) {
+        do {
+            try body()
+            failed += 1; print("FAIL: " + name + " — expected malformedRecord, got no error")
+        } catch let error as ModelDigestCacheError {
+            if case .malformedRecord(let message) = error, message.contains("--rehash-model") {
+                passed += 1
+            } else {
+                failed += 1
+                print("FAIL: " + name + " — expected malformedRecord with a refresh instruction, got "
+                      + String(describing: error))
+            }
+        } catch {
+            failed += 1
+            print("FAIL: " + name + " — unexpected " + String(describing: error))
+        }
+    }
+    let fm = FileManager.default
+    let root = fm.temporaryDirectory.appendingPathComponent(
+        "leviathan-mdc-" + UUID().uuidString, isDirectory: true)
+    defer { try? fm.removeItem(at: root) }
+    do {
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let model = root.appendingPathComponent("model.bin")
+        let link = root.appendingPathComponent("model-link.bin")
+        let dirA = root.appendingPathComponent("cache-a", isDirectory: true)
+        let dirB = root.appendingPathComponent("cache-b", isDirectory: true)
+        try Data("abc".utf8).write(to: model)
+        try fm.createSymbolicLink(at: link, withDestinationURL: model)
+
+        // Initial miss: the actual bytes are hashed once and persisted.
+        let first = try ModelDigestCache(directory: dirA).digest(for: model)
+        checkEqual("mdc initial miss hashes the actual bytes", first.sha256, abc)
+        check("mdc initial miss is reported as an initial computation",
+              first.origin == .initialComputation)
+        checkEqual("mdc record stores the bytes hashed", first.record.bytes, 3)
+        checkEqual("mdc record source is initial", first.record.source, "initial")
+        checkEqual("mdc record carries the cached policy", first.record.policy, ModelFileIdentity.policy)
+
+        // Shared format and key algorithm (tools/baseline/model_digest_cache.py).
+        let canonical = ModelDigestCache.canonicalPath(for: model)
+        let key = ModelDigestCache.cacheKey(for: model)
+        checkEqual("mdc key is SHA-256 of the canonical path", key,
+                   lowerHex(Array(SHA256.hash(Array(canonical.utf8)))))
+        let recordURL = ModelDigestCache(directory: dirA).recordURL(for: model)
+        checkEqual("mdc record file is <key>.json", recordURL.lastPathComponent, key + ".json")
+        let stored = (try JSONSerialization.jsonObject(with: Data(contentsOf: recordURL))
+            as? [String: Any]) ?? [:]
+        checkEqual("mdc record keys", Set(stored.keys),
+                   ["bytes", "format", "hashedAtUTC", "path", "policy", "sha256", "source"])
+        checkEqual("mdc record format tag", stored["format"] as? String ?? "",
+                   "leviathan.model-digest-cache.v1")
+        checkEqual("mdc record path is canonical", stored["path"] as? String ?? "", canonical)
+        checkEqual("mdc symlink resolves to the same key",
+                   ModelDigestCache.cacheKey(for: link), key)
+
+        // Mutation is NOT detected automatically: no stat/mtime/size check
+        // and no rehash; new readers get the historical digest.
+        try Data("abcd".utf8).write(to: model)
+        let hit = try ModelDigestCache(directory: dirA).digest(for: model)
+        check("mdc mutated file still hits the cache (no automatic rehash)",
+              hit.origin == .cacheHit && hit.sha256 == abc)
+        checkEqual("mdc hit keeps the historical timestamp",
+                   hit.record.hashedAtUTC, first.record.hashedAtUTC)
+        check("mdc hit disclosure is not a fresh verification",
+              hit.disclosure.contains("NOT re-read"))
+        let viaLink = try ModelDigestCache(directory: dirA).digest(for: link)
+        check("mdc symlink lookup hits the same record",
+              viaLink.origin == .cacheHit && viaLink.sha256 == abc)
+        var nestedAllHits = true
+        for _ in 0..<3 {
+            let nested = try ModelDigestCache(directory: dirA).digest(for: model)
+            nestedAllHits = nestedAllHits && nested.origin == .cacheHit
+        }
+        check("mdc nested lookups never recompute", nestedAllHits)
+
+        // Explicit refresh re-hashes and persists for new readers.
+        let refreshed = try ModelDigestCache(directory: dirA).digest(for: model, refresh: true)
+        check("mdc explicit refresh hashes the new bytes",
+              refreshed.origin == .explicitRefresh && refreshed.sha256 == abcd)
+        checkEqual("mdc refreshed record source", refreshed.record.source, "explicit-refresh")
+        let reloaded = try ModelDigestCache(directory: dirA).cachedRecord(for: model)
+        checkEqual("mdc refreshed record persists for new readers", reloaded?.sha256 ?? "", abcd)
+
+        // Custom directories are isolated.
+        let cacheB = ModelDigestCache(directory: dirB)
+        let isolated = try cacheB.cachedRecord(for: model)
+        check("mdc custom directory is isolated", isolated == nil)
+
+        // Malformed, retired-policy and mismatched records fail with an
+        // explicit refresh instruction; they are never silently rehashed.
+        try fm.createDirectory(at: dirB, withIntermediateDirectories: true)
+        try Data("{not json".utf8).write(to: cacheB.recordURL(for: model))
+        expectMalformed("mdc malformed record requires explicit refresh") {
+            _ = try cacheB.digest(for: model)
+        }
+        expectMalformed("mdc malformed record is not served cache-only") {
+            _ = try cacheB.cachedRecord(for: model)
+        }
+        var retired = stored
+        retired["policy"] = "none-unverified-v1"
+        try JSONSerialization.data(withJSONObject: retired).write(to: cacheB.recordURL(for: model))
+        expectMalformed("mdc retired unverified policy record is rejected") {
+            _ = try cacheB.digest(for: model)
+        }
+        var moved = stored
+        moved["path"] = canonical + ".other"
+        try JSONSerialization.data(withJSONObject: moved).write(to: cacheB.recordURL(for: model))
+        expectMalformed("mdc record for another path is rejected") {
+            _ = try cacheB.digest(for: model)
+        }
+        let repaired = try cacheB.digest(for: model, refresh: true)
+        check("mdc explicit refresh repairs a malformed record",
+              repaired.origin == .explicitRefresh && repaired.sha256 == abcd)
+
+        // A deleted model still resolves from the cache: nothing is read.
+        try fm.removeItem(at: link)
+        try fm.removeItem(at: model)
+        let afterDelete = try ModelDigestCache(directory: dirA).digest(for: model)
+        check("mdc deleted model resolves from the cache without reading",
+              afterDelete.origin == .cacheHit && afterDelete.sha256 == abcd)
+        let uncached = try ModelDigestCache(
+            directory: root.appendingPathComponent("cache-c", isDirectory: true))
+            .cachedRecord(for: model)
+        check("mdc cache-only lookup of an uncached model reads nothing", uncached == nil)
+
+        // Unicode spellings share one NFC record: realpath(3) reports the
+        // on-disk spelling while the file exists, and the fallback keeps the
+        // caller's spelling after deletion; both must key identically and
+        // match the Python tools.
+        let accented = "mod\u{E8}le.bin"
+        let nfcModel = root.appendingPathComponent(accented.precomposedStringWithCanonicalMapping)
+        let nfdModel = root.appendingPathComponent(accented.decomposedStringWithCanonicalMapping)
+        let dirU = root.appendingPathComponent("cache-u", isDirectory: true)
+        try Data("abc".utf8).write(to: nfcModel)
+        let unicodeCanonical = ModelDigestCache.canonicalPath(for: nfdModel)
+        check("mdc existing Unicode canonical path is NFC",
+              Array(unicodeCanonical.utf8)
+                == Array(unicodeCanonical.precomposedStringWithCanonicalMapping.utf8))
+        let unicodeKey = lowerHex(Array(SHA256.hash(Array(unicodeCanonical.utf8))))
+        checkEqual("mdc existing NFC spelling key", ModelDigestCache.cacheKey(for: nfcModel), unicodeKey)
+        checkEqual("mdc existing NFD spelling key", ModelDigestCache.cacheKey(for: nfdModel), unicodeKey)
+        let unicodeFirst = try ModelDigestCache(directory: dirU).digest(for: nfcModel)
+        check("mdc Unicode initial miss hashes the actual bytes",
+              unicodeFirst.origin == .initialComputation && unicodeFirst.sha256 == abc)
+        check("mdc Unicode record path is stored as NFC bytes",
+              Array(unicodeFirst.record.path.utf8) == Array(unicodeCanonical.utf8))
+        try Data("abcd".utf8).write(to: nfcModel)
+        let unicodeHit = try ModelDigestCache(directory: dirU).digest(for: nfdModel)
+        check("mdc mutated Unicode model hits the historical record",
+              unicodeHit.origin == .cacheHit && unicodeHit.sha256 == abc)
+        try fm.removeItem(at: nfcModel)
+        for (label, spelling) in [("NFC", nfcModel), ("NFD", nfdModel)] {
+            checkEqual("mdc deleted Unicode model " + label + " spelling keeps the key",
+                       ModelDigestCache.cacheKey(for: spelling), unicodeKey)
+            let gone = try ModelDigestCache(directory: dirU).digest(for: spelling)
+            check("mdc deleted Unicode model " + label + " spelling hits without reading",
+                  gone.origin == .cacheHit && gone.sha256 == abc)
+        }
+
+        // A record written by tools/baseline/model_digest_cache.py
+        // (json.dump: ASCII escapes, indent 2) is found after deletion.
+        let escapedPath = unicodeCanonical.unicodeScalars.map {
+            $0.isASCII ? String($0) : String(format: "\\u%04x", $0.value)
+        }.joined()
+        let pythonRecord = "{\n  \"bytes\": 4,\n  \"format\": \"leviathan.model-digest-cache.v1\",\n"
+            + "  \"hashedAtUTC\": \"2026-10-04T00:00:00Z\",\n  \"path\": \"" + escapedPath + "\",\n"
+            + "  \"policy\": \"cached-explicit-refresh-v1\",\n  \"sha256\": \"" + abcd + "\",\n"
+            + "  \"source\": \"initial\"\n}"
+        let dirP = root.appendingPathComponent("cache-p", isDirectory: true)
+        try fm.createDirectory(at: dirP, withIntermediateDirectories: true)
+        try Data(pythonRecord.utf8).write(to: dirP.appendingPathComponent(unicodeKey + ".json"))
+        let fromPython = try ModelDigestCache(directory: dirP).digest(for: nfdModel)
+        check("mdc Python-written Unicode record hits after deletion",
+              fromPython.origin == .cacheHit && fromPython.sha256 == abcd)
+    } catch {
+        failed += 1; print("FAIL: mdc digest cache — threw " + String(describing: error))
+    }
+}
+
+runModelDigestCacheGates()
 
 // MARK: - Summary
 

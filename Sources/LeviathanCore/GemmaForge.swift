@@ -3,7 +3,8 @@
 // candidates → correctness gate (graph executor vs the independently
 // validated per-kernel reference path, and raw-logit tolerance) →
 // measured GPU-time selection → reusable plan cache keyed on graph +
-// GGUF content + hardware + toolchain + workload. No agent, no LLM at
+// the cached model-file SHA-256 (hashed once, reused, refreshed only
+// explicitly; see ModelDigestCache) + hardware + toolchain + workload. No agent, no LLM at
 // runtime; anything outside the supported op set is rejected at
 // validation. The graph executor drives the runner's kernel primitives
 // from the validated IR — it is not a call into the fixed hand-written
@@ -399,7 +400,13 @@ public struct GemmaPreparedExecution {
 public struct GemmaForgePlan: Codable, Equatable, Sendable {
     public let schemaVersion: Int
     public let graphDigest: String
+    /// Actual SHA-256 of the model file from the shared ModelDigestCache
+    /// (computed once from the bytes, reused without re-reading, refreshed
+    /// only explicitly). Historical, not a fresh per-run verification.
     public let ggufDigest: String
+    /// Model-file digest policy (schema 3). Required on decode and covered
+    /// by planDigest; only cached-explicit-refresh-v1 is representable.
+    public let modelFileVerification: ModelFileVerificationPolicy
     /// Pass-engine identity (graph-executor version + compiled Metal
     /// pipeline set): changing kernels or the executor invalidates the
     /// cache even without a toolchain change.
@@ -466,7 +473,8 @@ public struct GemmaForgePlan: Codable, Equatable, Sendable {
          results: [GemmaForgeCandidateResult], schedule: GemmaSSAIR?,
          scheduleDigest: String, planDigest: String,
          fullGateTokens: Int? = nil,
-         fullGateRejections: [String]? = nil) {
+         fullGateRejections: [String]? = nil,
+         modelFileVerification: ModelFileVerificationPolicy = ModelFileIdentity.policy) {
         self.schemaVersion = schemaVersion
         self.graphDigest = graphDigest
         self.ggufDigest = ggufDigest
@@ -485,13 +493,17 @@ public struct GemmaForgePlan: Codable, Equatable, Sendable {
         self.scheduleDigest = scheduleDigest
         self.fullGateTokens = fullGateTokens
         self.fullGateRejections = fullGateRejections
+        self.modelFileVerification = modelFileVerification
         self.planDigest = planDigest
     }
 }
 
 public enum GemmaForge {
 
-    public static let schemaVersion = 1
+    /// 3: cached model-file SHA-256 with the cached-explicit-refresh-v1
+    /// policy; schema-1 (full hash) and schema-2 (unverified) plans are
+    /// rejected and must be re-forged.
+    public static let schemaVersion = 3
     public static let warmupTokens = 1
     public static let timedTokens = 3
     /// Per-candidate GPU-time budget (micros) across all timed tokens.
@@ -727,7 +739,10 @@ public enum GemmaForge {
         }
     }
 
-    /// Streaming SHA-256 of a large file (the 14.4 GB GGUF), read in
+    /// General streaming SHA-256 utility for executable/source/small
+    /// fixture files. Model (GGUF) digests go through ModelDigestCache,
+    /// which hashes each model once and reuses the persisted result. The
+    /// file is read in
     /// bounded chunks. Each chunk is hashed inside its own autorelease
     /// pool so Foundation's autoreleased read buffers are released every
     /// iteration and memory stays bounded regardless of file size.
@@ -1366,11 +1381,12 @@ public enum GemmaForge {
               decodeTokens == warmupTokens + timedTokens else {
             throw GemmaForgeError.invalidGraph("bad workload tokens/size")
         }
-        // Real identity inputs: the graph digest and the GGUF content
-        // digest are computed from actual bytes — no placeholder identity.
-        // The digest URL must BE the file the runner mapped (byteCount is
-        // also cross-checked), so an unrelated file is rejected rather
-        // than silently hashed.
+        // Identity inputs: the graph digest is computed from the actual graph
+        // and the model digest is the actual SHA-256 from the shared
+        // ModelDigestCache (hashed once on an initial miss or an explicit
+        // --rehash-model refresh; otherwise reused without re-reading). The
+        // URL must still BE the file the runner mapped (byteCount cross-check)
+        // — an execution binding check, not a cache freshness check.
         guard let mappedURL = runner.ggufFile.sourceURL, mappedURL == ggufURL,
               runner.ggufFile.byteCount == (try? URL(fileURLWithPath: ggufURL.path)
                     .resourceValues(forKeys: [.fileSizeKey]).fileSize ?? -1) else {
@@ -1378,7 +1394,7 @@ public enum GemmaForge {
                 "forge URL is not the runner's mapped GGUF file")
         }
         let graphDigest = try GemmaGraph.digest(graph)
-        let ggufDigest = try fileDigest(ggufURL)
+        let ggufDigest = try ModelDigestCache.shared.digest(for: ggufURL).sha256
         let engineDigest = Self.engineDigest(try runner.engineIdentity())
         let reference = GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false)
         // Reference gate 1: graph executor (per-kernel) must agree with
@@ -1634,8 +1650,9 @@ public enum GemmaForge {
         s.count == 64 && s.allSatisfy { ($0 >= "0" && $0 <= "9") || ($0 >= "a" && $0 <= "f") }
     }
 
-    /// Builds the plan with REAL identity: graph digest, streaming GGUF
-    /// content digest, pass-engine digest, measured hardware, verbatim
+    /// Builds the plan with identity: graph digest, the cached model-file
+    /// SHA-256 (ModelDigestCache; hashed once, refreshed only explicitly),
+    /// pass-engine digest, measured hardware, verbatim
     /// toolchain, workload digest, and a planDigest covering all fields
     /// plus the selection. Malformed inputs are rejected here, not
     /// cached. The planDigest is an integrity check, not authentication.
@@ -1771,7 +1788,8 @@ public enum GemmaForge {
             results: plan.results, schedule: plan.schedule,
             scheduleDigest: plan.scheduleDigest, planDigest: "",
             fullGateTokens: fullGateTokens,
-            fullGateRejections: recordedRejections)
+            fullGateRejections: recordedRejections,
+            modelFileVerification: plan.modelFileVerification)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let digest = SHA256.hex(SHA256.hash(Array(try encoder.encode(body))))
@@ -1792,7 +1810,8 @@ public enum GemmaForge {
                               scheduleDigest: body.scheduleDigest,
                               planDigest: digest,
                               fullGateTokens: fullGateTokens,
-                              fullGateRejections: recordedRejections)
+                              fullGateRejections: recordedRejections,
+                              modelFileVerification: body.modelFileVerification)
     }
 
     /// Bounded-read plan loader: the file is read in chunks up to 1 MiB
@@ -1819,7 +1838,8 @@ public enum GemmaForge {
         catch { throw GemmaForgeError.invalidPlan("\(error)") }
     }
 
-    /// Validates a loaded plan against the CURRENT graph, GGUF content,
+    /// Validates a loaded plan against the CURRENT graph, the cached
+    /// model-file SHA-256 and its cached-explicit-refresh policy,
     /// pass-engine identity, hardware, toolchain, workload, candidate
     /// legality, result consistency, and its own planDigest. A stale,
     /// foreign, tampered, or inconsistent plan is rejected and re-forged —
@@ -1856,6 +1876,13 @@ public enum GemmaForge {
                                             expertCacheBudget: Int? = nil) throws {
         guard plan.schemaVersion == schemaVersion else {
             throw GemmaForgeError.invalidPlan("schema \(plan.schemaVersion) != \(schemaVersion)")
+        }
+        // Model-file policy: the plan must record the cached explicit-refresh
+        // policy (decoding already rejects a missing or retired value).
+        // Full-hash and unverified plans fail the schema gate above and must
+        // be re-forged — never re-tagged.
+        guard plan.modelFileVerification == ModelFileIdentity.policy else {
+            throw GemmaForgeError.invalidPlan("model-file verification policy mismatch")
         }
         // Structural validity of the LOADED plan (not just plans this
         // process authored): digest syntax, positive finite medians,
@@ -1968,7 +1995,8 @@ public enum GemmaForge {
             results: plan.results, schedule: plan.schedule,
             scheduleDigest: plan.scheduleDigest, planDigest: "",
             fullGateTokens: plan.fullGateTokens,
-            fullGateRejections: plan.fullGateRejections)
+            fullGateRejections: plan.fullGateRejections,
+            modelFileVerification: plan.modelFileVerification)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let digest = SHA256.hex(SHA256.hash(Array(try encoder.encode(body))))
@@ -2000,7 +2028,8 @@ public enum GemmaForge {
                 results: plan.results, schedule: plan.schedule,
                 scheduleDigest: plan.scheduleDigest, planDigest: digest,
                 fullGateTokens: plan.fullGateTokens,
-                fullGateRejections: plan.fullGateRejections)
+                fullGateRejections: plan.fullGateRejections,
+                modelFileVerification: plan.modelFileVerification)
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
