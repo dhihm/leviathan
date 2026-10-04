@@ -1,0 +1,79 @@
+hashing GGUF for composite + plan identity (streaming, one pass)…
+validated region/graph/model (resident, 30 layers, pipeline max 1024)
+cache hit: existing composite g4_q4_matvec@w64 validated and installed through the public installer
+composite: enabled, installed true, cache hit true, artifact digest a82d1319a75a2575…
+graph validated: 934 ops, model gemma4-26b-a4b
+hardware: Apple M1 Max, max threads/threadgroup 1024, exec width 32, working set 26800603136 bytes
+engine digest: e373b61d54eb7866317cf9c67b082c8cea63fd5748a61b401c59828cc768dffb
+cache hit: plan 50107816f506952aa3bee1389563d59cb849841c427566ee92ae2f4b844114b8
+  candidate batching=0 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=0: correct 1, wall 842354 us/token, gpu 494162 us/token, 1259 kernels/token, 1259 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 842354 us, gpu 494162 us, 1259 kernels, 1259 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=0: correct 1, wall 331872 us/token, gpu 254498 us/token, 1259 kernels/token, 127 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 331872 us, gpu 254498 us, 1259 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=1 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=0: correct 1, wall 749300 us/token, gpu 423064 us/token, 1259 kernels/token, 1259 buffers/token — valid; logits rel 1.5e-05; 3 timed tokens; wall 749300 us, gpu 423064 us, 1259 kernels, 1259 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=0: correct 1, wall 327236 us/token, gpu 248790 us/token, 1259 kernels/token, 127 buffers/token — valid; logits rel 1.5e-05; 3 timed tokens; wall 327236 us, gpu 248790 us, 1259 kernels, 127 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=1 rmsTiled=0 f32Tiled=0 vecLoads=0: correct 1, wall 286281 us/token, gpu 256564 us/token, 1259 kernels/token, 127 buffers/token — valid; logits rel 1.5e-05; 3 timed tokens; wall 286281 us, gpu 256564 us, 1259 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=1 tiledQ6=1 rmsTiled=0 f32Tiled=0 vecLoads=0: correct 1, wall 689634 us/token, gpu 439623 us/token, 1259 kernels/token, 1259 buffers/token — valid; logits rel 1.5e-05; 3 timed tokens; wall 689634 us, gpu 439623 us, 1259 kernels, 1259 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=1 f32Tiled=0 vecLoads=0: correct 1, wall 111599 us/token, gpu 83478 us/token, 1259 kernels/token, 127 buffers/token — valid; logits rel 2.5e-05; 3 timed tokens; wall 111599 us, gpu 83478 us, 1259 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=1 vecLoads=0: correct 1, wall 983494 us/token, gpu 526769 us/token, 1259 kernels/token, 1259 buffers/token — valid; logits rel 1.8e-05; 3 timed tokens; wall 983494 us, gpu 526769 us, 1259 kernels, 1259 buffers/token
+  candidate batching=1 tiledQ4=1 tiledQ6=0 rmsTiled=1 f32Tiled=1 vecLoads=0: correct 0, wall -/token, gpu -/token, - kernels/token, - buffers/token — decode step 2 outside 1e-4 of reference (worst 1.028e-04)
+  candidate batching=0 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 370075 us/token, gpu 139078 us/token, 1259 kernels/token, 1259 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 370075 us, gpu 139078 us, 1259 kernels, 1259 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 158482 us/token, gpu 130124 us/token, 1259 kernels/token, 127 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 158482 us, gpu 130124 us, 1259 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=0 tiledQ6=1 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 374037 us/token, gpu 154961 us/token, 1259 kernels/token, 1259 buffers/token — valid; logits rel 5.7e-06; 3 timed tokens; wall 374037 us, gpu 154961 us, 1259 kernels, 1259 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=1 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 219891 us/token, gpu 143949 us/token, 1259 kernels/token, 127 buffers/token — valid; logits rel 5.7e-06; 3 timed tokens; wall 219891 us, gpu 143949 us, 1259 kernels, 127 buffers/token
+  candidate batching=0 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=0: correct 1, wall 526250 us/token, gpu 283398 us/token, 1289 kernels/token, 1289 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 526250 us, gpu 283398 us, 1289 kernels, 1289 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 153823 us/token, gpu 130342 us/token, 1289 kernels/token, 97 buffers/token — valid; logits rel 0.0e+00; 3 timed tokens; wall 153823 us, gpu 130342 us, 1289 kernels, 97 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 140774 us/token, gpu 112422 us/token, 1259 kernels/token, 127 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 140774 us, gpu 112422 us, 1259 kernels, 127 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 136676 us/token, gpu 113039 us/token, 1289 kernels/token, 97 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 136676 us, gpu 113039 us, 1289 kernels, 97 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 116702 us/token, gpu 82999 us/token, 1289 kernels/token, 97 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 116702 us, gpu 82999 us, 1289 kernels, 97 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=1 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 176265 us/token, gpu 121802 us/token, 1289 kernels/token, 97 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 176265 us, gpu 121802 us, 1289 kernels, 97 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=1 vecLoads=1: correct 1, wall 142464 us/token, gpu 100565 us/token, 1289 kernels/token, 97 buffers/token — valid; logits rel 1.9e-05; 3 timed tokens; wall 142464 us, gpu 100565 us, 1289 kernels, 97 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=1 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 126964 us/token, gpu 91728 us/token, 1289 kernels/token, 97 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 126964 us, gpu 91728 us, 1289 kernels, 97 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=1 vecLoads=1: correct 1, wall 94771 us/token, gpu 70386 us/token, 1289 kernels/token, 97 buffers/token — valid; logits rel 1.9e-05; 3 timed tokens; wall 94771 us, gpu 70386 us, 1289 kernels, 97 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=1 rmsTiled=0 f32Tiled=1 vecLoads=1: correct 1, wall 135072 us/token, gpu 109075 us/token, 1289 kernels/token, 97 buffers/token — valid; logits rel 1.9e-05; 3 timed tokens; wall 135072 us, gpu 109075 us, 1289 kernels, 97 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=1 rmsTiled=0 f32Tiled=1 vecLoads=1: correct 1, wall 117952 us/token, gpu 79181 us/token, 1289 kernels/token, 97 buffers/token — valid; logits rel 1.9e-05; 3 timed tokens; wall 117952 us, gpu 79181 us, 1289 kernels, 97 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 151386 us/token, gpu 99519 us/token, 1289 kernels/token, 97 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 151386 us, gpu 99519 us, 1289 kernels, 97 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 92321 us/token, gpu 70321 us/token, 1289 kernels/token, 97 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 92321 us, gpu 70321 us, 1289 kernels, 97 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 139431 us/token, gpu 92520 us/token, 1289 kernels/token, 97 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 139431 us, gpu 92520 us, 1289 kernels, 97 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 101615 us/token, gpu 63761 us/token, 1349 kernels/token, 37 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 101615 us, gpu 63761 us, 1349 kernels, 37 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 81075 us/token, gpu 59430 us/token, 1349 kernels/token, 37 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 81075 us, gpu 59430 us, 1349 kernels, 37 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 118342 us/token, gpu 77838 us/token, 1349 kernels/token, 37 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 118342 us, gpu 77838 us, 1349 kernels, 37 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 91593 us/token, gpu 61610 us/token, 1349 kernels/token, 37 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 91593 us, gpu 61610 us, 1349 kernels, 37 buffers/token
+  candidate batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1: correct 1, wall 92451 us/token, gpu 60843 us/token, 1349 kernels/token, 37 buffers/token — valid; logits rel 1.6e-05; 3 timed tokens; wall 92451 us, gpu 60843 us, 1349 kernels, 37 buffers/token
+selected: batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1 (tile widths q4=64 q6=64 rms=64 f32=64), wall 81075 us/token, gpu 59430 us/token
+plan reused from cache (not rewritten): digest 50107816f506952aa3bee1389563d59cb849841c427566ee92ae2f4b844114b8
+  step 1: token 236772, wall 79541 us, gpu 64657 us, 1349 kernels, 37 buffers
+  step 2: token 1437, wall 77489 us, gpu 63185 us, 1349 kernels, 37 buffers
+  step 3: token 236772, wall 77412 us, gpu 63050 us, 1349 kernels, 37 buffers
+  step 4: token 236751, wall 86025 us, gpu 67850 us, 1349 kernels, 37 buffers
+  step 5: token 2964, wall 83550 us, gpu 66495 us, 1349 kernels, 37 buffers
+  step 6: token 236772, wall 78765 us, gpu 63723 us, 1349 kernels, 37 buffers
+  step 7: token 1340, wall 89839 us, gpu 70985 us, 1349 kernels, 37 buffers
+  step 8: token 236772, wall 82143 us, gpu 66535 us, 1349 kernels, 37 buffers
+  step 9: token 2289, wall 85073 us, gpu 67352 us, 1349 kernels, 37 buffers
+  step 10: token 236772, wall 82421 us, gpu 64373 us, 1349 kernels, 37 buffers
+  step 11: token 1340, wall 81716 us, gpu 63234 us, 1349 kernels, 37 buffers
+  step 12: token 236772, wall 80208 us, gpu 63997 us, 1349 kernels, 37 buffers
+  step 13: token 1437, wall 83506 us, gpu 66991 us, 1349 kernels, 37 buffers
+  step 14: token 236772, wall 83601 us, gpu 67789 us, 1349 kernels, 37 buffers
+  step 15: token 236751, wall 78222 us, gpu 63951 us, 1349 kernels, 37 buffers
+  step 16: token 2964, wall 77339 us, gpu 63246 us, 1349 kernels, 37 buffers
+  step 17: token 236772, wall 78140 us, gpu 63295 us, 1349 kernels, 37 buffers
+  step 18: token 1340, wall 75778 us, gpu 61076 us, 1349 kernels, 37 buffers
+  step 19: token 236772, wall 79992 us, gpu 64520 us, 1349 kernels, 37 buffers
+  step 20: token 236751, wall 81625 us, gpu 67049 us, 1349 kernels, 37 buffers
+  step 21: token 2964, wall 80098 us, gpu 63953 us, 1349 kernels, 37 buffers
+  step 22: token 236772, wall 78074 us, gpu 63388 us, 1349 kernels, 37 buffers
+  step 23: token 1340, wall 83647 us, gpu 68152 us, 1349 kernels, 37 buffers
+  step 24: token 236772, wall 79102 us, gpu 64622 us, 1349 kernels, 37 buffers
+  step 25: token 1437, wall 78293 us, gpu 62994 us, 1349 kernels, 37 buffers
+  step 26: token 236772, wall 82228 us, gpu 67339 us, 1349 kernels, 37 buffers
+  step 27: token 236751, wall 80063 us, gpu 65130 us, 1349 kernels, 37 buffers
+  step 28: token 2964, wall 82490 us, gpu 64857 us, 1349 kernels, 37 buffers
+  step 29: token 236772, wall 80195 us, gpu 65750 us, 1349 kernels, 37 buffers
+  step 30: token 1340, wall 82946 us, gpu 67998 us, 1349 kernels, 37 buffers
+  step 31: token 236772, wall 81547 us, gpu 65425 us, 1349 kernels, 37 buffers
+plan saved with full-gate record: /tmp/leviathan-forge2-tooling/phase41-compiler-integrity-review/production-lifecycle/batch-plan.json, digest 50107816f506952aa3bee1389563d59cb849841c427566ee92ae2f4b844114b8
+prompt ids: 2 9259
+greedy ids (reference == graph): 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+verified generation: 31 steps, median wall 80208 us/token, gpu total 2140.1 ms
+FORGE_PASS

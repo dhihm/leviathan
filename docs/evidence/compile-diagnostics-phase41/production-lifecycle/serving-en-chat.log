@@ -1,0 +1,24 @@
+prompt ids: 2 105 2364 107 9259 236764 740 611 1601 786 3124 236881 106 107 105 4368 107 100 45518 107 101
+hashing GGUF for composite + plan identity (streaming, one pass)…
+validated region/graph/model (resident, 30 layers, pipeline max 1024)
+cache hit: existing composite g4_q4_matvec@w64 validated and installed through the public installer
+composite: enabled, installed true, cache hit true, artifact digest a82d1319a75a2575…
+plan identity validated: 50107816f506952aa3bee1389563d59cb849841c427566ee92ae2f4b844114b8 (selected GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: false, matvecTiledQ6: false, rmsnormTiled: false, matvecTiledF32: false, vectorizedLoads: true, gpuCacheAppend: true, parallelAttention: true, rmsnormCooperative: true, matvecCooperativeQ6: true, rmsStatisticsReuse: true, routerGPUResidency: true, routerLaunchDivisor: 1))
+prepared execution: ON (prepared.ssa asserted equal to plan.schedule)
+selected candidate flags: batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1 gpuCacheAppend=1 parallelAttention=1 rmsCoop=1 q6Coop=1 rmsStats=1 routerGPU=1 routerDiv=1
+identity validation prep: 8123.1 ms (graph parse + GGUF hash + plan load)
+plan gate passed (untimed reference replay, rel < 1e-4, exact ids): 45565.3 ms
+generated ids: 9259 236888 564 1093 577 5293 531 1601 611 236761 236743 108 3689 563 580 822 3666 236881 1599 740 2679 786 496 2934 236764 2679 573 1601 607 496 4209 568
+generated text: Hello! I would be happy to help you. 
+
+What is on your mind? You can ask me a question, ask for help with a task (
+repetition 1/1: prefill/TTFT: 1485.9 ms (21 prompt tokens) | decode: 2419.3 ms total (31 steps), median ms/token 72.62 | gpu total: 3224.2 ms | metal device allocated sample: 15.168 GiB
+parallel attention totals: applied 3120, fallback 0
+rms cooperative totals: applied 25064, fallback 0
+q6 cooperative totals: applied 104, fallback 0
+rms statistics totals: computed 3120, reused 6240, fallback 0
+router residency totals: scale applied 3120, scale fallback 0, zero applied 3120, zero fallback 0, launch applied 3120, launch fallback 0
+composite moe counters: GU 9360, ACT 9360, DN 9360, merges 37440, resident fallback 0
+composite q4 launch width: applied 31980, fallback 0
+load (once): 477.1 ms (runtime Metal library + pipeline compile within it: 6.0 ms)
+GENERATION_COMPLETED

@@ -1,0 +1,22 @@
+prompt ids: 2 105 2364 107 61659 236764 31694 57517 240482 237170 51955 237272 237586 236881 106 107 105 4368 107 100 45518 107 101
+hashing GGUF for composite + plan identity (streaming, one pass)…
+validated region/graph/model (resident, 30 layers, pipeline max 1024)
+cache hit: existing composite g4_q4_matvec@w64 validated and installed through the public installer
+composite: enabled, installed true, cache hit true, artifact digest a82d1319a75a2575…
+plan identity validated: 50107816f506952aa3bee1389563d59cb849841c427566ee92ae2f4b844114b8 (selected GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: false, matvecTiledQ6: false, rmsnormTiled: false, matvecTiledF32: false, vectorizedLoads: true, gpuCacheAppend: true, parallelAttention: true, rmsnormCooperative: true, matvecCooperativeQ6: true, rmsStatisticsReuse: true, routerGPUResidency: true, routerLaunchDivisor: 1))
+prepared execution: ON (prepared.ssa asserted equal to plan.schedule)
+selected candidate flags: batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1 gpuCacheAppend=1 parallelAttention=1 rmsCoop=1 q6Coop=1 rmsStats=1 routerGPU=1 routerDiv=1
+identity validation prep: 8233.5 ms (graph parse + GGUF hash + plan load)
+plan gate passed (untimed reference replay, rel < 1e-4, exact ids): 47301.2 ms
+generated ids: 61659 236888 113648 22478 63949 9554 237774 61487 86595 237223 94070 94106 54846 5386 50860 18229 77094 236764 75115 25121 238144 71160 237281 143474 237384 57517 240482 237482 66609 88440 190710 74221
+generated text: 안녕하세요! 저는 실시간 기상 정보 시스템에 직접 연결되어 있지는 않아서, 현재 계신 지역의 정확한 날씨를 바로 알려드리기는
+repetition 1/1: prefill/TTFT: 2010.1 ms (23 prompt tokens) | decode: 3201.8 ms total (31 steps), median ms/token 96.67 | gpu total: 3651.9 ms | metal device allocated sample: 15.168 GiB
+parallel attention totals: applied 3240, fallback 0
+rms cooperative totals: applied 26028, fallback 0
+q6 cooperative totals: applied 108, fallback 0
+rms statistics totals: computed 3240, reused 6480, fallback 0
+router residency totals: scale applied 3240, scale fallback 0, zero applied 3240, zero fallback 0, launch applied 3240, launch fallback 0
+composite moe counters: GU 9720, ACT 9720, DN 9720, merges 38880, resident fallback 0
+composite q4 launch width: applied 33210, fallback 0
+load (once): 497.9 ms (runtime Metal library + pipeline compile within it: 7.1 ms)
+GENERATION_COMPLETED

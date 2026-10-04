@@ -1,0 +1,77 @@
+{
+  "scope": "Actual CLI prepared execution with public verified composite installation. Separate untimed full-logit gates across rawHello and canonical English/Korean chat,32generated IDs,all262144logits,<1e-4 andexactIDs. Reference serial runner carries same verified E4/width install; no Ollama logits comparison.",
+  "fixtures": [
+    {
+      "fallbackValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "zeroFallback": true,
+      "fixture": "raw-hello",
+      "exit": 0,
+      "elapsedSeconds": 39.633063041605055,
+      "gatePassed": true,
+      "generationCompleted": true,
+      "generatedCount": 32,
+      "promptTokenCount": 2,
+      "generatedIDs": "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+      "log": "serving-raw-hello.log"
+    },
+    {
+      "fallbackValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "zeroFallback": true,
+      "fixture": "en-chat",
+      "exit": 0,
+      "elapsedSeconds": 59.00066487491131,
+      "gatePassed": true,
+      "generationCompleted": true,
+      "generatedCount": 32,
+      "promptTokenCount": 21,
+      "generatedIDs": "9259 236888 564 1093 577 5293 531 1601 611 236761 236743 108 3689 563 580 822 3666 236881 1599 740 2679 786 496 2934 236764 2679 573 1601 607 496 4209 568",
+      "log": "serving-en-chat.log"
+    },
+    {
+      "fallbackValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "zeroFallback": true,
+      "fixture": "kr-chat",
+      "exit": 0,
+      "elapsedSeconds": 62.14125341689214,
+      "gatePassed": true,
+      "generationCompleted": true,
+      "generatedCount": 32,
+      "promptTokenCount": 23,
+      "generatedIDs": "61659 236888 113648 22478 63949 9554 237774 61487 86595 237223 94070 94106 54846 5386 50860 18229 77094 236764 75115 25121 238144 71160 237281 143474 237384 57517 240482 237482 66609 88440 190710 74221",
+      "log": "serving-kr-chat.log"
+    }
+  ],
+  "binarySha256": "b77e692ff46dd80116500335c86000273e1744cd35ebb31a5a5aed48a1ef0f5a",
+  "binaryUnchanged": true,
+  "sourceUnchanged": true
+}
