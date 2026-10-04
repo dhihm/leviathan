@@ -1,0 +1,43 @@
+{
+  "baseline": "7dd0456020f7afe0a1da67b518fc9afe98a2a211",
+  "author": "Z.ai GLM-5.3 through existing ZCode configured subscription; text-only isolated sessions",
+  "patches": [
+    "kernel-tests-applied.json",
+    "kernel-tests-repair-applied.json",
+    "optional-repair-applied.json",
+    "integration-patch.json",
+    "addressing-repair-patch.json",
+    "swift-api-repair-patch.json",
+    "addressing-api-repair-patch.json",
+    "identity-compile-repair-patch.json",
+    "test-argument-order-repair-patch.json",
+    "subnormal-repair-patch.json",
+    "subnormal-single-round-repair-patch.json",
+    "subnormal-sweep-assert-repair-patch.json",
+    "subnormal-duplicate-count-repair-patch.json",
+    "metal-reserved-half-repair-patch.json"
+  ],
+  "files": {
+    "Sources/LeviathanCore/RouterResidency.swift": {
+      "matchesExternalReplay": true,
+      "sha256": "d9ef6f8a773584e917f75fc88e90494d5b3b7d9357014835c3a3063679390b97"
+    },
+    "Sources/leviathan-tests/main.swift": {
+      "matchesExternalReplay": true,
+      "sha256": "202375580762f88c531c63689ee672b3d56596755c6b40fc1bb582519e19a5dd"
+    },
+    "Sources/LeviathanCore/Gemma4.swift": {
+      "matchesExternalReplay": true,
+      "sha256": "784e453dc5a4897bf390bf25814e8497a910a1807a8e6eb967d7160b56b7c422"
+    },
+    "Sources/LeviathanCore/GemmaForge.swift": {
+      "matchesExternalReplay": true,
+      "sha256": "23a1ff80151ac33febadfa21e552a3a8fb87ccb9497bffa1fe85e4a2f37082ba"
+    },
+    "Sources/leviathan-cli/main.swift": {
+      "matchesExternalReplay": true,
+      "sha256": "8876dff5ac71e614c06c3ff1e6e9e6a1143ac718a404cdf8a087e8653a725d2b"
+    }
+  },
+  "allMatch": true
+}

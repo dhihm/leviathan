@@ -1,0 +1,9 @@
+{
+  "replacements": [
+    {
+      "path": "Sources/LeviathanCore/Gemma4.swift",
+      "old": "let (yEnd, overflow) = yByteOffset.addingReportingOverflow(by: span)",
+      "new": "let (yEnd, overflow) = yByteOffset.addingReportingOverflow(span)"
+    }
+  ]
+}

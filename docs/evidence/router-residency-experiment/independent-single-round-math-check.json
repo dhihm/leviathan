@@ -1,0 +1,6 @@
+{
+  "scope": "Independent host mathematical analysis only, not Metal runtime validation. Exact integer significand-product/RNE algorithm versus binary32 operands multiplied exactly in binary64 and rounded once to binary32.",
+  "seed": 36,
+  "finitePairsChecked": 248007,
+  "mismatches": []
+}

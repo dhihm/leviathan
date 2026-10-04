@@ -116,6 +116,20 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
     /// defaulted.
     public let rmsStatisticsReuse: Bool
 
+    /// GPU router residency (default false): moves the second per-element
+    /// router scale multiply onto a precise-compiled GPU kernel and arms
+    /// the resident-expert output reset wrapper. Explicit Codable key —
+    /// an artifact missing this field is rejected, never silently
+    /// defaulted.
+    public let routerGPUResidency: Bool
+
+    /// Router F32 matvec launch-geometry divisor (default 0). 0 keeps the
+    /// original single-group geometry (GPU scale/zero only); a nonzero
+    /// value in {1, 2, 4, 8} divides the scalar router matvec's
+    /// threadgroup width, changing only threadgroup geometry — never the
+    /// kernel, bindings, or per-row arithmetic. Explicit Codable key.
+    public let routerLaunchDivisor: Int
+
     public init(segmentBatching: Bool, top5Diagnostic: Bool,
                 matvecTiledQ4: Bool = false, matvecTiledQ6: Bool = false,
                 rmsnormTiled: Bool = false, matvecTiledF32: Bool = false,
@@ -124,7 +138,9 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
                 parallelAttention: Bool = false,
                 rmsnormCooperative: Bool = false,
                 matvecCooperativeQ6: Bool = false,
-                rmsStatisticsReuse: Bool = false) {
+                rmsStatisticsReuse: Bool = false,
+                routerGPUResidency: Bool = false,
+                routerLaunchDivisor: Int = 0) {
         self.segmentBatching = segmentBatching
         self.top5Diagnostic = top5Diagnostic
         self.matvecTiledQ4 = matvecTiledQ4
@@ -137,13 +153,15 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
         self.rmsnormCooperative = rmsnormCooperative
         self.matvecCooperativeQ6 = matvecCooperativeQ6
         self.rmsStatisticsReuse = rmsStatisticsReuse
+        self.routerGPUResidency = routerGPUResidency
+        self.routerLaunchDivisor = routerLaunchDivisor
     }
 
     private enum CodingKeys: String, CodingKey {
         case segmentBatching, top5Diagnostic, matvecTiledQ4, matvecTiledQ6
         case rmsnormTiled, matvecTiledF32, vectorizedLoads, gpuCacheAppend
         case parallelAttention, rmsnormCooperative, matvecCooperativeQ6,
-             rmsStatisticsReuse
+             rmsStatisticsReuse, routerGPUResidency, routerLaunchDivisor
     }
 
     public init(from decoder: Decoder) throws {
@@ -172,6 +190,14 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
             throw DecodingError.keyNotFound(CodingKeys.rmsStatisticsReuse, DecodingError.Context(
                 codingPath: c.codingPath, debugDescription: "rmsStatisticsReuse missing (pre-axis artifact)"))
         }
+        guard let routerGPUResidency = try c.decodeIfPresent(Bool.self, forKey: .routerGPUResidency) else {
+            throw DecodingError.keyNotFound(CodingKeys.routerGPUResidency, DecodingError.Context(
+                codingPath: c.codingPath, debugDescription: "routerGPUResidency missing (pre-axis artifact)"))
+        }
+        guard let routerLaunchDivisor = try c.decodeIfPresent(Int.self, forKey: .routerLaunchDivisor) else {
+            throw DecodingError.keyNotFound(CodingKeys.routerLaunchDivisor, DecodingError.Context(
+                codingPath: c.codingPath, debugDescription: "routerLaunchDivisor missing (pre-axis artifact)"))
+        }
         self.segmentBatching = try c.decode(Bool.self, forKey: .segmentBatching)
         self.top5Diagnostic = try c.decode(Bool.self, forKey: .top5Diagnostic)
         self.matvecTiledQ4 = try c.decode(Bool.self, forKey: .matvecTiledQ4)
@@ -184,6 +210,8 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
         self.rmsnormCooperative = rmsnormCooperative
         self.matvecCooperativeQ6 = matvecCooperativeQ6
         self.rmsStatisticsReuse = rmsStatisticsReuse
+        self.routerGPUResidency = routerGPUResidency
+        self.routerLaunchDivisor = routerLaunchDivisor
     }
 }
 
@@ -619,6 +647,49 @@ public enum GemmaForge {
                                 parallelAttention: true, rmsnormCooperative: true,
                                 matvecCooperativeQ6: true,
                                 rmsStatisticsReuse: true),
+            // GPU router residency (bounded new pass, Q4/router-owned):
+            // the second per-element router scale multiply moves to a
+            // precise-compiled GPU kernel (the first g4_scale round keeps
+            // its own ordered dispatch; the two multiplies are never
+            // fused), and the resident-expert accumulator reset becomes a
+            // bit-preserving uint32 GPU zero in the same ordered encoder.
+            // routerLaunchDivisor 0 keeps the original scalar router F32
+            // matvec geometry (GPU scale/zero only); divisors 1/2/4/8
+            // re-dispatch the SAME pipeline and bindings with a derived
+            // threadgroup width. Appended on the new-main fast-flag
+            // baseline (batched + VL + GPU-KV + parallel attention +
+            // cooperative RMS + cooperative Q6 + reusable RMS statistics;
+            // all tiled axes false). Total candidate set: 32.
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                vectorizedLoads: true, gpuCacheAppend: true,
+                                parallelAttention: true, rmsnormCooperative: true,
+                                matvecCooperativeQ6: true,
+                                rmsStatisticsReuse: true,
+                                routerGPUResidency: true, routerLaunchDivisor: 0),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                vectorizedLoads: true, gpuCacheAppend: true,
+                                parallelAttention: true, rmsnormCooperative: true,
+                                matvecCooperativeQ6: true,
+                                rmsStatisticsReuse: true,
+                                routerGPUResidency: true, routerLaunchDivisor: 1),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                vectorizedLoads: true, gpuCacheAppend: true,
+                                parallelAttention: true, rmsnormCooperative: true,
+                                matvecCooperativeQ6: true,
+                                rmsStatisticsReuse: true,
+                                routerGPUResidency: true, routerLaunchDivisor: 2),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                vectorizedLoads: true, gpuCacheAppend: true,
+                                parallelAttention: true, rmsnormCooperative: true,
+                                matvecCooperativeQ6: true,
+                                rmsStatisticsReuse: true,
+                                routerGPUResidency: true, routerLaunchDivisor: 4),
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                vectorizedLoads: true, gpuCacheAppend: true,
+                                parallelAttention: true, rmsnormCooperative: true,
+                                matvecCooperativeQ6: true,
+                                rmsStatisticsReuse: true,
+                                routerGPUResidency: true, routerLaunchDivisor: 8),
         ]
     }
 
@@ -636,6 +707,22 @@ public enum GemmaForge {
                 throw GemmaForgeError.invalidGraph(
                     "rmsStatisticsReuse requires rmsnormCooperative=true, " +
                     "vectorizedLoads=true, rmsnormTiled=false")
+            }
+        }
+        // Router launch divisor: restricted to the allowed set; a nonzero
+        // divisor (derived scalar router threadgroup geometry) requires
+        // the residency flag and must not combine with tiled F32.
+        guard RouterResidencyKernel.allowedLaunchDivisors.contains(
+            candidate.routerLaunchDivisor) else {
+            throw GemmaForgeError.invalidGraph(
+                "routerLaunchDivisor must be one of " +
+                "\(RouterResidencyKernel.allowedLaunchDivisors)")
+        }
+        if candidate.routerLaunchDivisor != 0 {
+            guard candidate.routerGPUResidency, !candidate.matvecTiledF32 else {
+                throw GemmaForgeError.invalidGraph(
+                    "routerLaunchDivisor != 0 requires routerGPUResidency=true " +
+                    "and matvecTiledF32=false")
             }
         }
     }
@@ -881,6 +968,8 @@ public enum GemmaForge {
         runner.rmsCooperativeKernel = candidate.rmsnormCooperative
         runner.matvecCooperativeQ6Kernel = candidate.matvecCooperativeQ6
         runner.rmsStatisticsReuse = candidate.rmsStatisticsReuse
+        runner.routerGPUResidency = candidate.routerGPUResidency
+        runner.routerLaunchDivisor = candidate.routerLaunchDivisor
         defer {
             runner.autoSegment = false
             runner.q4TiledKernel = false
@@ -893,6 +982,8 @@ public enum GemmaForge {
             runner.rmsCooperativeKernel = false
             runner.matvecCooperativeQ6Kernel = false
             runner.rmsStatisticsReuse = false
+            runner.routerGPUResidency = false
+            runner.routerLaunchDivisor = 0
         }
         var routerState = [Int: (topIdx: [Int], weights: [Float])]()
 
@@ -1021,12 +1112,19 @@ public enum GemmaForge {
                 if inst.attrs["routerScale"] == 1 {
                     let outBuf = try vb(inst.output)
                     let n = byID[inst.output]!.length
+                    // Round 1: the original g4_scale dispatch, unconditional.
                     try runner.scaleInPlace(x: outBuf,
                                             c: Float(1.0 / sqrt(Double(n))), n: n)
-                    var routerIn = try runner.read(outBuf, n)
-                    let scale = runner.routerScales[layer]
-                    for i in 0..<n { routerIn[i] *= scale[i] }
-                    try runner.write(routerIn, to: outBuf)
+                    // Round 2: GPU-encoded second scale when armed and
+                    // validated (shared helper with the direct forward
+                    // path); otherwise the ORIGINAL CPU element multiply
+                    // runs unchanged.
+                    if !(try runner.gpuRouterSecondScale(layer: layer, n: n, x: outBuf)) {
+                        var routerIn = try runner.read(outBuf, n)
+                        let scale = runner.routerScales[layer]
+                        for i in 0..<n { routerIn[i] *= scale[i] }
+                        try runner.write(routerIn, to: outBuf)
+                    }
                 } else {
                     try runner.scaleInPlace(x: try vb(inst.output),
                                             c: runner.layerScalars[layer],
@@ -1139,13 +1237,20 @@ public enum GemmaForge {
                 let e = a(inst, "intermediate")
                 let guStride = gateUp.outDim * (gateUp.inDim / 32) * 18
                 let dnStride = down.outDim * (down.inDim / 32) * 18
-                try runner.flushOpenSegment()
-                // Synchronous free-slots-only read-ahead (cache mode;
-                // never evicts, no async overlap).
-                try runner.prefetchExperts(layer: layer, topIdx: topIdx)
                 let outBuf = try vb(inst.output)
                 let n = byID[inst.output]!.length
-                memset(outBuf.contents(), 0, n * 4)
+                // Resident-expert output reset: GPU zero in the SAME
+                // ordered encoder when armed (flag on, no expert cache);
+                // the fallback preserves the ORIGINAL CPU flush/prefetch/
+                // memset sequence exactly (the flush safely drains any
+                // pending GPU work before the CPU memset).
+                if !(try runner.gpuRouterResidentZero(y: outBuf, n: n)) {
+                    try runner.flushOpenSegment()
+                    // Synchronous free-slots-only read-ahead (cache mode;
+                    // never evicts, no async overlap).
+                    try runner.prefetchExperts(layer: layer, topIdx: topIdx)
+                    memset(outBuf.contents(), 0, n * 4)
+                }
                 // DEDICATED expert scratch, physically separate from all
                 // SSA-bound buffers — internal effects of this compound op
                 // can never clobber live SSA values (gate/up/act/t2).

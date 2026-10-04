@@ -1,0 +1,7 @@
+# Router residency measurement protocol
+
+Matched baseline: user-selected RMS main commit 7dd0456020f7afe0a1da67b518fc9afe98a2a211, preserved executable 371e7289c0e2a8f95696f051a11aa965acb1fd7946e0f0e566be2976d6d59a6a and its qualified plan/composite. The earlier phase34 baseline is retained separately. The baseline changed by explicit user instruction before any whole-model router timing.
+
+The batch includes the second router-scale GPU multiply, ordered resident-expert GPU zero, and original F32 router launch geometry. Preserve the original first-scale dispatch, each row's accumulation order, CPU top-k Double exponentiation and tie rules, and all cache fallbacks. Only authorized router code, tests, and the minimal resident Q4 reset wrapper were transmitted to the external author.
+
+Independent bit-pattern and bounds checks, including gradual underflow, precede actual-model gates, fresh production qualification, persisted reload, and three serving fixtures. Compare four fixed serial AB/BA/AB/BA pairs, with four generations per arm: exclude only predeclared warmup 1 and report the median of three warm 31-step decode wall totals. Use the same original GGUF, raw Hello input, and BOS alignment. Retain every run and resource observation. Run no owned author, build, or profiling jobs during fixed timing. Promotion requires over 2% decode-wall reduction in every pair; do not rerun or exclude results to obtain a pass. No model downloads are needed.

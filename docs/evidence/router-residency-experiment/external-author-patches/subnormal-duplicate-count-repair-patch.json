@@ -1,0 +1,9 @@
+{
+  "replacements": [
+    {
+      "path": "Sources/leviathan-tests/main.swift",
+      "old": "    let gpu = xbuf.contents().assumingMemoryBound(to: Float.self)\n    let n = xs.count\n    for i in 0..<n {",
+      "new": "    let gpu = xbuf.contents().assumingMemoryBound(to: Float.self)\n    for i in 0..<n {"
+    }
+  ]
+}

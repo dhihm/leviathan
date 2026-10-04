@@ -2230,7 +2230,8 @@ do {
                                    "rmsnormTiled": true, "matvecTiledF32": true, "vectorizedLoads": true,
                                    "rmsStatisticsReuse": false,
                                    "rmsnormCooperative": false, "gpuCacheAppend": false, "parallelAttention": false,
-                                   "matvecCooperativeQ6": false]
+                                   "matvecCooperativeQ6": false,
+                                   "routerGPUResidency": false, "routerLaunchDivisor": 0]
              })
     // Wrong CURRENT inputs (not plan mutations) are rejected too.
     check("foreign current gguf digest rejected", (try? GemmaForge.validatePlanIdentity(
@@ -3247,6 +3248,619 @@ private func rmsStatsTripleIR(inputLength: Int = 256, outLength: Int = 256,
     rmsStatsShaderTests()
 }
 rmsStatsRunAllTests()
+
+// MARK: - Router residency kernel + scalar router geometry (additive)
+
+@MainActor
+func routerResidencyPureChecks() {
+    // Provenance metadata
+    checkEqual("router residency: kernel name",
+               RouterResidencyKernel.kernelName, "g4_router_scale")
+    checkEqual("router residency: zero kernel name",
+               RouterResidencyKernel.zeroKernelName, "g4_router_resident_zero")
+    checkEqual("router residency: version is 3 after direct subnormal rounding correction",
+               RouterResidencyKernel.version, 3)
+    check("router residency: version positive", RouterResidencyKernel.version > 0)
+    check("router residency: source non-empty", !RouterResidencyKernel.source.isEmpty)
+    let sha = RouterResidencyKernel.sourceSha256
+    check("router residency: sha256 is 64 lowercase hex chars",
+          sha.count == 64
+              && sha.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) })
+    checkEqual("router residency: sha256 deterministic",
+               RouterResidencyKernel.sourceSha256, sha)
+    checkEqual("router residency: allowed divisors",
+               RouterResidencyKernel.allowedLaunchDivisors, [0, 1, 2, 4, 8])
+
+    // Geometry derivation from actual pipeline caps (no GPU-name heuristic)
+    do {
+        let original = try RouterResidencyGeometry.scalarRouterThreads(
+            divisor: 0, threadExecutionWidth: 32,
+            maxTotalThreadsPerThreadgroup: 512, outputRows: 128)
+        check("router residency: divisor 0 returns nil (original geometry)",
+              original == nil)
+
+        let d4 = try RouterResidencyGeometry.scalarRouterThreads(
+            divisor: 4, threadExecutionWidth: 32,
+            maxTotalThreadsPerThreadgroup: 512, outputRows: 128)
+        check("router residency: divisor 4 of width 32 -> 8 threads", d4 == 8)
+
+        let rowBounded = try RouterResidencyGeometry.scalarRouterThreads(
+            divisor: 1, threadExecutionWidth: 32,
+            maxTotalThreadsPerThreadgroup: 512, outputRows: 8)
+        check("router residency: bounded by output rows", rowBounded == 8)
+
+        let capBounded = try RouterResidencyGeometry.scalarRouterThreads(
+            divisor: 1, threadExecutionWidth: 32,
+            maxTotalThreadsPerThreadgroup: 16, outputRows: 128)
+        check("router residency: bounded by maxTotalThreadsPerThreadgroup", capBounded == 16)
+    } catch {
+        check("router residency: scalarRouterThreads derivations", false)
+    }
+
+    checkThrows("router residency: divisor 3 rejected",
+                RouterResidencyError.divisorNotAllowed(3)) {
+        _ = try RouterResidencyGeometry.scalarRouterThreads(
+            divisor: 3, threadExecutionWidth: 32,
+            maxTotalThreadsPerThreadgroup: 512, outputRows: 128)
+    }
+    checkThrows("router residency: zero threadExecutionWidth rejected",
+                RouterResidencyError.nonPositiveThreadExecutionWidth(0)) {
+        _ = try RouterResidencyGeometry.scalarRouterThreads(
+            divisor: 1, threadExecutionWidth: 0,
+            maxTotalThreadsPerThreadgroup: 512, outputRows: 128)
+    }
+    checkThrows("router residency: zero maxTotalThreads rejected",
+                RouterResidencyError.nonPositiveMaxThreads(0)) {
+        _ = try RouterResidencyGeometry.scalarRouterThreads(
+            divisor: 1, threadExecutionWidth: 32,
+            maxTotalThreadsPerThreadgroup: 0, outputRows: 128)
+    }
+    checkThrows("router residency: zero rows rejected",
+                RouterResidencyError.nonPositiveRows(0)) {
+        _ = try RouterResidencyGeometry.scalarRouterThreads(
+            divisor: 1, threadExecutionWidth: 32,
+            maxTotalThreadsPerThreadgroup: 512, outputRows: 0)
+    }
+
+    // Overflow-safe group counts and spans
+    do {
+        checkEqual("router residency: ceil 128/16 == 8",
+                   try RouterResidencyGeometry.groupCount(rows: 128, threadsPerGroup: 16), 8)
+        checkEqual("router residency: ceil 129/16 == 9",
+                   try RouterResidencyGeometry.groupCount(rows: 129, threadsPerGroup: 16), 9)
+        checkEqual("router residency: ceil 16/16 == 1",
+                   try RouterResidencyGeometry.groupCount(rows: 16, threadsPerGroup: 16), 1)
+        checkEqual("router residency: ceil Int.max/1 == Int.max (no overflow)",
+                   try RouterResidencyGeometry.groupCount(rows: Int.max, threadsPerGroup: 1),
+                   Int.max)
+        checkEqual("router residency: padded grid 704/128 == 768 threads",
+                   try RouterResidencyGeometry.gridThreads(rows: 704, threadsPerGroup: 128), 768)
+        checkThrows("router residency: grid threads overflow rejected",
+                    RouterResidencyError.gridThreadsOverflow) {
+            _ = try RouterResidencyGeometry.gridThreads(rows: Int.max, threadsPerGroup: 2)
+        }
+        checkEqual("router residency: byte span of 2816 floats",
+                   try RouterResidencyGeometry.byteSpan(elementCount: 2816), 11264)
+        checkEqual("router residency: aligned scale offset passes",
+                   try RouterResidencyGeometry.checkedScaleOffset(256), 256)
+    } catch {
+        check("router residency: groupCount/span/offset pure checks", false)
+    }
+
+    checkThrows("router residency: zero threadsPerGroup rejected",
+                RouterResidencyError.nonPositiveThreadCount(0)) {
+        _ = try RouterResidencyGeometry.groupCount(rows: 128, threadsPerGroup: 0)
+    }
+    checkThrows("router residency: byte span overflow rejected",
+                RouterResidencyError.byteSpanOverflow) {
+        _ = try RouterResidencyGeometry.byteSpan(elementCount: Int.max)
+    }
+    checkThrows("router residency: negative element count rejected",
+                RouterResidencyError.negativeElementCount(-1)) {
+        _ = try RouterResidencyGeometry.byteSpan(elementCount: -1)
+    }
+    checkThrows("router residency: negative scale offset rejected",
+                RouterResidencyError.negativeScaleOffset(-4)) {
+        _ = try RouterResidencyGeometry.checkedScaleOffset(-4)
+    }
+    checkThrows("router residency: misaligned scale offset rejected",
+                RouterResidencyError.misalignedScaleOffset(2)) {
+        _ = try RouterResidencyGeometry.checkedScaleOffset(2)
+    }
+}
+
+@MainActor
+func routerResidencyHardwareChecks(device: MTLDevice, queue: MTLCommandQueue) {
+    let routerLibrary: MTLLibrary
+    let gemmaLibrary: MTLLibrary
+    do {
+        routerLibrary = try device.makeLibrary(
+            source: RouterResidencyKernel.source,
+            options: RouterResidencyKernel.makeCompileOptions())
+        // The original production pipelines must be compiled exactly as the
+        // runtime compiles them: options nil. Only the new second-scale
+        // kernel uses precise compile options.
+        gemmaLibrary = try device.makeLibrary(source: Gemma4Runner.shaderSource,
+                                              options: nil)
+    } catch {
+        check("router residency: compile pipelines from original sources", false)
+        return
+    }
+    guard let routerFunction = routerLibrary.makeFunction(
+              name: RouterResidencyKernel.kernelName),
+          let matvecFunction = gemmaLibrary.makeFunction(name: "g4_f32_matvec"),
+          let g4ScaleFunction = gemmaLibrary.makeFunction(name: "g4_scale") else {
+        check("router residency: kernel functions found in libraries", false)
+        return
+    }
+    let routerScale: MTLComputePipelineState
+    let matvec: MTLComputePipelineState
+    let g4Scale: MTLComputePipelineState
+    do {
+        routerScale = try device.makeComputePipelineState(function: routerFunction)
+        matvec = try device.makeComputePipelineState(function: matvecFunction)
+        g4Scale = try device.makeComputePipelineState(function: g4ScaleFunction)
+    } catch {
+        check("router residency: build compute pipeline states", false)
+        return
+    }
+
+    // Hardware capability checks (actual caps, no name heuristics)
+    check("router residency: device.maxThreadgroupMemoryLength positive",
+          device.maxThreadgroupMemoryLength > 0)
+    check("router residency: router pipeline caps positive",
+          routerScale.threadExecutionWidth > 0
+              && routerScale.maxTotalThreadsPerThreadgroup > 0)
+
+    // Scalar router F32 matvec: original geometry vs derived group geometry
+    // with the SAME original pipeline. Because the per-row loop arithmetic
+    // is identical, results must be bit-exact on ALL rows, including row
+    // tails and the exact-cancellation row.
+    do {
+        let width = 2816
+        let rows = 128
+        var rng = SplitMix64(seed: 0x524F_5554_4552)
+        var weights = (0..<(rows * width)).map { _ in rng.nextUniform() * 2 - 1 }
+        var input = (0..<width).map { _ in rng.nextUniform() * 2 - 1 }
+        // Cancellation row: sequential sum returns to exactly +0.0 every pair.
+        input[0] = 1.0
+        input[1] = 1.0
+        weights[0] = 0.5
+        weights[1] = -0.5
+        for i in 2..<width { weights[i] = 0 }
+
+        let wBytes = try RouterResidencyGeometry.byteSpan(elementCount: rows * width)
+        let xBytes = try RouterResidencyGeometry.byteSpan(elementCount: width)
+        let yBytes = try RouterResidencyGeometry.byteSpan(elementCount: rows)
+        guard let wbuf = device.makeBuffer(bytes: weights, length: wBytes, options: .storageModeShared),
+              let xbuf = device.makeBuffer(bytes: input, length: xBytes, options: .storageModeShared),
+              let yOriginal = device.makeBuffer(length: yBytes, options: .storageModeShared),
+              let yDerived = device.makeBuffer(length: yBytes, options: .storageModeShared) else {
+            check("router residency: matvec buffers allocated", false)
+            return
+        }
+
+        var p = SIMD2<UInt32>(UInt32(width), UInt32(rows))
+        var wOff: UInt64 = 0
+        let tew = matvec.threadExecutionWidth
+        let maxThreads = matvec.maxTotalThreadsPerThreadgroup
+        check("router residency: matvec threadExecutionWidth positive", tew > 0)
+        check("router residency: matvec maxTotalThreadsPerThreadgroup positive", maxThreads > 0)
+
+        func runMatvec(_ y: MTLBuffer, threadsPerGroup: Int) {
+            memset(y.contents(), 0xFF, yBytes)
+            let cb = queue.makeCommandBuffer()!
+            let enc = cb.makeComputeCommandEncoder()!
+            enc.setComputePipelineState(matvec)
+            enc.setBytes(&p, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
+            enc.setBytes(&wOff, length: MemoryLayout<UInt64>.stride, index: 1)
+            enc.setBuffer(wbuf, offset: 0, index: 2)
+            enc.setBuffer(xbuf, offset: 0, index: 3)
+            enc.setBuffer(y, offset: 0, index: 4)
+            // dispatchThreadgroups takes the number of GROUPS, not padded
+            // total threads; passing gridThreads would over-launch by a
+            // factor of threadsPerGroup.
+            let grid = MTLSize(
+                width: try! RouterResidencyGeometry.groupCount(rows: rows,
+                                                               threadsPerGroup: threadsPerGroup),
+                height: 1, depth: 1)
+            enc.dispatchThreadgroups(
+                grid,
+                threadsPerThreadgroup: MTLSize(width: threadsPerGroup, height: 1, depth: 1))
+            enc.endEncoding()
+            cb.commit()
+            cb.waitUntilCompleted()
+            check("router residency: matvec command completed without error",
+                  cb.status == .completed && cb.error == nil)
+        }
+
+        let originalThreads = min(rows, maxThreads)
+        runMatvec(yOriginal, threadsPerGroup: originalThreads)
+        let referencePtr = yOriginal.contents().assumingMemoryBound(to: Float.self)
+        let referenceBits = (0..<rows).map { referencePtr[$0].bitPattern }
+
+        for divisor in [1, 2, 4, 8] {
+            guard let threads = try RouterResidencyGeometry.scalarRouterThreads(
+                divisor: divisor,
+                threadExecutionWidth: tew,
+                maxTotalThreadsPerThreadgroup: maxThreads,
+                outputRows: rows) else {
+                check("router residency: derived threads for divisor \(divisor)", false)
+                continue
+            }
+            runMatvec(yDerived, threadsPerGroup: threads)
+            let derivedPtr = yDerived.contents().assumingMemoryBound(to: Float.self)
+            var allExact = true
+            var firstMismatch = -1
+            for r in 0..<rows where derivedPtr[r].bitPattern != referenceBits[r] {
+                allExact = false
+                if firstMismatch < 0 { firstMismatch = r }
+            }
+            check("router residency: matvec divisor \(divisor) "
+                + "(tew/\(divisor) = \(threads) threads) bit-exact vs original geometry "
+                + "across all 128 rows incl. tails and cancellation",
+                  allExact)
+            if !allExact { print("  first differing row: \(firstMismatch)") }
+        }
+
+        // Independent FP64 oracle: bounds gross numerical error of the
+        // single-geometry accumulation itself (bit-exactness above is
+        // strictly between geometries of the same pipeline).
+        let oracle = (0..<rows).map { r -> Float in
+            var s = 0.0
+            for i in 0..<width { s += Double(weights[r * width + i]) * Double(input[i]) }
+            return Float(s)
+        }
+        let reference = (0..<rows).map { referencePtr[$0] }
+        check("router residency: matvec matches independent FP64 oracle",
+              zip(reference, oracle).allSatisfy { y, o in
+                  y.isNaN && o.isNaN
+                      || abs(Double(y) - Double(o)) <= abs(Double(o)) * 1e-5 + 1e-37
+              })
+        checkEqual("router residency: cancellation row is exactly +0.0",
+                   referenceBits[0], UInt32(0))
+    } catch {
+        check("router residency: matvec geometry bit-exactness", false)
+    }
+
+    // Second router scale kernel vs original g4_scale followed by the host
+    // Float multiply. The GPU performs two ordered, unfused rounds
+    // (g4_scale, then g4_router_scale, precise compile options); the CPU
+    // reference performs the identical two Float multiplies per element.
+    // Bit-exactness is required for all supported cases, including the
+    // subnormal boundary. Apple's docs state mathMode .safe prevents
+    // transformations affecting results but do NOT promise GPU denormal
+    // behavior: if the subnormal slot mismatches on hardware, that failure
+    // is preserved here (the bit criteria are never weakened) and a
+    // conservative explicit guard must be added before runtime integration.
+    let interestingScales: [Float] = [0.5, -2.0, -1.0, 3.0, 1e-30, 6.55e4, 2.9e38, 1.0]
+    for width in [256, 704, 2816] {
+        var rng = SplitMix64(seed: UInt64(width) &* 0x9E37_79B9_7F4A_7C15)
+        var x = (0..<width).map { _ in rng.nextUniform() * 2 - 1 }
+        x[0] = 0.0                            // signed zero, positive
+        x[1] = -0.0                           // signed zero, negative
+        x[2] = Float.leastNonzeroMagnitude    // subnormal boundary
+        x[3] = 3.0e38                         // large: large finite scale -> inf bits
+        x[4] = 1e-7                           // first round stays normal; the tiny
+                                               // scale at slot 4 (1e-30) drives the
+                                               // SECOND round subnormal, exercising
+                                               // the second-multiply underflow path
+        x[5] = -1.0                           // cancellation via scale -1
+        let scales = (0..<width).map { interestingScales[$0 % interestingScales.count] }
+        let g4Factor = Float(1.0 / (2816.0).squareRoot())  // original first factor
+
+        // Host reference is built below from the ACTUAL GPU output of the
+        // original first-scale dispatch: one exact Float multiply per
+        // element, never fused.
+
+        // Guarded tail: sentinel elements beyond n must stay untouched
+        // (kernel bounds check gid >= n).
+        let paddedCount = width + 8
+        var paddedX = x
+        paddedX.append(contentsOf: [Float](repeating: .nan, count: 8))
+
+        let scaleOffset = 256  // float-aligned offset inside the wbase buffer
+        var wbaseBytes = [UInt8](repeating: 0, count: scaleOffset + width * 4)
+        scales.withUnsafeBytes { src in
+            wbaseBytes.replaceSubrange(scaleOffset..<(scaleOffset + width * 4), with: src)
+        }
+
+        guard let xbuf = device.makeBuffer(bytes: paddedX,
+                                            length: paddedCount * 4,
+                                            options: .storageModeShared),
+              let wbase = device.makeBuffer(bytes: wbaseBytes,
+                                            length: wbaseBytes.count,
+                                            options: .storageModeShared) else {
+            check("router residency: scale buffers for width \(width)", false)
+            return
+        }
+
+        var n = UInt32(width)
+        var c = g4Factor
+        var off = UInt64(try! RouterResidencyGeometry.checkedScaleOffset(scaleOffset))
+        let scaleThreads = min(128, routerScale.maxTotalThreadsPerThreadgroup)
+        // dispatchThreadgroups takes GROUP counts, not padded total threads.
+        // 704 rows with 128-thread groups yields 6 groups (768 padded
+        // threads), exercising the gid >= n tail guard directly.
+        let groups = try! RouterResidencyGeometry.groupCount(rows: width,
+                                                             threadsPerGroup: scaleThreads)
+        let grid = MTLSize(width: groups, height: 1, depth: 1)
+        let group = MTLSize(width: scaleThreads, height: 1, depth: 1)
+        let gpu = xbuf.contents().assumingMemoryBound(to: Float.self)
+
+        // Round 1 alone on the ORIGINAL pipeline (compiled with options
+        // nil, exactly as production): snapshot its actual GPU output.
+        let firstCB = queue.makeCommandBuffer()!
+        let firstEnc = firstCB.makeComputeCommandEncoder()!
+        firstEnc.setComputePipelineState(g4Scale)
+        firstEnc.setBytes(&n, length: MemoryLayout<UInt32>.size, index: 0)
+        firstEnc.setBuffer(xbuf, offset: 0, index: 1)
+        firstEnc.setBytes(&c, length: MemoryLayout<Float>.size, index: 2)
+        firstEnc.dispatchThreadgroups(grid, threadsPerThreadgroup: group)
+        firstEnc.endEncoding()
+        firstCB.commit()
+        firstCB.waitUntilCompleted()
+        check("router residency: width \(width) first-scale command completed without error",
+              firstCB.status == .completed && firstCB.error == nil)
+        let snapshot = (0..<width).map { gpu[$0].bitPattern }
+
+        // CPU reference: one exact Float multiply per element on the actual
+        // GPU first-scale output — the identical second round, never fused.
+        var hostBits = [UInt32](repeating: 0, count: width)
+        for i in 0..<width {
+            hostBits[i] = (Float(bitPattern: snapshot[i]) * scales[i]).bitPattern
+        }
+
+        // Restore the ORIGINAL initial input (including NaN tail
+        // sentinels), then run round 1 + round 2 in one ordered command.
+        paddedX.withUnsafeBytes { src in
+            memcpy(xbuf.contents(), src.baseAddress, paddedCount * 4)
+        }
+
+        let cb = queue.makeCommandBuffer()!
+        let enc = cb.makeComputeCommandEncoder()!
+        // Round 1: ORIGINAL g4_scale kernel, its own ordered dispatch.
+        enc.setComputePipelineState(g4Scale)
+        enc.setBytes(&n, length: MemoryLayout<UInt32>.size, index: 0)
+        enc.setBuffer(xbuf, offset: 0, index: 1)
+        enc.setBytes(&c, length: MemoryLayout<Float>.size, index: 2)
+        enc.dispatchThreadgroups(grid, threadsPerThreadgroup: group)
+        // Round 2: router residency kernel — second factor only, same
+        // command buffer, strictly after round 1 (never fused).
+        enc.setComputePipelineState(routerScale)
+        enc.setBytes(&n, length: MemoryLayout<UInt32>.size, index: 0)
+        enc.setBuffer(xbuf, offset: 0, index: 1)
+        enc.setBuffer(wbase, offset: 0, index: 2)
+        enc.setBytes(&off, length: MemoryLayout<UInt64>.size, index: 3)
+        enc.dispatchThreadgroups(grid, threadsPerThreadgroup: group)
+        enc.endEncoding()
+        cb.commit()
+        cb.waitUntilCompleted()
+        check("router residency: width \(width) combined command completed without error",
+              cb.status == .completed && cb.error == nil)
+        var mismatchCount = 0
+        var first: (Int, UInt32, UInt32)?
+        for i in 0..<width {
+            let got = gpu[i].bitPattern
+            if got != hostBits[i] {
+                mismatchCount += 1
+                if first == nil { first = (i, got, hostBits[i]) }
+            }
+        }
+        check("router residency: second-scale width \(width) bit-exact vs "
+            + "original g4_scale + host multiply (weighted +/- finite, signed zero, "
+            + "small/large/cancellation, subnormal boundary)",
+              mismatchCount == 0)
+        if let (i, got, want) = first {
+            print("  width \(width): first mismatch at \(i): "
+                + "gpu 0x\(String(got, radix: 16)) host 0x\(String(want, radix: 16)) "
+                + "— if this is the subnormal slot, GPU denormal flush behavior "
+                + "explains it; preserve the failure and add a conservative guard "
+                + "before runtime integration")
+        }
+        var tailOK = true
+        for i in width..<paddedCount where gpu[i].bitPattern != Float.nan.bitPattern {
+            tailOK = false
+        }
+        check("router residency: width \(width) guarded tail untouched beyond n", tailOK)
+    }
+}
+
+@MainActor
+func routerResidentZeroHardwareChecks(device: MTLDevice, queue: MTLCommandQueue) {
+    // The zero kernel lives in the SAME source library and builds through
+    // the parameterized makePipeline(name:) helper (default still resolves
+    // the second-scale kernel).
+    guard let library = try? device.makeLibrary(
+              source: RouterResidencyKernel.source,
+              options: RouterResidencyKernel.makeCompileOptions()),
+          let zeroFunction = library.makeFunction(
+              name: RouterResidencyKernel.zeroKernelName) else {
+        check("router residency: zero kernel found in source library", false)
+        return
+    }
+    guard let zeroPipeline = try? device.makeComputePipelineState(function: zeroFunction),
+          let namedPipeline = try? RouterResidencyKernel.makePipeline(
+              name: RouterResidencyKernel.zeroKernelName, device: device),
+          let defaultPipeline = try? RouterResidencyKernel.makePipeline(device: device) else {
+        check("router residency: zero/scale pipelines via makePipeline(name:)", false)
+        return
+    }
+    check("router residency: makePipeline default name resolves the scale kernel",
+          defaultPipeline.threadExecutionWidth > 0
+              && defaultPipeline.maxTotalThreadsPerThreadgroup > 0)
+    check("router residency: zero pipeline caps positive",
+          zeroPipeline.threadExecutionWidth > 0
+              && namedPipeline.maxTotalThreadsPerThreadgroup > 0)
+
+    // Ordered dependency + exact bit pattern: ONE command buffer runs a
+    // PRIOR GPU write (the second-scale kernel with finite inputs and a
+    // 1.0 scale, so values stay finite) and THEN the zero kernel; the
+    // zero must observe the earlier write and overwrite every element
+    // with exact +0.0 bits, while the guarded tail beyond n keeps its
+    // sentinel NaN bits.
+    let n = 300
+    let padded = n + 13
+    guard let buf = device.makeBuffer(length: padded * 4, options: .storageModeShared),
+          let scaleBytes = device.makeBuffer(length: n * 4, options: .storageModeShared) else {
+        check("router residency: zero buffers allocated", false)
+        return
+    }
+    var initial = (0..<padded).map { i -> Float in i % 2 == 0 ? 1.5 : -2.5 }
+    initial.replaceSubrange(n..<padded, with: [Float](repeating: .nan, count: 13))
+    let scales = [Float](repeating: 1.0, count: n)
+    memcpy(buf.contents(), initial, padded * 4)
+    scales.withUnsafeBytes { raw in
+        memcpy(scaleBytes.contents(), raw.baseAddress!, n * 4)
+    }
+
+    var count = UInt32(n)
+    var off = UInt64(0)
+    let threads = min(128, zeroPipeline.maxTotalThreadsPerThreadgroup)
+    let groups = try! RouterResidencyGeometry.groupCount(rows: n, threadsPerGroup: threads)
+    let grid = MTLSize(width: groups, height: 1, depth: 1)
+    let group = MTLSize(width: threads, height: 1, depth: 1)
+    let cb = queue.makeCommandBuffer()!
+    let enc = cb.makeComputeCommandEncoder()!
+    // Prior GPU write in the SAME command buffer (ordered before zero).
+    enc.setComputePipelineState(defaultPipeline)
+    enc.setBytes(&count, length: MemoryLayout<UInt32>.size, index: 0)
+    enc.setBuffer(buf, offset: 0, index: 1)
+    enc.setBuffer(scaleBytes, offset: 0, index: 2)
+    enc.setBytes(&off, length: MemoryLayout<UInt64>.size, index: 3)
+    enc.dispatchThreadgroups(grid, threadsPerThreadgroup: group)
+    // Consumer-visible reset: zero kernel strictly after the write above.
+    enc.setComputePipelineState(zeroPipeline)
+    enc.setBytes(&count, length: MemoryLayout<UInt32>.size, index: 0)
+    enc.setBuffer(buf, offset: 0, index: 1)
+    enc.dispatchThreadgroups(grid, threadsPerThreadgroup: group)
+    enc.endEncoding()
+    cb.commit()
+    cb.waitUntilCompleted()
+    check("router residency: zero command completed without error",
+          cb.status == .completed && cb.error == nil)
+    let ptr = buf.contents().assumingMemoryBound(to: Float.self)
+    check("router residency: zero kernel writes exact +0.0 bits for all n",
+          (0..<n).allSatisfy { ptr[$0].bitPattern == 0 })
+    check("router residency: zero kernel leaves guarded tail untouched",
+          (n..<padded).allSatisfy { ptr[$0].bitPattern == Float.nan.bitPattern })
+}
+
+@MainActor
+func routerSecondScaleSubnormalHardwareChecks(device: MTLDevice, queue: MTLCommandQueue) {
+    // Direct hardware bit-exactness for the second-scale multiply on the
+    // cases the raw GPU multiply gets wrong on M1Max (subnormal flush):
+    // normal->subnormal products, signed subnormal inputs/outputs, and
+    // round-to-nearest ties-even at the zero and min-normal boundaries.
+    // Expected bits come from the host Scalar Float multiply, which keeps
+    // gradual underflow and ties-to-even. One case exercises the retained
+    // hardware path at the min-normal boundary to pin its exactness too.
+    struct Case { let a: Float; let s: Float; let label: String }
+    let cases: [Case] = [
+        Case(a: 1.0, s: 1e-40, label: "normal * subnormal scale -> subnormal"),
+        Case(a: 1e-20, s: 1e-20, label: "normal * normal -> subnormal"),
+        Case(a: Float.leastNonzeroMagnitude, s: 1.0, label: "subnormal passthrough"),
+        Case(a: -Float.leastNonzeroMagnitude, s: 1.0, label: "negative subnormal passthrough"),
+        Case(a: Float.leastNonzeroMagnitude, s: -1.0, label: "subnormal in, signed subnormal out"),
+        Case(a: 0.0, s: -1e-30, label: "+0.0 * negative scale -> -0.0"),
+        Case(a: -0.0, s: 1e-30, label: "-0.0 * positive scale -> -0.0"),
+        Case(a: 0.5, s: Float(bitPattern: 0x007F_FFFF),
+             label: "max subnormal halved: tie rounds up to even"),
+        Case(a: 0.5, s: Float(bitPattern: 0x0040_0001),
+             label: "tie below min normal stays even"),
+        Case(a: 0.5, s: Float(bitPattern: 0x0040_0003),
+             label: "just above the tie rounds up"),
+        Case(a: 0.5, s: Float(bitPattern: 0x0000_0001),
+             label: "tie at zero rounds to +0.0"),
+        Case(a: -0.5, s: Float(bitPattern: 0x0000_0001),
+             label: "tie at zero rounds to -0.0"),
+        Case(a: 0.5, s: Float(bitPattern: 0x0000_0003),
+             label: "tie one above zero rounds up to 2 ulp"),
+        Case(a: 1.0, s: Float(bitPattern: 0x0080_0001),
+             label: "normal pair tie at min-normal boundary (hardware path)"),
+        // Hand-derived exact-bit double-rounding exposures. Operand bits
+        // 0x4955555D * 0x00000003 give the exact 26/27-bit product
+        // 67108887 = 4194305*16 + 7, i.e. 4194305.4375 units of 2^-149.
+        // One direct RNE yields 0x400001; rounding to 24 bits first
+        // (8388610.875 -> 8388611) then to subnormal bits ties 4194305 up
+        // to 0x400002, so any double rounding fails these bit comparisons.
+        Case(a: Float(bitPattern: 0x4955_5555), s: Float(bitPattern: 0x0000_0003),
+             label: "exact product 4194303.9375 ulp rounds once up to 0x00400000"),
+        Case(a: Float(bitPattern: 0x4955_555D), s: Float(bitPattern: 0x0000_0003),
+             label: "exact product 4194305.4375 ulp rounds once down to 0x00400001"),
+        Case(a: Float(bitPattern: 0xC955_555D), s: Float(bitPattern: 0x0000_0003),
+             label: "negative twin keeps sign through single subnormal round")
+    ]
+    // Deterministic boundary sweep: normal*normal pairs whose exact
+    // products land in every subnormal result binade from 2^-126 down to
+    // 2^-149, jittered across each binade boundary. Expected bits are the
+    // host Scalar Float multiply — a single IEEE RNE with gradual
+    // underflow — so any double rounding in the kernel shows up here.
+    var rng: UInt64 = 0x9E37_79B9_7F4A_7C15
+    var xs = cases.map { $0.a }
+    var ss = cases.map { $0.s }
+    var expected = cases.map { ($0.a * $0.s).bitPattern }
+    for t in -149...(-126) {
+        for _ in 0..<16 {
+            rng = rng &* 6364136223846793005 &+ 1442695040888963407
+            let ma = UInt32((rng >> 40) & 0x7F_FFFF)
+            rng = rng &* 6364136223846793005 &+ 1442695040888963407
+            let ms = UInt32((rng >> 40) & 0x7F_FFFF)
+            rng = rng &* 6364136223846793005 &+ 1442695040888963407
+            let jitter = Int((rng >> 60) % 3) - 1
+            // ea = 40 fixed; es aimed so the 47-bit product's unbiased
+            // exponent lands on t; jitter straddles the binade edge.
+            let es = t + 214 + jitter
+            let a = Float(bitPattern: (UInt32(40) << 23) | ma)
+            let s = Float(bitPattern: (UInt32(es) << 23) | ms)
+            xs.append(a)
+            ss.append(s)
+            expected.append((a * s).bitPattern)
+        }
+    }
+    let n = xs.count
+    guard let pipeline = try? RouterResidencyKernel.makePipeline(device: device),
+          let xbuf = device.makeBuffer(bytes: xs, length: n * 4, options: .storageModeShared),
+          let sbuf = device.makeBuffer(bytes: ss, length: n * 4, options: .storageModeShared) else {
+        check("router residency: subnormal-case pipeline + buffers allocated", false)
+        return
+    }
+    var count = UInt32(n)
+    var off = UInt64(0)
+    let threads = min(128, pipeline.maxTotalThreadsPerThreadgroup)
+    let groups = try! RouterResidencyGeometry.groupCount(rows: n, threadsPerGroup: threads)
+    let grid = MTLSize(width: groups, height: 1, depth: 1)
+    let group = MTLSize(width: threads, height: 1, depth: 1)
+    let cb = queue.makeCommandBuffer()!
+    let enc = cb.makeComputeCommandEncoder()!
+    enc.setComputePipelineState(pipeline)
+    enc.setBytes(&count, length: MemoryLayout<UInt32>.size, index: 0)
+    enc.setBuffer(xbuf, offset: 0, index: 1)
+    enc.setBuffer(sbuf, offset: 0, index: 2)
+    enc.setBytes(&off, length: MemoryLayout<UInt64>.size, index: 3)
+    enc.dispatchThreadgroups(grid, threadsPerThreadgroup: group)
+    enc.endEncoding()
+    cb.commit()
+    cb.waitUntilCompleted()
+    check("router residency: subnormal-case command completed without error",
+          cb.status == .completed && cb.error == nil)
+    let gpu = xbuf.contents().assumingMemoryBound(to: Float.self)
+    for i in 0..<n {
+        let label = i < cases.count ? cases[i].label : "sweep \(i - cases.count)"
+        check("router residency: subnormal case \(i) \(label) bit-exact",
+              gpu[i].bitPattern == expected[i])
+    }
+}
+
+routerResidencyPureChecks()
+if let routerDevice = MTLCreateSystemDefaultDevice(),
+   let routerQueue = routerDevice.makeCommandQueue() {
+    routerResidencyHardwareChecks(device: routerDevice, queue: routerQueue)
+    routerSecondScaleSubnormalHardwareChecks(device: routerDevice, queue: routerQueue)
+    routerResidentZeroHardwareChecks(device: routerDevice, queue: routerQueue)
+} else {
+    check("router residency: Metal device + queue available", false)
+}
 
 // MARK: - Intra-block SIMD-reduction Q6_K matvec vs FP64 oracle (ACTUAL runtime shader)
 
@@ -6079,6 +6693,54 @@ do {
     let legacyNoSR = "{\"segmentBatching\":true,\"top5Diagnostic\":false,\"matvecTiledQ4\":false,\"matvecTiledQ6\":false,\"rmsnormTiled\":false,\"matvecTiledF32\":false,\"vectorizedLoads\":false,\"gpuCacheAppend\":false,\"parallelAttention\":false,\"rmsnormCooperative\":false,\"matvecCooperativeQ6\":false}"
     check("legacy artifact without rmsStatisticsReuse rejected",
           (try? dec.decode(GemmaForgeCandidate.self, from: Data(legacyNoSR.utf8))) == nil)
+    // Router residency axes: explicit Codable keys, roundtrip, defaults,
+    // and missing-key rejection for legacy artifacts (fixtures carry ALL
+    // older fields INCLUDING rmsStatisticsReuse:false so the rejection is
+    // attributable to the missing router key alone).
+    let rr = GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                 vectorizedLoads: true, routerGPUResidency: true,
+                                 routerLaunchDivisor: 4)
+    let rrj = String(data: try enc.encode(rr), encoding: .utf8) ?? ""
+    check("routerGPUResidency JSON reflects true", rrj.contains("\"routerGPUResidency\":true"))
+    check("routerLaunchDivisor JSON reflects 4", rrj.contains("\"routerLaunchDivisor\":4"))
+    check("router residency candidate JSON roundtrip",
+          (try? dec.decode(GemmaForgeCandidate.self, from: enc.encode(rr))) == rr)
+    check("routerGPUResidency default false",
+          !GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false).routerGPUResidency)
+    checkEqual("routerLaunchDivisor default 0",
+               GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false).routerLaunchDivisor, 0)
+    let legacyNoRR = "{\"segmentBatching\":true,\"top5Diagnostic\":false,\"matvecTiledQ4\":false,\"matvecTiledQ6\":false,\"rmsnormTiled\":false,\"matvecTiledF32\":false,\"vectorizedLoads\":false,\"gpuCacheAppend\":false,\"parallelAttention\":false,\"rmsnormCooperative\":false,\"matvecCooperativeQ6\":false,\"rmsStatisticsReuse\":false}"
+    check("legacy artifact without routerGPUResidency rejected",
+          (try? dec.decode(GemmaForgeCandidate.self, from: Data(legacyNoRR.utf8))) == nil)
+    let legacyNoDiv = "{\"segmentBatching\":true,\"top5Diagnostic\":false,\"matvecTiledQ4\":false,\"matvecTiledQ6\":false,\"rmsnormTiled\":false,\"matvecTiledF32\":false,\"vectorizedLoads\":false,\"gpuCacheAppend\":false,\"parallelAttention\":false,\"rmsnormCooperative\":false,\"matvecCooperativeQ6\":false,\"rmsStatisticsReuse\":false,\"routerGPUResidency\":false}"
+    check("legacy artifact without routerLaunchDivisor rejected",
+          (try? dec.decode(GemmaForgeCandidate.self, from: Data(legacyNoDiv.utf8))) == nil)
+    // Router candidate legality (PURE, device-free): divisors restricted
+    // to {0,1,2,4,8}; nonzero requires routerGPUResidency and no tiled F32.
+    check("router divisor 0 candidate validates",
+          (try? GemmaForge.validateCandidate(GemmaForgeCandidate(
+              segmentBatching: true, top5Diagnostic: false, vectorizedLoads: true,
+              rmsnormCooperative: true, matvecCooperativeQ6: true,
+              rmsStatisticsReuse: true, routerGPUResidency: true,
+              routerLaunchDivisor: 0))) != nil)
+    check("router divisor 3 rejected",
+          (try? GemmaForge.validateCandidate(GemmaForgeCandidate(
+              segmentBatching: true, top5Diagnostic: false, vectorizedLoads: true,
+              rmsnormCooperative: true, matvecCooperativeQ6: true,
+              rmsStatisticsReuse: true, routerGPUResidency: true,
+              routerLaunchDivisor: 3))) == nil)
+    check("nonzero router divisor without residency rejected",
+          (try? GemmaForge.validateCandidate(GemmaForgeCandidate(
+              segmentBatching: true, top5Diagnostic: false, vectorizedLoads: true,
+              rmsnormCooperative: true, matvecCooperativeQ6: true,
+              rmsStatisticsReuse: true, routerLaunchDivisor: 1))) == nil)
+    check("nonzero router divisor with tiled F32 rejected",
+          (try? GemmaForge.validateCandidate(GemmaForgeCandidate(
+              segmentBatching: true, top5Diagnostic: false, matvecTiledF32: true,
+              vectorizedLoads: true, gpuCacheAppend: true, parallelAttention: true,
+              rmsnormCooperative: true, matvecCooperativeQ6: true,
+              rmsStatisticsReuse: true, routerGPUResidency: true,
+              routerLaunchDivisor: 2))) == nil)
     // Statistics candidate legality (PURE, device-free): legal only
     // with cooperative RMSNorm + vectorized loads and tiled RMSNorm
     // off; every incompatible combination is rejected.
@@ -6121,12 +6783,17 @@ do {
           shaStats.count == 64
           && shaStats.allSatisfy { ($0 >= "0" && $0 <= "9") || ($0 >= "a" && $0 <= "f") })
     let cands = GemmaForge.candidates()
-    checkEqual("bounded candidate count", cands.count, 27)
-    checkEqual("gpuCacheAppend candidates", cands.filter { $0.gpuCacheAppend }.count, 13)
-    checkEqual("parallelAttention candidates", cands.filter { $0.parallelAttention }.count, 12)
-    checkEqual("rmsnormCooperative candidates", cands.filter { $0.rmsnormCooperative }.count, 6)
-    checkEqual("matvecCooperativeQ6 candidates", cands.filter { $0.matvecCooperativeQ6 }.count, 3)
-    checkEqual("rmsStatisticsReuse candidates", cands.filter { $0.rmsStatisticsReuse }.count, 1)
+    checkEqual("bounded candidate count", cands.count, 32)
+    checkEqual("gpuCacheAppend candidates", cands.filter { $0.gpuCacheAppend }.count, 18)
+    checkEqual("parallelAttention candidates", cands.filter { $0.parallelAttention }.count, 17)
+    checkEqual("rmsnormCooperative candidates", cands.filter { $0.rmsnormCooperative }.count, 11)
+    checkEqual("matvecCooperativeQ6 candidates", cands.filter { $0.matvecCooperativeQ6 }.count, 8)
+    checkEqual("rmsStatisticsReuse candidates", cands.filter { $0.rmsStatisticsReuse }.count, 6)
+    checkEqual("routerGPUResidency candidates", cands.filter { $0.routerGPUResidency }.count, 5)
+    checkEqual("nonzero routerLaunchDivisor candidates",
+               cands.filter { $0.routerLaunchDivisor != 0 }.count, 4)
+    check("no legal candidate combines nonzero routerLaunchDivisor with matvecTiledF32",
+          !cands.contains { $0.routerLaunchDivisor != 0 && $0.matvecTiledF32 })
     check("no legal candidate enables rmsStatisticsReuse and rmsnormTiled together",
           !cands.contains { $0.rmsStatisticsReuse && $0.rmsnormTiled })
     check("every bounded candidate passes validateCandidate",
@@ -6139,7 +6806,9 @@ do {
           && !cands[0].parallelAttention && !cands[1].parallelAttention
           && !cands[0].rmsnormCooperative && !cands[1].rmsnormCooperative
           && !cands[0].matvecCooperativeQ6 && !cands[1].matvecCooperativeQ6
-          && !cands[0].rmsStatisticsReuse && !cands[1].rmsStatisticsReuse)
+          && !cands[0].rmsStatisticsReuse && !cands[1].rmsStatisticsReuse
+          && !cands[0].routerGPUResidency && !cands[1].routerGPUResidency
+          && cands[0].routerLaunchDivisor == 0 && cands[1].routerLaunchDivisor == 0)
 } catch {
     failed += 1
     print("FAIL cache-append candidate JSON: \(error)")

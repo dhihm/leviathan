@@ -1,0 +1,322 @@
+{
+  "dispatchesPerArm" : 64,
+  "inDim" : 2816,
+  "maxThreads" : 1024,
+  "outRows" : 128,
+  "records" : [
+    {
+      "bitExact" : true,
+      "groups" : 1,
+      "round" : 1,
+      "threads" : 128,
+      "timing" : {
+        "encodeMicros" : 29.4169921875,
+        "gpuMicros" : 26593.208312988281,
+        "wallMicros" : 26905.125
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 4,
+      "round" : 1,
+      "threads" : 32,
+      "timing" : {
+        "encodeMicros" : 21.958984375,
+        "gpuMicros" : 18809.875007718801,
+        "wallMicros" : 19645.7919921875
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 8,
+      "round" : 1,
+      "threads" : 16,
+      "timing" : {
+        "encodeMicros" : 54.541015625,
+        "gpuMicros" : 18266.416620463133,
+        "wallMicros" : 19032.5830078125
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 16,
+      "round" : 1,
+      "threads" : 8,
+      "timing" : {
+        "encodeMicros" : 56.6669921875,
+        "gpuMicros" : 18485.249951481819,
+        "wallMicros" : 21393.7919921875
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 32,
+      "round" : 1,
+      "threads" : 4,
+      "timing" : {
+        "encodeMicros" : 50.375,
+        "gpuMicros" : 18723.625224083662,
+        "wallMicros" : 19052.9580078125
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 32,
+      "round" : 2,
+      "threads" : 4,
+      "timing" : {
+        "encodeMicros" : 25.2080078125,
+        "gpuMicros" : 18486.916553229094,
+        "wallMicros" : 18758.041015625
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 16,
+      "round" : 2,
+      "threads" : 8,
+      "timing" : {
+        "encodeMicros" : 17.4169921875,
+        "gpuMicros" : 18472.416326403618,
+        "wallMicros" : 19926.5419921875
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 8,
+      "round" : 2,
+      "threads" : 16,
+      "timing" : {
+        "encodeMicros" : 23.8330078125,
+        "gpuMicros" : 18498.999997973442,
+        "wallMicros" : 19747.5830078125
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 4,
+      "round" : 2,
+      "threads" : 32,
+      "timing" : {
+        "encodeMicros" : 328.125,
+        "gpuMicros" : 18782.749772071838,
+        "wallMicros" : 21989.4169921875
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 1,
+      "round" : 2,
+      "threads" : 128,
+      "timing" : {
+        "encodeMicros" : 56.5830078125,
+        "gpuMicros" : 26292.999740689993,
+        "wallMicros" : 27014.041015625
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 1,
+      "round" : 3,
+      "threads" : 128,
+      "timing" : {
+        "encodeMicros" : 50.5830078125,
+        "gpuMicros" : 26409.000158309937,
+        "wallMicros" : 26795.0830078125
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 4,
+      "round" : 3,
+      "threads" : 32,
+      "timing" : {
+        "encodeMicros" : 21.2080078125,
+        "gpuMicros" : 18552.250228822231,
+        "wallMicros" : 18799.166015625
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 8,
+      "round" : 3,
+      "threads" : 16,
+      "timing" : {
+        "encodeMicros" : 25.9169921875,
+        "gpuMicros" : 18162.624910473824,
+        "wallMicros" : 18721.5
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 16,
+      "round" : 3,
+      "threads" : 8,
+      "timing" : {
+        "encodeMicros" : 58.5419921875,
+        "gpuMicros" : 18554.000183939934,
+        "wallMicros" : 22720.6669921875
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 32,
+      "round" : 3,
+      "threads" : 4,
+      "timing" : {
+        "encodeMicros" : 72.5,
+        "gpuMicros" : 18386.333715170622,
+        "wallMicros" : 20767.5419921875
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 32,
+      "round" : 4,
+      "threads" : 4,
+      "timing" : {
+        "encodeMicros" : 61.041015625,
+        "gpuMicros" : 18184.91704761982,
+        "wallMicros" : 21532.5
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 16,
+      "round" : 4,
+      "threads" : 8,
+      "timing" : {
+        "encodeMicros" : 57.2919921875,
+        "gpuMicros" : 18308.708444237709,
+        "wallMicros" : 22057.75
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 8,
+      "round" : 4,
+      "threads" : 16,
+      "timing" : {
+        "encodeMicros" : 23.041015625,
+        "gpuMicros" : 18436.99999153614,
+        "wallMicros" : 22610.8330078125
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 4,
+      "round" : 4,
+      "threads" : 32,
+      "timing" : {
+        "encodeMicros" : 60.625,
+        "gpuMicros" : 18359.291832894087,
+        "wallMicros" : 20782.75
+      }
+    },
+    {
+      "bitExact" : true,
+      "groups" : 1,
+      "round" : 4,
+      "threads" : 128,
+      "timing" : {
+        "encodeMicros" : 56,
+        "gpuMicros" : 26518.750004470348,
+        "wallMicros" : 34572.875
+      }
+    }
+  ],
+  "scope" : "Isolated existing F32router pipeline, actual layer0weight tensor, deterministic synthetic input. Same compiled shader\/pipeline\/ordered row sum, only threadgroup geometry changes. Two warmups\/arm,four alternating rounds,64dispatches\/arm. Not full-model or host-boundary attribution.",
+  "threadExecutionWidth" : 32,
+  "warmups" : [
+    {
+      "repetition" : 1,
+      "threads" : 128,
+      "timing" : {
+        "encodeMicros" : 1051.5419921875,
+        "gpuMicros" : 37182.958330959082,
+        "wallMicros" : 39866.375
+      }
+    },
+    {
+      "repetition" : 2,
+      "threads" : 128,
+      "timing" : {
+        "encodeMicros" : 27.5,
+        "gpuMicros" : 26974.250096827745,
+        "wallMicros" : 27915
+      }
+    },
+    {
+      "repetition" : 1,
+      "threads" : 32,
+      "timing" : {
+        "encodeMicros" : 20.75,
+        "gpuMicros" : 18668.000120669603,
+        "wallMicros" : 18947.6669921875
+      }
+    },
+    {
+      "repetition" : 2,
+      "threads" : 32,
+      "timing" : {
+        "encodeMicros" : 22.375,
+        "gpuMicros" : 18372.375052422285,
+        "wallMicros" : 18680.6669921875
+      }
+    },
+    {
+      "repetition" : 1,
+      "threads" : 16,
+      "timing" : {
+        "encodeMicros" : 17.6669921875,
+        "gpuMicros" : 18593.916669487953,
+        "wallMicros" : 19037.0419921875
+      }
+    },
+    {
+      "repetition" : 2,
+      "threads" : 16,
+      "timing" : {
+        "encodeMicros" : 26.0419921875,
+        "gpuMicros" : 18389.041535556316,
+        "wallMicros" : 19148.9169921875
+      }
+    },
+    {
+      "repetition" : 1,
+      "threads" : 8,
+      "timing" : {
+        "encodeMicros" : 23.5419921875,
+        "gpuMicros" : 18305.333331227303,
+        "wallMicros" : 20876
+      }
+    },
+    {
+      "repetition" : 2,
+      "threads" : 8,
+      "timing" : {
+        "encodeMicros" : 18.375,
+        "gpuMicros" : 18503.749743103981,
+        "wallMicros" : 20778
+      }
+    },
+    {
+      "repetition" : 1,
+      "threads" : 4,
+      "timing" : {
+        "encodeMicros" : 22.416015625,
+        "gpuMicros" : 18643.999937921762,
+        "wallMicros" : 18975.291015625
+      }
+    },
+    {
+      "repetition" : 2,
+      "threads" : 4,
+      "timing" : {
+        "encodeMicros" : 26.25,
+        "gpuMicros" : 18678.124994039536,
+        "wallMicros" : 18968.916015625
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "replacements": [
+    {
+      "path": "Sources/LeviathanCore/RouterResidency.swift",
+      "old": "            const ulong half = 1ul << (sh - 1);\n            if (rem > half || (rem == half && (m & 1u) != 0)) { m += 1u; }",
+      "new": "            const ulong midpoint = 1ul << (sh - 1);\n            if (rem > midpoint || (rem == midpoint && (m & 1u) != 0)) { m += 1u; }"
+    },
+    {
+      "path": "Sources/LeviathanCore/RouterResidency.swift",
+      "old": "            const ulong half = 1ul << (sh - 1);\n            if (rem > half || (rem == half && (sig & 1u) != 0)) { sig += 1u; }",
+      "new": "            const ulong midpoint = 1ul << (sh - 1);\n            if (rem > midpoint || (rem == midpoint && (sig & 1u) != 0)) { sig += 1u; }"
+    }
+  ]
+}

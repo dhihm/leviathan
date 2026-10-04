@@ -1,0 +1,53 @@
+{
+  "seed": 36,
+  "examples": [
+    {
+      "aBits": "0xc336aaa",
+      "scaleBits": "0x33784d5a",
+      "singleRNBits": "0x5702c5",
+      "doubleRNBits": "0x5702c6"
+    },
+    {
+      "aBits": "0x727e7b0",
+      "scaleBits": "0x38679b33",
+      "singleRNBits": "0x4bf3ed",
+      "doubleRNBits": "0x4bf3ee"
+    },
+    {
+      "aBits": "0x3a33b4ac",
+      "scaleBits": "0x54598d7",
+      "singleRNBits": "0x455aa9",
+      "doubleRNBits": "0x455aaa"
+    },
+    {
+      "aBits": "0x95e7c70",
+      "scaleBits": "0x368b81ed",
+      "singleRNBits": "0x793e7b",
+      "doubleRNBits": "0x793e7c"
+    },
+    {
+      "aBits": "0x7e48ab3",
+      "scaleBits": "0x37cca290",
+      "singleRNBits": "0x5b57d3",
+      "doubleRNBits": "0x5b57d4"
+    },
+    {
+      "aBits": "0x7c5a9be",
+      "scaleBits": "0x377050b4",
+      "singleRNBits": "0x2e635d",
+      "doubleRNBits": "0x2e635c"
+    },
+    {
+      "aBits": "0xac4c021",
+      "scaleBits": "0x34c20c69",
+      "singleRNBits": "0x4a9191",
+      "doubleRNBits": "0x4a9192"
+    },
+    {
+      "aBits": "0x7f746ca",
+      "scaleBits": "0x3766eeb3",
+      "singleRNBits": "0x37c40b",
+      "doubleRNBits": "0x37c40a"
+    }
+  ]
+}

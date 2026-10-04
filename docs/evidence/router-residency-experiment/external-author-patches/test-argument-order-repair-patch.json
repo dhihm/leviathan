@@ -1,0 +1,9 @@
+{
+  "replacements": [
+    {
+      "path": "Sources/leviathan-tests/main.swift",
+      "old": "              segmentBatching: true, top5Diagnostic: false, vectorizedLoads: true,\n              matvecTiledF32: true, gpuCacheAppend: true, parallelAttention: true,",
+      "new": "              segmentBatching: true, top5Diagnostic: false, matvecTiledF32: true,\n              vectorizedLoads: true, gpuCacheAppend: true, parallelAttention: true,"
+    }
+  ]
+}

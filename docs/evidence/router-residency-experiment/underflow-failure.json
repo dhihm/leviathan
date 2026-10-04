@@ -1,0 +1,16 @@
+{
+  "buildPassed": true,
+  "testsPassed": 1128,
+  "testsFailed": 3,
+  "widths": [
+    256,
+    704,
+    2816
+  ],
+  "firstMismatchIndex": 4,
+  "gpuBits": "0x00000000",
+  "cpuBits": "0x00148512",
+  "testCriteriaWeakened": false,
+  "productionTimingStarted": false,
+  "reference": "Original GPU first-scale output followed by one CPU Float multiply"
+}

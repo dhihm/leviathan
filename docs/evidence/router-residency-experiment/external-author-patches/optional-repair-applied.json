@@ -1,0 +1,9 @@
+{
+  "replacements": [
+    {
+      "path": "Sources/leviathan-tests/main.swift",
+      "old": "guard let derived = try RouterResidencyGeometry.scalarRouterThreads(\n                divisor: divisor,\n                threadExecutionWidth: tew,\n                maxTotalThreadsPerThreadgroup: maxThreads,\n                outputRows: rows),\n                let threads = derived else {",
+      "new": "guard let threads = try RouterResidencyGeometry.scalarRouterThreads(\n                divisor: divisor,\n                threadExecutionWidth: tew,\n                maxTotalThreadsPerThreadgroup: maxThreads,\n                outputRows: rows) else {"
+    }
+  ]
+}

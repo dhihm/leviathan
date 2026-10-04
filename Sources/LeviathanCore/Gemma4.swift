@@ -2503,7 +2503,46 @@ public final class Gemma4Runner {
             if type == .q4_0, tensor == q4GeneratedBoundTensor {
                 q4BoundTensorIncumbentDispatchCount += 1
             }
-            try dispatch(kernel, grid: outRows, bind)
+            // Router launch residency targets ONLY the canonical scalar
+            // router F32 matvec (float32, router tensor name, hidden x
+            // expertCount shape, aligned in-bounds y offset, compatible
+            // flags, nonzero divisor). It re-dispatches the SAME pipeline
+            // with the SAME bindings and per-row loop; only the threadgroup
+            // width derivation changes — no new kernel, no new arithmetic.
+            var ySpanOK = false
+            if let span = try? RouterResidencyGeometry.byteSpan(elementCount: outRows) {
+                let (yEnd, overflow) = yByteOffset.addingReportingOverflow(span)
+                ySpanOK = !overflow && yEnd >= 0 && yEnd <= y.length
+                    && yByteOffset % MemoryLayout<Float>.alignment == 0
+            }
+            let routerShaped = type == .float32
+                && tensor.hasSuffix("ffn_gate_inp.weight")
+                && inDim == config.hiddenSize
+                && outRows == config.expertCount
+            if routerShaped, routerGPUResidency, routerLaunchDivisor != 0,
+               !f32TiledKernel, ySpanOK,
+               let pipeline = pipelines[kernel],
+               let threads = try? RouterResidencyGeometry.scalarRouterThreads(
+                   divisor: routerLaunchDivisor,
+                   threadExecutionWidth: pipeline.threadExecutionWidth,
+                   maxTotalThreadsPerThreadgroup: pipeline.maxTotalThreadsPerThreadgroup,
+                   outputRows: outRows),
+               let groups = try? RouterResidencyGeometry.groupCount(
+                   rows: outRows, threadsPerGroup: threads) {
+                try dispatchPipeline(pipeline, name: kernel,
+                                     groups: groups, threads: threads, bind)
+                routerLaunchApplied += 1
+            } else {
+                // Only a router-shaped dispatch against a genuinely armed
+                // divisor counts a launch fallback. Divisor 0 is the
+                // intentionally original geometry (baseline, flag false),
+                // not a fallback, and never touches the counter; unrelated
+                // F32 matvecs never touch the router counters either.
+                if routerGPUResidency, routerLaunchDivisor != 0, routerShaped {
+                    routerLaunchFallback += 1
+                }
+                try dispatch(kernel, grid: outRows, bind)
+            }
         }
         // Per-tensor GPU attribution (exact in per-kernel mode; in
         // deferred-segment mode the whole segment's time lands on the
@@ -2949,6 +2988,137 @@ public final class Gemma4Runner {
         }
     }
 
+    // MARK: - Router residency (GPU second scale, resident zero, launch geometry)
+
+    /// Gated-executor arm flags (default off; reset after each run).
+    internal var routerGPUResidency = false
+    internal var routerLaunchDivisor = 0
+
+    /// Lazy precise-compiled pipeline for the second router scale multiply.
+    /// Kept OUTSIDE the shared `pipelines` dict: that dict is compiled with
+    /// default options and feeds engineIdentity via its keys; these private
+    /// pipelines use explicit precise options and are bound into the
+    /// identity explicitly instead. The lazy compile never mutates any
+    /// state the shared identity depends on.
+    private var routerScalePipeline: MTLComputePipelineState?
+    /// Lazy precise-compiled pipeline for the resident-expert zero reset.
+    private var routerZeroPipeline: MTLComputePipelineState?
+
+    /// Production router-residency counters (public read, internal write),
+    /// resettable between measurement runs.
+    public private(set) var routerScaleApplied = 0
+    public private(set) var routerScaleFallback = 0
+    public private(set) var residentZeroApplied = 0
+    public private(set) var residentZeroFallback = 0
+    public private(set) var routerLaunchApplied = 0
+    public private(set) var routerLaunchFallback = 0
+
+    public func resetRouterResidencyCounters() {
+        routerScaleApplied = 0
+        routerScaleFallback = 0
+        residentZeroApplied = 0
+        residentZeroFallback = 0
+        routerLaunchApplied = 0
+        routerLaunchFallback = 0
+    }
+
+    private func routerResidencyScalePipeline() -> MTLComputePipelineState? {
+        if let p = routerScalePipeline { return p }
+        // Precise compile options only for the NEW kernels; the original
+        // first-scale g4_scale pipeline stays on default options, untouched.
+        // A compile failure declines to the CPU fallback (counted), never
+        // throws decode.
+        routerScalePipeline = try? RouterResidencyKernel.makePipeline(device: device)
+        return routerScalePipeline
+    }
+
+    private func routerResidencyZeroPipeline() -> MTLComputePipelineState? {
+        if let p = routerZeroPipeline { return p }
+        routerZeroPipeline = try? RouterResidencyKernel.makePipeline(
+            name: RouterResidencyKernel.zeroKernelName, device: device)
+        return routerZeroPipeline
+    }
+
+    /// GPU round 2 of the router input scale: `h[i] *= routerScale[i]`
+    /// encoded on the private precise pipeline, appended to the SAME
+    /// ordered encoder stream. Returns true when encoded; false means the
+    /// caller must run the ORIGINAL CPU read/multiply/write round
+    /// unchanged. The first `g4_scale` round is dispatched separately by
+    /// the caller and is never fused with this one. Fallback is counted
+    /// only when the residency flag is armed.
+    internal func gpuRouterSecondScale(layer: Int, n: Int, x: MTLBuffer) throws -> Bool {
+        let armed = routerGPUResidency
+        func decline() -> Bool {
+            if armed { routerScaleFallback += 1 }
+            return false
+        }
+        guard armed, n > 0, layer >= 0, layer < routerScales.count,
+              routerScales[layer].count == n, n == config.hiddenSize,
+              let wb = weightsBuffer else { return decline() }
+        // Resolve the CURRENT per-layer scale tensor ref by its canonical
+        // dictionary name on EVERY call: weight-cache compaction remaps
+        // refs, so a cached offset/buffer would go stale. The scale is a
+        // per-layer F32 tensor of shape [hiddenSize, 1]; any ambiguity or
+        // unexpected geometry declines safely to the CPU fallback. No
+        // generic shape search, no layer slice offset, no cached offset.
+        guard let scaleRef = ref["blk.\(layer).ffn_gate_inp.scale"],
+              scaleRef.type == .float32,
+              scaleRef.inDim == n, scaleRef.outDim == 1,
+              scaleRef.experts == 1,
+              let span = try? RouterResidencyGeometry.byteSpan(elementCount: n),
+              let pipeline = routerResidencyScalePipeline() else { return decline() }
+        // Exact single-tensor span: end-offset must equal span with checked
+        // subtraction; offset+span must not overflow and must fit the buffer.
+        let (refSpan, spanUnderflow) = scaleRef.end.subtractingReportingOverflow(scaleRef.offset)
+        let (endOffset, endOverflow) = scaleRef.offset.addingReportingOverflow(span)
+        guard !spanUnderflow, !endOverflow, refSpan == span,
+              let offChecked = try? RouterResidencyGeometry.checkedScaleOffset(scaleRef.offset),
+              endOffset <= wb.length,
+              x.length >= span,
+              n <= Int(UInt32.max) else { return decline() }
+        var count = UInt32(n)
+        var off = UInt64(offChecked)
+        let threads = max(1, min(128, n, pipeline.maxTotalThreadsPerThreadgroup))
+        let groups = try RouterResidencyGeometry.groupCount(rows: n, threadsPerGroup: threads)
+        try dispatchPipeline(pipeline, name: RouterResidencyKernel.kernelName,
+                             groups: groups, threads: threads) { enc in
+            enc.setBytes(&count, length: MemoryLayout<UInt32>.stride, index: 0)
+            enc.setBuffer(x, offset: 0, index: 1)
+            enc.setBuffer(wb, offset: 0, index: 2)
+            enc.setBytes(&off, length: MemoryLayout<UInt64>.stride, index: 3)
+        }
+        routerScaleApplied += 1
+        return true
+    }
+
+    /// Bit-preserving resident-expert output reset: encode the uint32 zero
+    /// kernel on the SAME ordered encoder (no CPU mutation, no flush).
+    /// Armed only when the flag is set AND no expert cache is configured;
+    /// the cached path keeps its original flush/prefetch/memset sequence.
+    /// The caller has already validated layer bounds and buffer semantics;
+    /// the byte span is re-checked here.
+    internal func gpuRouterResidentZero(y: MTLBuffer, n: Int) throws -> Bool {
+        let armed = routerGPUResidency && expertCache == nil
+        func decline() -> Bool {
+            if armed { residentZeroFallback += 1 }
+            return false
+        }
+        guard armed, n > 0, n <= Int(UInt32.max),
+              let span = try? RouterResidencyGeometry.byteSpan(elementCount: n),
+              y.length >= span,
+              let pipeline = routerResidencyZeroPipeline() else { return decline() }
+        var count = UInt32(n)
+        let threads = max(1, min(128, n, pipeline.maxTotalThreadsPerThreadgroup))
+        let groups = try RouterResidencyGeometry.groupCount(rows: n, threadsPerGroup: threads)
+        try dispatchPipeline(pipeline, name: RouterResidencyKernel.zeroKernelName,
+                             groups: groups, threads: threads) { enc in
+            enc.setBytes(&count, length: MemoryLayout<UInt32>.stride, index: 0)
+            enc.setBuffer(y, offset: 0, index: 1)
+        }
+        residentZeroApplied += 1
+        return true
+    }
+
     // MARK: - CPU access to shared buffers
 
     internal func read(_ buffer: MTLBuffer, _ count: Int) throws -> [Float] {
@@ -3050,8 +3220,28 @@ public final class Gemma4Runner {
         // above — and is therefore unsafe and removed.
         let msl = SHA256.hex(SHA256.hash(Array(Self.shaderSource.utf8)))
         let candidates = GemmaForge.candidates()
-            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)/\($0.gpuCacheAppend)/\($0.parallelAttention)/\($0.rmsnormCooperative)/\($0.matvecCooperativeQ6)/\($0.rmsStatisticsReuse)" }
+            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)/\($0.gpuCacheAppend)/\($0.parallelAttention)/\($0.rmsnormCooperative)/\($0.matvecCooperativeQ6)/\($0.rmsStatisticsReuse)/\($0.routerGPUResidency)/\($0.routerLaunchDivisor)" }
             .sorted().joined(separator: ",")
+        // Router residency: explicit provenance of the private lazy
+        // pipelines (kept outside the shared pipelines dict) — source
+        // SHA, version, precise compile options — plus the launch
+        // geometry derivation version and the allowed divisor list.
+        // Persisted identity is compared BEFORE candidates are armed,
+        // so transient arm flags / the currently selected divisor MUST
+        // NOT alter identity. Bind only the immutable candidate set:
+        // the allowed divisor list, its derivation version, kernel
+        // source and compile options. Bound here per identity call;
+        // never hashed per token.
+        let routerResidencySuffix: String =
+            "|routerResidency=" + RouterResidencyKernel.kernelName
+            + ";zero=" + RouterResidencyKernel.zeroKernelName
+            + "@v\(RouterResidencyKernel.version)"
+            + "#\(RouterResidencyKernel.sourceSha256)"
+            + "|routerResidencyOptions=precise"
+            + "|routerLaunchDerivation=v1"
+            + "|routerLaunchDivisors="
+            + RouterResidencyKernel.allowedLaunchDivisors
+                .map(String.init).joined(separator: ",")
         return "gemma-graph-executor-v1|exe=" + (try Self.executableDigest())
             + "|msl=" + msl
             + "|pipelines=" + pipelines.keys.sorted().joined(separator: ",")
@@ -3080,6 +3270,7 @@ public final class Gemma4Runner {
             + "#\(RMSStatisticsKernels.sourceSha256())"
             + "|rmsStatsPlan=v\(RMSStatisticsPlan.analysisVersion)"
             + "|rmsStatsCand=\(GemmaForge.candidates().contains { $0.rmsStatisticsReuse } ? 1 : 0)"
+            + routerResidencySuffix
             + compositeLoweringIdentity()
     }
 
@@ -3389,11 +3580,17 @@ public final class Gemma4Runner {
         // * scale * hidden^-0.5, F32 router matvec, fp64 CPU softmax,
         // top-8 (ties -> lower index), renormalize, * per-expert QAT scale.
         try rmsnorm(x: bufX, y: bufH, n: hidden, vectors: 1, weightTensor: nil)
+        // Round 1 stays its own unconditional ordered g4_scale dispatch.
         try scaleInPlace(x: bufH, c: Float(1.0 / sqrt(Double(hidden))), n: hidden)
-        var routerIn = try read(bufH, hidden)
-        let routerScale = routerScales[layer]
-        for i in 0..<hidden { routerIn[i] *= routerScale[i] }
-        try write(routerIn, to: bufH)
+        // Round 2: GPU-encoded when the residency flag is armed and the
+        // helper validates; otherwise the ORIGINAL CPU element multiply
+        // runs unchanged (counted fallback).
+        if !(try gpuRouterSecondScale(layer: layer, n: hidden, x: bufH)) {
+            var routerIn = try read(bufH, hidden)
+            let routerScale = routerScales[layer]
+            for i in 0..<hidden { routerIn[i] *= routerScale[i] }
+            try write(routerIn, to: bufH)
+        }
         try matvec(tensor: prefix + "ffn_gate_inp.weight", x: bufH, xCount: hidden,
                    y: bufRouter, yCapacity: config.expertCount)
         let scores = try read(bufRouter, config.expertCount)
@@ -3424,10 +3621,18 @@ public final class Gemma4Runner {
         let guStride = gateUp.outDim * guBlocksPerRow * 18
         let dnBlocksPerRow = down.inDim / 32
         let dnStride = down.outDim * dnBlocksPerRow * 18
-        // Synchronous free-slots-only read-ahead of this layer's routed
-        // experts (cache mode only; never evicts, no async overlap).
-        try prefetchExperts(layer: layer, topIdx: topIdx)
-        memset(bufT3.contents(), 0, hidden * 4)   // MoE accumulator
+        // Resident-expert output reset: GPU zero in the SAME ordered
+        // encoder when armed (flag on, no expert cache); the successful
+        // resident path skips the CPU flush/prefetch/memset round, and the
+        // fallback preserves the original sequence exactly (the flush
+        // safely drains any pending GPU work before the CPU memset).
+        if !(try gpuRouterResidentZero(y: bufT3, n: hidden)) {
+            try flushOpenSegment()
+            // Synchronous free-slots-only read-ahead of this layer's routed
+            // experts (cache mode only; never evicts, no async overlap).
+            try prefetchExperts(layer: layer, topIdx: topIdx)
+            memset(bufT3.contents(), 0, hidden * 4)   // MoE accumulator
+        }
         if let installed = moeGenerated, expertCache == nil {
             // Phase-13 batched generated lowering (resident mode only):
             // chunked GU/ACT/DN dispatches + the SAME 8 ordered axpy

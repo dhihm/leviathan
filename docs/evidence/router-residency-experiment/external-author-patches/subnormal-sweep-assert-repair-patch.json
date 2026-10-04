@@ -1,0 +1,9 @@
+{
+  "replacements": [
+    {
+      "path": "Sources/leviathan-tests/main.swift",
+      "old": "    let gpu = xbuf.contents().assumingMemoryBound(to: Float.self)\n    for (i, c) in cases.enumerated() {\n        check(\"router residency: subnormal case \\(i) \\(c.label) bit-exact\",\n              gpu[i].bitPattern == expected[i])\n    }",
+      "new": "    let gpu = xbuf.contents().assumingMemoryBound(to: Float.self)\n    let n = xs.count\n    for i in 0..<n {\n        let label = i < cases.count ? cases[i].label : \"sweep \\(i - cases.count)\"\n        check(\"router residency: subnormal case \\(i) \\(label) bit-exact\",\n              gpu[i].bitPattern == expected[i])\n    }"
+    }
+  ]
+}

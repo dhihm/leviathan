@@ -1,0 +1,19 @@
+{
+  "replacements": [
+    {
+      "path": "Sources/LeviathanCore/Gemma4.swift",
+      "old": "        guard let scaleRef = ref.values[\"blk.\\(layer).ffn_gate_inp.scale\"],",
+      "new": "        guard let scaleRef = ref[\"blk.\\(layer).ffn_gate_inp.scale\"],"
+    },
+    {
+      "path": "Sources/LeviathanCore/Gemma4.swift",
+      "old": "        let (refSpan, spanUnderflow) = scaleRef.end.subtractReportingOverflow(by: scaleRef.offset)\n        let (endOffset, endOverflow) = scaleRef.offset.additionReportingOverflow(by: span)\n        guard !spanUnderflow, !endOverflow, refSpan == span,\n              let offChecked = try? RouterResidencyGeometry.checkedScaleOffset(scaleRef.offset),\n              endOffset <= wb.length,\n              n <= Int(UInt32.max) else { return decline() }",
+      "new": "        let (refSpan, spanUnderflow) = scaleRef.end.subtractingReportingOverflow(scaleRef.offset)\n        let (endOffset, endOverflow) = scaleRef.offset.addingReportingOverflow(span)\n        guard !spanUnderflow, !endOverflow, refSpan == span,\n              let offChecked = try? RouterResidencyGeometry.checkedScaleOffset(scaleRef.offset),\n              endOffset <= wb.length,\n              x.length >= span,\n              n <= Int(UInt32.max) else { return decline() }"
+    },
+    {
+      "path": "Sources/LeviathanCore/Gemma4.swift",
+      "old": "            + RouterResidencyGeometry.candidateDivisors\n                .map(String.init).joined(separator: \",\")",
+      "new": "            + RouterResidencyKernel.allowedLaunchDivisors\n                .map(String.init).joined(separator: \",\")"
+    }
+  ]
+}
