@@ -28,4 +28,27 @@ The runtime and repository tests were externally authored through the user-appro
 
 ## Production qualification and performance
 
-Fresh qualification, persisted reload, three serving fixtures, and the predeclared four AB/BA comparison pairs are still running. No router throughput gain, promotion decision, command-buffer reduction, or closure of the Ollama gap is claimed yet. This experiment uses the existing 14,439,363,584-byte Gemma probe; no model, dependency, or new service download is required.
+Fresh production qualification passed in **719.57 seconds** and persisted reload passed separately in **41.51 seconds**. Forge selected residency with divisor 2 (16 threads per group on the actual 32-wide scalar router pipeline), along with the same batching, vectorized loads, GPU KV, parallel attention, cooperative RMS/Q6, and shared RMS statistics as main. Q4 width 64 and the existing E4/R32 MoE lowering remain selected. All 32 candidates and rejections are retained in [qualification.json](evidence/router-residency-experiment/qualification.json).
+
+The plan digest is `73dccbebce7f11aeb2c8c31681c2ab9849a4ef75a9825b949b0a2ca664d182df`; composite digest is `1f620a9566867e690f33b119edc9151f3f137c9a5c4670dd3f0763e6ebacb64c`; qualified executable SHA-256 is `d4253487ce3762a309a1b39ffc777963044f7c5807d5c0b6efd48329b3ebfa6a`. Raw Hello, English chat, and Korean chat each passed prepared serving with 32 generated tokens, all 262,144 logits under the strict < 1e-4 gate, exact IDs, and zero router or RMS statistics fallbacks. See [production/reload](evidence/router-residency-experiment/full-run.json) and [serving results](evidence/router-residency-experiment/serving-three-results.json).
+
+The predeclared fixed protocol uses four serial A/B, B/A, A/B, B/A pairs. Each arm runs four generations, retaining the excluded first warmup and scoring the median of the remaining three warm 31-step decode-wall totals. Original GGUF, raw Hello, BOS-only prefix reuse, and capacity are matched. Startup, hashing, and prefill are excluded; synchronous graph execution and required output readback are included. No owned author, build, or profiling jobs overlapped this series. Every run is retained, with no adaptive stopping or exclusion.
+
+| Pair | Order | RMS main tokens/s | Router tokens/s | Decode time reduction |
+| --- | --- | ---: | ---: | ---: |
+| 1 | A/B | 10.358 | 13.223 | 21.671% |
+| 2 | B/A | 9.718 | 13.241 | 26.603% |
+| 3 | A/B | 10.240 | 13.585 | 24.625% |
+| 4 | B/A | 10.334 | 13.363 | 22.671% |
+
+Median paired decode time reduction is **23.648%**. Equal-work pooled totals give **23.937%** less decode time and **31.471%** more throughput. All four pairs exceed the predeclared 2% threshold; every cross-arm ID matches. Sources, both executables, plans, and composites stayed unchanged. This qualifies the composed router batch for main; it does not isolate the benefit of each of the three changes. See [all fixed results](evidence/router-residency-experiment/fixed-results.json) and [all resource observations](evidence/router-residency-experiment/resource-observations.json).
+
+## Remaining measured costs
+
+A separate post-comparison normal census measured **74.507 ms/token**, **37 command buffers**, and **1,349 dispatches** per decode. The prior RMS implementation used 97 command buffers and 1,289 dispatches: two added GPU dispatches per layer remove 60 host boundaries. The census is separate from the fixed comparison and is not an additional paired performance result.
+
+Normal accounting gives 81.57% GPU intervals, 12.54% host flush work, 1.25% encoding, 0.28% read copies, and 4.36% residual work. Over 31 decode tokens there were 930 second scales, 930 resident zeros, and 930 derived router launches, all with zero fallback; RMS statistics retained 930 computes, 1,860 reuses, and zero fallback. Separate intrusive replay passed all full-logit comparisons with zero normalized difference and exact IDs. Its largest kernel diagnostic shares were generic Q4 (27.06%), remaining cooperative RMS (21.27%), F32 router (14.56%), generated expert gate/up (9.91%), generated expert down (5.25%), and Q6 output (5.11%). These intrusive intervals are **not normal wall shares**; the intrusive residual counter includes uninstrumented dispatch/wait work and overlaps GPU time. See [census and limits](evidence/router-residency-experiment/post-budget.json).
+
+CPU top-k synchronization, five host-copy boundaries, substantial GPU matrix/reduction work, and many dispatches remain. The next useful batch should profile actual batched GPU occupancy and memory access for Q4/RMS/router composition, then optimize the demonstrated costs together with unchanged full-model gates. The current result does not establish a hardware bandwidth limit, MLX causality, or competitive throughput against Ollama. No new matched Ollama or MLX benchmark was run.
+
+This experiment uses the existing 14,439,363,584-byte Gemma probe; lightweight models and broader Python model coverage remain unfinished goals. No model/dependency download, secret setup, purchase, or new service was needed. The source and focused proof were first preserved at private experiment commit `c17153ed31ebcad6f3b6b09ce86500b5083c7796`.

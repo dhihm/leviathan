@@ -1467,3 +1467,12 @@ torch 2.9.1 at /opt/anaconda3/bin/python, CPU export).
 - Fixed matched phase34/experiment pairs reduced decode time by 6.045%, 2.943%, 3.473% and 0.974%, with 3.208% median paired reduction. All results remain preserved. The declared requirement of more than 2% in every pair failed. The user explicitly requested inclusion in main at 11:15 UTC on 2026-10-04 despite this variability; that decision does not relabel the criterion as passed. Original correctness-qualified source is retained at private experiment commit `2562e0edceda99e64e4dd0e0635e01a853d3a6ae`.
 - The post-comparison census still shows 97 command buffers per decode and 38.76% host flush work. The next coherent batch targets 30 router-scale host roundtrips, 30 CPU expert zeroing boundaries and five host copies with ordered GPU replacements and unchanged correctness gates. The overall throughput gap remains unfinished.
 - Details: [RMS statistics experiment](RMS_STATISTICS_EXPERIMENT.md), [full evidence](evidence/rms-statistics-experiment/qualification.json).
+
+
+### Phase 36: qualified router residency batch
+
+- Original ordered GPU second scale, resident expert zero, and capability-derived geometry for the unchanged scalar F32 router kernel. Source/test changes were externally authored through the approved GLM-5.3 route and verified by exact replay. Gradual-underflow failures and a rejected double-rounding proposal are preserved; corrected Metal checks and the final 1,533-test suite passed.
+- All five short actual-model candidates were bit-exact over every logit. Fresh production selection (719.57 s), persisted reload (41.51 s), and all three 32-token serving fixtures passed. Automatic selection chose router divisor 2 on the RMS-inclusive main baseline, retaining Q4 width64 and E4/R32.
+- Four predeclared fixed pairs all passed: 21.671%, 26.603%, 24.625%, and 22.671% decode time reductions; median 23.648%. Qualified throughput was 13.223–13.585 tokens/s versus contemporaneous main 9.718–10.358 tokens/s. No runs were excluded or repeated to obtain a pass.
+- Normal execution now uses 37 command buffers and 1,349 dispatches per decode, with zero router/RMS fallback. GPU work dominates the separate residual census; CPU top-k, host copies, Q4/RMS/router costs, broader Python model coverage, and the gap to Ollama remain unfinished.
+- Details: [router residency experiment](ROUTER_RESIDENCY_EXPERIMENT.md), [fixed evidence](evidence/router-residency-experiment/fixed-results.json).

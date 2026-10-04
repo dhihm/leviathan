@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/tmp/leviathan-forge2-tooling/phase36-router-residency/post-profile",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "/tmp/leviathan-forge2-tooling/phase36-router-residency/post-profile.json",
+    "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+    "/tmp/leviathan-forge2-tooling/phase36-router-residency/batch-plan.json",
+    "64"
+  ],
+  "exit": 0,
+  "elapsedSeconds": 21.991443458013237,
+  "binarySha256": "d4253487ce3762a309a1b39ffc777963044f7c5807d5c0b6efd48329b3ebfa6a",
+  "binaryUnchanged": true,
+  "q4Width": 64
+}

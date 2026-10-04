@@ -18,7 +18,8 @@ Leviathan is a personal project building a local LLM inference engine for Mac GP
 - Exact-order cooperative RMS now participates in bounded Forge composition and passed three full-model fixtures; measured gains and timing instability are recorded together ([RMS batch](docs/RMS_Q6_FORGE_BATCH.md), [Ollama comparison scope](docs/OLLAMA_COMPARISON_SCOPE.md)).
 - [Q6 SIMD Forge batch](docs/Q6_SIMD_FORGE.md): full production/reload and three prepared-serving gates passed; four fixed comparison pairs improved, with 10.68% median decode time reduction. Remaining performance gap and bottlenecks are documented.
 - [Shared RMS statistics lowering](docs/RMS_STATISTICS_EXPERIMENT.md) is included in main by explicit user decision. The release build, 1,056 checks and three serving gates passed; four fixed pairs improved by a median 3.21%, while the earlier every-pair performance threshold remained unmet.
-- Correctness gates and test coverage throughout — currently 1,056 checks ([detailed progress](docs/FORGE_PROGRESS.md)).
+- [Router residency batch](docs/ROUTER_RESIDENCY_EXPERIMENT.md): automatic selection and reload, 1,533 checks, and three serving gates passed. Four fixed pairs reduced matched decode time by a median 23.65%, reaching 13.22–13.59 tokens/s; the Ollama gap remains unfinished.
+- Correctness gates and test coverage throughout — currently 1,533 checks ([detailed progress](docs/FORGE_PROGRESS.md)).
 - Performance: closing the gap with Ollama and broader Python model coverage are in progress.
 
 [MIT](LICENSE); model weights keep their upstream terms.

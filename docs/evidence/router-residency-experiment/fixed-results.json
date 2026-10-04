@@ -1,0 +1,342 @@
+{
+  "scope": "Predeclared four serial AB/BA/AB/BA pairs; retain all runs without adaptive stopping or exclusion. This series is separate from prior evidence. Four repetitions with the first excluded and the median of three warm generations, preserved published RMS main executable versus qualified router residency executable; same GGUF/raw-Hello/32 generated IDs, BOS-only reuse, repeat1 warmup excluded and repeats2/3/4 timed, no profiling or other owned GPU/build/author jobs during timing. Startup/identity/prefill excluded. CLI synchronous decode wall includes graph execution and output readback, distinct from Ollama server eval counters.",
+  "binarySha256": "d4253487ce3762a309a1b39ffc777963044f7c5807d5c0b6efd48329b3ebfa6a",
+  "baselineBinarySha256": "371e7289c0e2a8f95696f051a11aa965acb1fd7946e0f0e566be2976d6d59a6a",
+  "planHashes": {
+    "incumbent": "8208ff72e44f3a177edcb649fe9e57b47f696d890d3c6ce5e039e87581445b9c",
+    "candidate": "e615a00490531c66618ef8ba8679468a66b5b1e118e21621af7cfe411d95944d"
+  },
+  "compositeHash": "0126cb04a74ed44bc0b3a50d35a51d13a8739e8445d7e57f1a67e2e24f712a43",
+  "baselineCompositeHash": "94ebed58de33dd98d5a6fe2e2f801738e11541f4ff8c1b225a5b4fd9bcb57b46",
+  "arms": [
+    {
+      "pair": 1,
+      "arm": "incumbent",
+      "exit": 0,
+      "elapsedSeconds": 24.181574916932732,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 3140.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 97.87
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 2993.0,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 95.11
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 2917.7,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 93.02
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 3248.6,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 102.84
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 2993.0,
+      "warmAggregateTokensPerSecond": 10.357500835282325,
+      "log": "fixed-pair-1-incumbent.log"
+    },
+    {
+      "pair": 1,
+      "arm": "candidate",
+      "exit": 0,
+      "elapsedSeconds": 20.52340729115531,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 2397.3,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 75.23
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 2345.9,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 74.79
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 2325.8,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 73.65
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 2344.4,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 74.24
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 2344.4,
+      "warmAggregateTokensPerSecond": 13.222999488141955,
+      "log": "fixed-pair-1-candidate.log"
+    },
+    {
+      "pair": 2,
+      "arm": "candidate",
+      "exit": 0,
+      "elapsedSeconds": 20.26687641721219,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 2278.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 73.44
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 2341.3,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 74.32
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 2418.5,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 75.56
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 2303.3,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 73.47
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 2341.3,
+      "warmAggregateTokensPerSecond": 13.240507410413018,
+      "log": "fixed-pair-2-candidate.log"
+    },
+    {
+      "pair": 2,
+      "arm": "incumbent",
+      "exit": 0,
+      "elapsedSeconds": 24.13877575006336,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 3338.2,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 92.41
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 3197.2,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 100.23
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 3189.9,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 97.73
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 3052.5,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 98.15
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 3189.9,
+      "warmAggregateTokensPerSecond": 9.718172983479105,
+      "log": "fixed-pair-2-incumbent.log"
+    },
+    {
+      "pair": 3,
+      "arm": "incumbent",
+      "exit": 0,
+      "elapsedSeconds": 23.358678124845028,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 3112.4,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 98.99
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 3027.4,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 97.56
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 2967.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 96.01
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 3146.8,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 95.95
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 3027.4,
+      "warmAggregateTokensPerSecond": 10.239809737728743,
+      "log": "fixed-pair-3-incumbent.log"
+    },
+    {
+      "pair": 3,
+      "arm": "candidate",
+      "exit": 0,
+      "elapsedSeconds": 20.262670000083745,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 2281.2,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 72.93
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 2281.9,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 73.48
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 2280.3,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 73.31
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 2343.9,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 74.29
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 2281.9,
+      "warmAggregateTokensPerSecond": 13.58517025285946,
+      "log": "fixed-pair-3-candidate.log"
+    },
+    {
+      "pair": 4,
+      "arm": "candidate",
+      "exit": 0,
+      "elapsedSeconds": 20.29272000025958,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 2287.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 73.59
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 2295.2,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 73.23
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 2332.7,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 73.79
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 2319.8,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 74.24
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 2319.8,
+      "warmAggregateTokensPerSecond": 13.363220967324768,
+      "log": "fixed-pair-4-candidate.log"
+    },
+    {
+      "pair": 4,
+      "arm": "incumbent",
+      "exit": 0,
+      "elapsedSeconds": 23.12179866619408,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 3070.9,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 95.31
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 2999.9,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 94.71
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 2858.3,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 92.03
+        },
+        {
+          "repetition": 4,
+          "decodeWallMillis": 3063.2,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 97.96
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 2999.9,
+      "warmAggregateTokensPerSecond": 10.333677789259642,
+      "log": "fixed-pair-4-incumbent.log"
+    }
+  ],
+  "pairs": [
+    {
+      "pair": 1,
+      "order": [
+        "incumbent",
+        "candidate"
+      ],
+      "candidateToIncumbentWallRatio": 0.7832943534914801,
+      "wallReductionPercent": 21.670564650851986
+    },
+    {
+      "pair": 2,
+      "order": [
+        "candidate",
+        "incumbent"
+      ],
+      "candidateToIncumbentWallRatio": 0.7339728518135366,
+      "wallReductionPercent": 26.602714818646344
+    },
+    {
+      "pair": 3,
+      "order": [
+        "incumbent",
+        "candidate"
+      ],
+      "candidateToIncumbentWallRatio": 0.7537490916297813,
+      "wallReductionPercent": 24.62509083702187
+    },
+    {
+      "pair": 4,
+      "order": [
+        "candidate",
+        "incumbent"
+      ],
+      "candidateToIncumbentWallRatio": 0.7732924430814361,
+      "wallReductionPercent": 22.670755691856392
+    }
+  ],
+  "startedUTC": "2026-10-04T12:15:41Z",
+  "medianPairedWallRatio": 0.7635207673556087,
+  "medianPairedWallReductionPercent": 23.64792326443913,
+  "allPairsImprove": true,
+  "everyPairOverTwoPercent": true,
+  "crossArmExactTokenIDs": true,
+  "sourceUnchanged": true,
+  "baselineCompositeUnchanged": true,
+  "compositeUnchanged": true,
+  "plansUnchanged": true,
+  "binaryUnchanged": true
+}

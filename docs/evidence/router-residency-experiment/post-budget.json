@@ -1,0 +1,208 @@
+{
+  "normal": {
+    "msPerToken": 74.50734951486895,
+    "buffersPerToken": 37.0,
+    "dispatchesPerToken": 1349.0,
+    "categoryPercent": {
+      "gpu": 81.56690504777339,
+      "flushHost": 12.544479709649218,
+      "encode": 1.246998881750265,
+      "readCopy": 0.281995904107687,
+      "writeCopy": 0.0037484124185334687,
+      "residual": 4.355872044300904
+    },
+    "worstNormalizedDiff": 0,
+    "rmsComputed": 930,
+    "rmsReused": 1860,
+    "rmsFallback": 0,
+    "routerCounters": {
+      "residentZeroApplied": 930,
+      "residentZeroFallback": 0,
+      "routerLaunchApplied": 930,
+      "routerLaunchFallback": 0,
+      "routerScaleApplied": 930,
+      "routerScaleFallback": 0
+    },
+    "kernels": []
+  },
+  "intrusive": {
+    "msPerToken": 435.03380232484875,
+    "buffersPerToken": 1349.0,
+    "dispatchesPerToken": 1349.0,
+    "categoryPercent": {
+      "gpu": 42.1652394690437,
+      "flushHost": 0.0,
+      "encode": 0.0,
+      "readCopy": 0.03263311115261444,
+      "writeCopy": 0.0007803637905879985,
+      "residual": 99.9665865250568
+    },
+    "worstNormalizedDiff": 0,
+    "rmsComputed": 930,
+    "rmsReused": 1860,
+    "rmsFallback": 0,
+    "routerCounters": {
+      "residentZeroApplied": 930,
+      "residentZeroFallback": 0,
+      "routerLaunchApplied": 930,
+      "routerLaunchFallback": 0,
+      "routerScaleApplied": 930,
+      "routerScaleFallback": 0
+    },
+    "kernels": [
+      {
+        "calls": 6355,
+        "gpuMicros": 1538492.9361753166,
+        "name": "g4_q4_matvec"
+      },
+      {
+        "calls": 7471,
+        "gpuMicros": 1209346.930962056,
+        "name": "g4_rmsnorm_coop"
+      },
+      {
+        "calls": 930,
+        "gpuMicros": 828131.8000517786,
+        "name": "g4_f32_matvec"
+      },
+      {
+        "calls": 1860,
+        "gpuMicros": 563384.2484094203,
+        "name": "moegen_gu_E4_R32"
+      },
+      {
+        "calls": 1860,
+        "gpuMicros": 298526.0430723429,
+        "name": "moegen_dn_E4_R32"
+      },
+      {
+        "calls": 31,
+        "gpuMicros": 290294.08236965537,
+        "name": "g4_q6_matvec_coop"
+      },
+      {
+        "calls": 930,
+        "gpuMicros": 211619.04092878103,
+        "name": "g4_rmsnorm_stats"
+      },
+      {
+        "calls": 930,
+        "gpuMicros": 167037.54104673862,
+        "name": "g4_attn_par64_diag"
+      }
+    ],
+    "categoryPercentInterpretation": "Not additive or exclusive; dispatch/wait is outside the batched flush/encode counters.",
+    "kernelGpuShares": [
+      {
+        "name": "g4_q4_matvec",
+        "calls": 6355,
+        "percent": 27.055541994735485
+      },
+      {
+        "name": "g4_rmsnorm_coop",
+        "calls": 7471,
+        "percent": 21.26726480668084
+      },
+      {
+        "name": "g4_f32_matvec",
+        "calls": 930,
+        "percent": 14.563313335176467
+      },
+      {
+        "name": "moegen_gu_E4_R32",
+        "calls": 1860,
+        "percent": 9.907530826827667
+      },
+      {
+        "name": "moegen_dn_E4_R32",
+        "calls": 1860,
+        "percent": 5.24980239099753
+      },
+      {
+        "name": "g4_q6_matvec_coop",
+        "calls": 31,
+        "percent": 5.105037242420212
+      },
+      {
+        "name": "g4_rmsnorm_stats",
+        "calls": 930,
+        "percent": 3.721478151838486
+      },
+      {
+        "name": "g4_attn_par64_diag",
+        "calls": 930,
+        "percent": 2.9374793346288075
+      },
+      {
+        "name": "g4_rope",
+        "calls": 1860,
+        "percent": 2.9021424078922164
+      },
+      {
+        "name": "g4_axpy",
+        "calls": 9300,
+        "percent": 2.5933174348223895
+      },
+      {
+        "name": "g4_rmsnorm_cached",
+        "calls": 1860,
+        "percent": 1.8401275678737126
+      },
+      {
+        "name": "moegen_act_E4",
+        "calls": 1860,
+        "percent": 0.8793719309468819
+      },
+      {
+        "name": "g4_scale",
+        "calls": 1860,
+        "percent": 0.586532393417088
+      },
+      {
+        "name": "g4_add",
+        "calls": 930,
+        "percent": 0.30811157196476924
+      },
+      {
+        "name": "g4_gelu_up",
+        "calls": 930,
+        "percent": 0.2768648377686416
+      },
+      {
+        "name": "g4_cache_append",
+        "calls": 930,
+        "percent": 0.27105290799734627
+      },
+      {
+        "name": "g4_router_scale",
+        "calls": 930,
+        "percent": 0.2591451603949162
+      },
+      {
+        "name": "g4_router_resident_zero",
+        "calls": 930,
+        "percent": 0.2524717560222117
+      },
+      {
+        "name": "g4_q6_embed_row",
+        "calls": 31,
+        "percent": 0.01223895989274268
+      },
+      {
+        "name": "g4_softcap",
+        "calls": 31,
+        "percent": 0.011174987701587967
+      }
+    ]
+  },
+  "fixed": {
+    "pooledWallReductionPercent": 23.937363843344084,
+    "pooledThroughputIncreasePercent": 31.47059456898593,
+    "medianPairedWallReductionPercent": 23.64792326443913
+  },
+  "binarySha256": "d4253487ce3762a309a1b39ffc777963044f7c5807d5c0b6efd48329b3ebfa6a",
+  "planDigest": "73dccbebce7f11aeb2c8c31681c2ab9849a4ef75a9825b949b0a2ca664d182df",
+  "compositeDigest": "1f620a9566867e690f33b119edc9151f3f137c9a5c4670dd3f0763e6ebacb64c",
+  "sourceUnchanged": true,
+  "scope": "Fixed comparisons are the performance evidence. This separate post-comparison census reports exclusive categories only for normal batched execution. Intrusive kernel intervals are diagnostic, not normal wall shares; its residual category contains uninstrumented dispatch/wait work and overlaps GPU time."
+}

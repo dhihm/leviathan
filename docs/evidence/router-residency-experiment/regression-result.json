@@ -1,0 +1,9 @@
+{
+  "releaseBuildPassed": true,
+  "passed": 1533,
+  "failed": 0,
+  "metalDirectSecondMultiplyBoundaryCases": 401,
+  "sourceReplayMatchesExternalPatches": true,
+  "binarySha256": "d4253487ce3762a309a1b39ffc777963044f7c5807d5c0b6efd48329b3ebfa6a",
+  "scope": "Final source and executable unchanged through focused, production, serving, fixed, and post-comparison gates."
+}
