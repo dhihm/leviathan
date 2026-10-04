@@ -1,0 +1,51 @@
+{
+  "scope": "Exact replay of approved external GLM-5.3 authored patches from published phase34 baseline; source paths only. Root prepared prompts, reviewed/applied exact patches and authored temporary measurement drivers, not runtime/compiler/kernel/repository test code. Mechanical JSON/path/comment-anchor normalization preserved in patch files.",
+  "baselineCommit": "f1160e85e1d6eae4385f8ddfb83a310a59b6ab56",
+  "patchChain": [
+    {
+      "file": "kernel-plan-applied.json",
+      "sha256": "d972f2939b6c23a8cac3fffe875418a0a51dcb91c2bf03571ca8fb38c4cedea0"
+    },
+    {
+      "file": "analysis-repair-applied.json",
+      "sha256": "847cdfaafa1efc60eea17d8639254b669fdd8753dc061553f3a7a4e8260fed00"
+    },
+    {
+      "file": "metal-api-repair-applied.json",
+      "sha256": "0c9da364175fcf7bdecc5c115169fd627509360d4d453d05c2555c1a55d32d52"
+    },
+    {
+      "file": "integration-applied.json",
+      "sha256": "f57b97e8df1aa1730fc925eb95bea1396255b122dbfcbf5c1046844e514eb812"
+    },
+    {
+      "file": "guard-repair-applied.json",
+      "sha256": "639bf42a1b3520ab587a0d130d858f367540e853904225a79b7d827a1f8d6cb2"
+    },
+    {
+      "file": "selected-fixture-applied.json",
+      "sha256": "b34a8a855c2b15cb2bbebd78153c5b811cfb600e1d80f20d6ebb7062c28407d9"
+    },
+    {
+      "file": "argument-order-applied.json",
+      "sha256": "413d410a7c487dae7c0d6fb028103701320d97920ee7b804149b0a1153f0f952"
+    }
+  ],
+  "matchesActualFiles": {
+    "Sources/LeviathanCore/RMSStatisticsPlan.swift": true,
+    "Sources/LeviathanCore/RMSStatisticsKernels.swift": true,
+    "Sources/leviathan-tests/main.swift": true,
+    "Sources/LeviathanCore/GemmaForge.swift": true,
+    "Sources/LeviathanCore/Gemma4.swift": true,
+    "Sources/leviathan-cli/main.swift": true
+  },
+  "sourceSha256": {
+    "Sources/LeviathanCore/RMSStatisticsPlan.swift": "d4b3630a0759baa5405ceb4d5b84490dabcb48cb7b5b76ab1ae55d80283de1de",
+    "Sources/LeviathanCore/RMSStatisticsKernels.swift": "568ab5bffc751a47a2d1b084c4b161729ee588b86094946a621a1d89fdf6f9e0",
+    "Sources/leviathan-tests/main.swift": "1002af187d97f80311cf69ef1c397c293276870009e3a8a7ed4f61334670f469",
+    "Sources/LeviathanCore/GemmaForge.swift": "9d404d6038e7f044f6bd5f0ba859e8a9e1fc0d7648980138de6b4a6a5f905aff",
+    "Sources/LeviathanCore/Gemma4.swift": "cd763f38453fa906c33fffebcfa580365b06c1f1c7927b520d6002584fb8cf24",
+    "Sources/leviathan-cli/main.swift": "41731336d8a7dfb5f1f02d976fad9dddb09995c4ba1bc615d99ed4aaaf566a44"
+  },
+  "verifiedUTC": "2026-10-04T10:13:14.530850+00:00"
+}

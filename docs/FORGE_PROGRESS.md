@@ -1459,3 +1459,11 @@ torch 2.9.1 at /opt/anaconda3/bin/python, CPU export).
 - Four predeclared matched phase33/phase34 pairs all improved: 10.678% median decode time reduction. Equal-work pooled totals give 10.341% less decode time and 11.534% more throughput. Phase34 measured 8.972–9.260 tokens/s in this series. This compares the qualified batch including Q4 width64 versus the incumbent width32; isolated Q6 attribution is not claimed. Earlier noisy and fixed results remain preserved.
 - The remaining performance gap and general lightweight Python-model compiler goal are unfinished. Current residual evidence identifies RMS, generic Q4, F32 routing and host flush work. SSA exposes 30 same-input RMS groups and 60 potentially reusable statistic reductions; that pass is proposed, not implemented.
 - Details and full measurements: [Q6 SIMD Forge](Q6_SIMD_FORGE.md), [evidence](evidence/q6-cooperative-forge/fixed-results.json).
+
+
+### Phase 35: shared RMS statistics experiment retained
+
+- The private experiment branch implements validated SSA grouping, ordered GPU statistics reuse, fresh per-token readiness, artifact binding and bounded Forge selection. Final release build and 1,056 checks passed; actual-model reset checks were bit-exact, and fresh/reload plus all three prepared-serving gates passed with zero statistics fallbacks.
+- Fixed matched phase34/experiment pairs reduced decode time by 6.045%, 2.943%, 3.473% and 0.974%, with 3.208% median paired reduction. All results remain preserved. The declared requirement of more than 2% in every pair failed, so the main runtime remains phase34. Correctness-qualified source is retained at private experiment commit `2562e0edceda99e64e4dd0e0635e01a853d3a6ae`.
+- The post-comparison census still shows 97 command buffers per decode and 38.76% host flush work. The next coherent batch targets 30 router-scale host roundtrips, 30 CPU expert zeroing boundaries and five host copies with ordered GPU replacements and unchanged correctness gates. The overall throughput gap remains unfinished.
+- Details: [RMS statistics experiment](RMS_STATISTICS_EXPERIMENT.md), [full evidence](evidence/rms-statistics-experiment/qualification.json).
