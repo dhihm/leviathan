@@ -75,8 +75,20 @@ public struct Q4OpIR: Codable, Equatable, Sendable {
 
     public static let supportedSchema = 1
     public static let expertView = "expert-row-slice"
+    public static let attentionOutputFamilyView = "attention-output-family"
     public static let expertFamilySuffixes =
         [".ffn_gate_up_exps.weight", ".ffn_down_exps.weight"]
+
+    /// STRICT recognizer for the attention-output family tensor name,
+    /// shared by op validation and the runtime serving predicate:
+    /// exactly `blk.<nonempty ASCII digits>.attn_output.weight`.
+    public static func isAttentionOutputTensorName(_ name: String) -> Bool {
+        let prefix = "blk.", suffix = ".attn_output.weight"
+        guard name.hasPrefix(prefix), name.hasSuffix(suffix) else { return false }
+        let layer = String(name.dropFirst(prefix.count).dropLast(suffix.count))
+        return !layer.isEmpty
+            && layer.allSatisfy { $0.isASCII && $0 >= "0" && $0 <= "9" }
+    }
 
     public static func parse(_ data: Data) throws -> Q4OpIR {
         guard data.count <= 1 << 16 else {
@@ -102,7 +114,8 @@ public struct Q4OpIR: Codable, Equatable, Sendable {
         guard accumulate == "f32", inputPrecision == "f32" else {
             throw Q4LoweringError.invalidOp("unsupported accumulate/inputPrecision")
         }
-        guard view == nil || view == Self.expertView else {
+        guard view == nil || view == Self.expertView
+               || view == Self.attentionOutputFamilyView else {
             throw Q4LoweringError.invalidOp("unsupported view \(view ?? "nil")")
         }
         if view == Self.expertView {
@@ -110,6 +123,13 @@ public struct Q4OpIR: Codable, Equatable, Sendable {
                   Self.expertFamilySuffixes.contains(where: { tensor.hasSuffix($0) }) else {
                 throw Q4LoweringError.invalidOp(
                     "\(Self.expertView) binds a blk.<L>.ffn_{gate_up,down}_exps.weight tensor")
+            }
+        }
+        if view == Self.attentionOutputFamilyView {
+            guard let tensor, Self.isAttentionOutputTensorName(tensor) else {
+                throw Q4LoweringError.invalidOp(
+                    "\(Self.attentionOutputFamilyView) binds a strict "
+                    + "blk.<digits>.attn_output.weight tensor, got \(tensor ?? "nil")")
             }
         }
         guard inDim > 0, outDim > 0, inDim % Q4_0.valuesPerBlock == 0,
@@ -187,6 +207,14 @@ public struct Q4Schedule: Codable, Equatable, Hashable, Sendable {
     public enum XLoads: String, Codable, Sendable {
         case scalar
         case float4
+        /// The measured original plain SIMD lane mapping: ONE 32-lane
+        /// simdgroup per row (R simdgroups per threadgroup), lane 0..31
+        /// owns ONE quantization component in each 32-value Q4 block and
+        /// traverses ALL blocks, plain f32 accumulation, simd_sum reduce,
+        /// lane 0 writes. No compensation — matches the measured plain
+        /// kernel (aggregate GPU ratios .70098/.66653/.71183 at
+        /// 4096->2816 R8 on the real attn-output shape).
+        case simdLanePlain
     }
 
     public let threadsPerRow: Int
@@ -216,6 +244,20 @@ public struct Q4Schedule: Codable, Equatable, Hashable, Sendable {
     /// geometries legally admit only small T.
     public func isLegal(blocksPerRow: Int, hardware: ForgeHardwareProfile,
                         minWorkBlocks: Int = 4) -> Bool {
+        if xLoads == .simdLanePlain {
+            // Original plain SIMD lane mapping: ONE 32-lane simdgroup
+            // computes a whole row (each lane traverses ALL blocks — no
+            // block-chunk split), so only blocksPerRow >= 1 is needed;
+            // the remaining legality is the MEASURED geometry: execution
+            // width exactly 32 and the R simdgroups fitting the cap.
+            guard threadsPerRow == 32,
+                  rowsPerGroup == 1 || rowsPerGroup == 4 || rowsPerGroup == 8,
+                  accumulation == .f32, blocksPerRow >= 1,
+                  hardware.threadExecutionWidth == 32,
+                  32 * rowsPerGroup <= hardware.maxTotalThreadsPerThreadgroup
+                else { return false }
+            return true
+        }
         let t = threadsPerRow
         guard t > 0, t & (t - 1) == 0, t <= 64,
               rowsPerGroup > 0, rowsPerGroup & (rowsPerGroup - 1) == 0,
@@ -229,7 +271,7 @@ public struct Q4Schedule: Codable, Equatable, Hashable, Sendable {
 // MARK: - Schedule derivation (shape × measured hardware)
 
 public enum Q4ScheduleDeriver {
-    public static let maxCandidates = 13
+    public static let maxCandidates = 16
 
     /// Derives the bounded legal schedule set from the operation SHAPE and
     /// the MEASURED hardware. Candidate 0 is always the incumbent-mapping
@@ -298,6 +340,24 @@ public enum Q4ScheduleDeriver {
                 result.append(s)
             }
         }
+        // Phase-28 original plain SIMD family (simdLanePlain): ONE
+        // 32-lane simdgroup per row, R in 1/4/8 rows per threadgroup,
+        // plain f32 accumulation — the measured original plain kernel
+        // (fresh component runs at the real attn-output shape
+        // 4096->2816 gave aggregate GPU ratios .70098/.66653/.71183 at
+        // R8). Width-32 hardware ONLY; small geometries the block-chunk
+        // split rejects (blocksPerRow < T*minWorkBlocks) are legal here
+        // because every lane traverses ALL blocks.
+        if hardware.threadExecutionWidth == 32 {
+            for r in [1, 4, 8] {
+                let s = Q4Schedule(threadsPerRow: 32, rowsPerGroup: r,
+                                   accumulation: .f32, xLoads: .simdLanePlain)
+                if s.isLegal(blocksPerRow: blocksPerRow, hardware: hardware),
+                   !result.contains(s) {
+                    result.append(s)
+                }
+            }
+        }
         return Array(result.prefix(maxCandidates))
     }
 }
@@ -310,7 +370,12 @@ public enum Q4KernelEmitter {
     /// row, row = threadgroup_position * R + thread_index, per-row serial
     /// summation order EXACTLY the incumbent's, no threadgroup partials
     /// or barrier).
-    public static let codegenVersion = "q4gen-v2"
+    /// v3: simdLanePlain schedules emit the original plain SIMD lane
+    /// mapping (one 32-lane simdgroup per row, lane-owned quant
+    /// components over ALL blocks, simd_sum, no barrier, no
+    /// compensation). The bump intentionally invalidates prior
+    /// artifacts; no stale-binding gate is relaxed.
+    public static let codegenVersion = "q4gen-v3"
 
     /// Emits the complete MSL source for one schedule. The thread mapping,
     /// block-chunk decomposition, reduction structure, and load width are
@@ -323,9 +388,13 @@ public enum Q4KernelEmitter {
         }
         // Emission-time legality is SHAPE-only (the deriver and the
         // artifact gates re-check against the measured hardware).
+        // Emission-time legality is SHAPE + SYNTAX only; width 32 is
+        // asserted here so simdLanePlain sources are emittable, while
+        // the DERIVER and the ACTUAL-device compile gate enforce the
+        // measured hardware width.
         let shapeOnly = ForgeHardwareProfile(
             deviceName: "emit", maxTotalThreadsPerThreadgroup: .max,
-            threadExecutionWidth: 1, recommendedMaxWorkingSetSize: 0)
+            threadExecutionWidth: 32, recommendedMaxWorkingSetSize: 0)
         guard schedule.isLegal(blocksPerRow: blocksPerRow, hardware: shapeOnly) else {
             throw Q4LoweringError.emissionFailed(
                 "schedule \(schedule) illegal for inDim \(op.inDim)")
@@ -335,6 +404,10 @@ public enum Q4KernelEmitter {
         let kahan = schedule.accumulation == .f32compensated
         let inner: String
         switch schedule.xLoads {
+        case .simdLanePlain:
+            // The dedicated simdLanePlain emission path below does not
+            // use the chunk-split templates.
+            inner = ""
         case .scalar:
             inner = """
             for (uint l = 0; l < 16u; l++) {
@@ -440,6 +513,62 @@ public enum Q4KernelEmitter {
         \(inner)
             }
         """
+        if schedule.xLoads == .simdLanePlain {
+            // Original plain SIMD lane mapping (measured on the real
+            // attn-output shape): ONE 32-lane simdgroup per row, R
+            // simdgroups per threadgroup, row = threadgroup_position * R
+            // + simdgroup_index. Lane 0..31 owns ONE quantization
+            // component in each 32-value Q4 block — lanes 0..15 the low
+            // nibbles, lanes 16..31 the high nibbles of quant byte
+            // lane&15 — and accumulates a straightforward plain float
+            // s += w * x over ALL blocks; simd_sum(s) combines the lanes
+            // and lane 0 writes. NO compensation, matching the measured
+            // plain kernel; correctness stays gated against the
+            // independent CPU FP64 oracle and the unchanged full-model
+            // gates, never assumed. Same bindings as the existing
+            // kernels, ulong weight offset, no barriers.
+            return """
+            #include <metal_stdlib>
+            using namespace metal;
+
+            // \(schedule.kernelName) — EMITTED by LeviathanForge Q4 lowering
+            // (\(codegenVersion)) from schedule \(schedule) and op shape
+            // inDim=\(op.inDim) (blocksPerRow=\(blocksPerRow)).
+            // simdLanePlain: one 32-lane simdgroup per row, R=\(r) rows
+            // per threadgroup, lane-owned quant components over ALL
+            // blocks, plain f32 accumulation, simd_sum reduction, lane 0
+            // writes; no barrier, no compensation.
+            kernel void \(schedule.kernelName)(constant const uint2& p [[buffer(0)]],
+                                                constant const ulong& wOff [[buffer(1)]],
+                                                device const uchar* wbase [[buffer(2)]],
+                                                device const float* x [[buffer(3)]],
+                                                device float* y [[buffer(4)]],
+                                                uint wid [[threadgroup_position_in_grid]],
+                                                uint sg [[simdgroup_index_in_threadgroup]],
+                                                uint lane [[thread_index_in_simdgroup]]) {
+                constexpr uint R = \(r)u;
+                uint row = wid * R + sg;
+                bool active = row < p.y;
+                uint blocksPerRow = p.x / 32u;
+                device const uchar* rowBytes = wbase + wOff + (ulong)row * blocksPerRow * 18u;
+                float s = 0.0f;
+                if (active) {
+                    uint li = lane & 15u;
+                    for (uint b = 0; b < blocksPerRow; b++) {
+                        device const uchar* blk = rowBytes + b * 18u;
+                        ushort dbits = ushort(blk[0]) | (ushort(blk[1]) << 8u);
+                        float d = float(as_type<half>(dbits));
+                        uchar q = blk[2u + li];
+                        float w = (lane < 16u) ? d * (float(q & 0x0Fu) - 8.0f)
+                                               : d * (float(q >> 4) - 8.0f);
+                        s += w * x[b * 32u + lane];
+                    }
+                }
+                float total = simd_sum(s);
+                if (active && lane == 0u) { y[row] = total; }
+            }
+            """
+        }
         if t == 1 {
             // ROW-TILE direct mapping: one thread per row, R consecutive
             // rows per threadgroup, no partials and no barrier. The
@@ -690,6 +819,16 @@ public struct Q4EmittedKernel: Sendable {
         guard let fn = library.makeFunction(name: schedule.kernelName),
               let pipeline = try? device.makeComputePipelineState(function: fn) else {
             throw Q4LoweringError.emissionFailed("pipeline for \(schedule.kernelName)")
+        }
+        // The simdLanePlain variant REQUIRES the measured 32-lane simd
+        // width on the ACTUAL compiled pipeline — a device-level gate in
+        // addition to the deriver's profile check.
+        if schedule.xLoads == .simdLanePlain {
+            guard pipeline.threadExecutionWidth == 32 else {
+                throw Q4LoweringError.emissionFailed(
+                    "\(schedule.kernelName): pipeline threadExecutionWidth "
+                    + "\(pipeline.threadExecutionWidth) != 32")
+            }
         }
         // Occupancy legality on the ACTUAL compiled pipeline: the emitted
         // threadgroup (T*R threads plus the partials array) must fit.

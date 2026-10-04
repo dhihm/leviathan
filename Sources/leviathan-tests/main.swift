@@ -798,6 +798,198 @@ do {
     failed += 1; print("FAIL: q4_0 metal matvec — threw \(error)")
 }
 
+// MARK: - Q4 lowering: simdLanePlain legality, attention-output family,
+// emission determinism, and actual-Metal parity
+
+do {
+    let hw32 = ForgeHardwareProfile(deviceName: "t32",
+                                    maxTotalThreadsPerThreadgroup: 1024,
+                                    threadExecutionWidth: 32,
+                                    recommendedMaxWorkingSetSize: 0)
+    let hw16 = ForgeHardwareProfile(deviceName: "t16",
+                                    maxTotalThreadsPerThreadgroup: 1024,
+                                    threadExecutionWidth: 16,
+                                    recommendedMaxWorkingSetSize: 0)
+    let cap128 = ForgeHardwareProfile(deviceName: "c128",
+                                      maxTotalThreadsPerThreadgroup: 128,
+                                      threadExecutionWidth: 32,
+                                      recommendedMaxWorkingSetSize: 0)
+    func simd(_ r: Int) -> Q4Schedule {
+        Q4Schedule(threadsPerRow: 32, rowsPerGroup: r,
+                   accumulation: .f32, xLoads: .simdLanePlain)
+    }
+    // inDim 128 = 4 blocks/row: the lane mapping admits it (every lane
+    // traverses ALL blocks) while the old block-chunk split rejects every
+    // T>1 (blocksPerRow/T < minWorkBlocks).
+    check("simdLanePlain R1 legal on width-32 hardware",
+          simd(1).isLegal(blocksPerRow: 4, hardware: hw32))
+    check("simdLanePlain R8 legal on width-32 hardware",
+          simd(8).isLegal(blocksPerRow: 4, hardware: hw32))
+    check("simdLanePlain illegal on width-16 hardware",
+          !simd(1).isLegal(blocksPerRow: 4, hardware: hw16))
+    check("simdLanePlain R8 illegal when 32*R exceeds the threadgroup cap",
+          !simd(8).isLegal(blocksPerRow: 4, hardware: cap128))
+    check("simdLanePlain R4 fits the 128-thread cap",
+          simd(4).isLegal(blocksPerRow: 4, hardware: cap128))
+    check("block-chunk split still rejects T=8 at 4 blocks per row",
+          !Q4Schedule(threadsPerRow: 8, rowsPerGroup: 1,
+                      accumulation: .f32, xLoads: .scalar)
+              .isLegal(blocksPerRow: 4, hardware: hw32))
+
+    let attnJSON = """
+    {"schema":1,"op":"q4_0.matvec","semantics":"dot(W_row, x)",
+     "inDim":4096,"outDim":2816,"layout":"row-major-q4_0-blocks","quant":"q4_0",
+     "accumulate":"f32","inputPrecision":"f32",
+     "tensor":"blk.0.attn_output.weight","representativeRows":256,
+     "view":"attention-output-family"}
+    """
+    func parseOp(_ json: String) throws -> Q4OpIR {
+        try Q4OpIR.parse(Data(json.utf8))
+    }
+    let attnOp = try parseOp(attnJSON)
+
+    // Strict family recognizer.
+    check("strict name accepts blk.17.attn_output.weight",
+          Q4OpIR.isAttentionOutputTensorName("blk.17.attn_output.weight"))
+    check("strict name rejects empty layer",
+          !Q4OpIR.isAttentionOutputTensorName("blk..attn_output.weight"))
+    check("strict name rejects wrong family",
+          !Q4OpIR.isAttentionOutputTensorName("blk.0.attn_output.bias"))
+    check("strict name rejects non-digit layer",
+          !Q4OpIR.isAttentionOutputTensorName("blk.0x.attn_output.weight"))
+
+    // Structural negatives (fail closed before any lowering).
+    checkThrows("family view rejects wrong tensor name",
+                Q4LoweringError.invalidOp(
+                    "attention-output-family binds a strict "
+                    + "blk.<digits>.attn_output.weight tensor, got blk.0.mlp.weight")) {
+        _ = try parseOp(attnJSON.replacingOccurrences(of: "attn_output", with: "mlp"))
+    }
+    checkThrows("family view rejects non-ASCII digit layer",
+                Q4LoweringError.invalidOp(
+                    "attention-output-family binds a strict "
+                    + "blk.<digits>.attn_output.weight tensor, got blk.٠.attn_output.weight")) {
+        _ = try parseOp(attnJSON.replacingOccurrences(of: "blk.0.", with: "blk.٠."))
+    }
+    checkThrows("family view rejects missing binding",
+                Q4LoweringError.invalidOp(
+                    "attention-output-family binds a strict "
+                    + "blk.<digits>.attn_output.weight tensor, got nil")) {
+        _ = try parseOp(attnJSON.replacingOccurrences(
+            of: "\"tensor\":\"blk.0.attn_output.weight\"", with: "\"tensor\":null"))
+    }
+    checkThrows("unsupported view string rejected",
+                Q4LoweringError.invalidOp("unsupported view nope")) {
+        _ = try parseOp(attnJSON.replacingOccurrences(of: "attention-output-family", with: "nope"))
+    }
+    // Arbitrary positive outDim values are structurally legal (see the
+    // ragged 2817 test); the serving predicate, not the parser, decides
+    // whether a bound out dim can serve a given output row count.
+    do {
+        let familyOp = try parseOp(attnJSON)
+        check("bound outDim 2816 serves exact outRows 2816 (strict family, inDim 4096)",
+              Gemma4Runner.q4GeneratedServesTensor(
+                boundTensor: familyOp.tensor,
+                boundInDim: familyOp.inDim,
+                boundOutDim: familyOp.outDim,
+                boundView: familyOp.view,
+                tensor: "blk.17.attn_output.weight",
+                inDim: 4096,
+                outRows: 2816))
+        check("bound outDim 2816 does not serve outRows 2817",
+              !Gemma4Runner.q4GeneratedServesTensor(
+                boundTensor: familyOp.tensor,
+                boundInDim: familyOp.inDim,
+                boundOutDim: familyOp.outDim,
+                boundView: familyOp.view,
+                tensor: "blk.17.attn_output.weight",
+                inDim: 4096,
+                outRows: 2817))
+    }
+    // view nil keeps existing semantics: an attn_output tensor without
+    // the family view is just a plain 2-D op.
+    _ = try parseOp(attnJSON.replacingOccurrences(
+        of: "\"view\":\"attention-output-family\"", with: "\"view\":null"))
+
+    // Deriver: baseline first, existing legal set preserved, the three
+    // new candidates appended, bounded at 16, width-32 only.
+    let derived = Q4ScheduleDeriver.derive(op: attnOp, hardware: hw32)
+    checkEqual("q4 deriver baseline first", derived.first,
+               Q4Schedule(threadsPerRow: 1, rowsPerGroup: 1,
+                          accumulation: .f32, xLoads: .scalar))
+    check("q4 deriver keeps all three simdLanePlain candidates",
+          [1, 4, 8].allSatisfy { r in derived.contains(simd(r)) })
+    check("q4 deriver preserved the pre-existing legal set", derived.count > 13)
+    check("q4 deriver bounded at 16 candidates", derived.count <= 16)
+    check("q4 deriver adds no simdLanePlain on width-16 hardware",
+          !Q4ScheduleDeriver.derive(op: attnOp, hardware: hw16)
+              .contains { $0.xLoads == .simdLanePlain })
+
+    // Runtime serving predicate: ONLY the explicit family view serves
+    // other strict attn_output layers, and only at the exact bound dims.
+    check("family view serves other strict attn_output layers at exact dims",
+          Gemma4Runner.q4GeneratedServesTensor(
+              boundTensor: "blk.0.attn_output.weight", boundInDim: 4096,
+              boundOutDim: 2816, boundView: "attention-output-family",
+              tensor: "blk.17.attn_output.weight", inDim: 4096, outRows: 2816))
+    check("family view does not serve mismatched dims",
+          !Gemma4Runner.q4GeneratedServesTensor(
+              boundTensor: "blk.0.attn_output.weight", boundInDim: 4096,
+              boundOutDim: 2816, boundView: "attention-output-family",
+              tensor: "blk.17.attn_output.weight", inDim: 8192, outRows: 2816))
+    check("view-nil binding does not serve sibling layers",
+          !Gemma4Runner.q4GeneratedServesTensor(
+              boundTensor: "blk.0.attn_output.weight", boundInDim: 4096,
+              boundOutDim: 2816, boundView: nil,
+              tensor: "blk.17.attn_output.weight", inDim: 4096, outRows: 2816))
+    check("family view does not serve non-strict layer names",
+          !Gemma4Runner.q4GeneratedServesTensor(
+              boundTensor: "blk.0.attn_output.weight", boundInDim: 4096,
+              boundOutDim: 2816, boundView: "attention-output-family",
+              tensor: "blk.x.attn_output.weight", inDim: 4096, outRows: 2816))
+
+    // Emission: deterministic, original lane mapping, simd_sum, no
+    // barrier, no compensation, codegen v3.
+    let simd8 = simd(8)
+    let src = try Q4KernelEmitter.emit(op: attnOp, schedule: simd8)
+    checkEqual("simdLanePlain emission deterministic",
+               try Q4KernelEmitter.emit(op: attnOp, schedule: simd8), src)
+    check("simdLanePlain emission carries codegen v3", src.contains("q4gen-v3"))
+    check("simdLanePlain emission uses the original lane mapping",
+          src.contains("uint row = wid * R + sg;") && src.contains("uint li = lane & 15u;"))
+    check("simdLanePlain emission reduces with simd_sum", src.contains("simd_sum(s)"))
+    check("simdLanePlain emission has no barrier", !src.contains("threadgroup_barrier"))
+    check("simdLanePlain emission lane 0 writes", src.contains("lane == 0u"))
+
+    // Actual Metal: ragged 35 rows x inDim 128, finite Q4 weights, FP64
+    // oracle at the ORIGINAL 1e-4 component tolerance (unchanged).
+    if let device = MTLCreateSystemDefaultDevice(),
+       try Q4CurrentHardware.profile().threadExecutionWidth == 32 {
+        let small = try parseOp("""
+        {"schema":1,"op":"q4_0.matvec","semantics":"dot(W_row, x)",
+         "inDim":128,"outDim":35,"layout":"row-major-q4_0-blocks","quant":"q4_0",
+         "accumulate":"f32","inputPrecision":"f32",
+         "tensor":null,"representativeRows":35,"view":null}
+        """)
+        let blocks = try Q4ComponentInputs.weightBytes(op: small, file: nil)
+        let x = Q4ComponentInputs.activation(op: small)
+        let kernel = try Q4EmittedKernel.compile(op: small, schedule: simd(8), device: device)
+        let gpu = try kernel.matvec(blocks: blocks, outDim: 35, inDim: 128, x: x)
+        let ref64 = try Q4Oracle.matvecFP64(blocks: blocks[0...], outDim: 35,
+                                            inDim: 128, x: x)
+        var worst = 0.0
+        for i in 0..<35 {
+            worst = max(worst, abs(Double(gpu[i]) - ref64[i]) / max(1, abs(ref64[i])))
+        }
+        check("simdLanePlain GPU ragged 35x128 matches FP64 oracle (rel tol 1e-4)",
+              worst < 1e-4)
+    } else {
+        print("  simdLanePlain GPU test skipped (no width-32 Metal device)")
+    }
+} catch {
+    failed += 1; print("FAIL: q4 simdLanePlain lowering — threw \(error)")
+}
+
 // MARK: - Q6_K scalar oracle and fused Metal matvec
 
 do {
@@ -3370,7 +3562,7 @@ do {
               && !et.contains("threadgroup float partials")
               && et.contains("y[row] = sum;"))
     check("q4 emitter row tile codegen is v2",
-          et.contains("q4gen-v2"))
+          et.contains("q4gen-v3"))
     check("q4 emitter T>1 keeps the cooperative barrier structure",
           e1.contains("threadgroup_barrier")
               && e1.contains("threadgroup float partials"))
@@ -3577,8 +3769,7 @@ if let device = MTLCreateSystemDefaultDevice() {
         do {
             let encoded = try JSONEncoder().encode(artifact)
             var obj = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
-            obj["emittedSource"] = (artifact.emittedSource as NSString)
-                .replacingOccurrences(of: "T = ", with: "T =  /*x*/ ")
+            obj["emittedSource"] = artifact.emittedSource + "\n//x"
             let tampered = try JSONDecoder().decode(
                 Q4LoweringArtifact.self, from: JSONSerialization.data(withJSONObject: obj))
             checkQ4Throws("q4 artifact rejects tampered source",

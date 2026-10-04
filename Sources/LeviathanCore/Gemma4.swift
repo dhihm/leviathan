@@ -827,6 +827,16 @@ public final class Gemma4Runner {
         guard let bound = boundTensor, let bi = boundInDim, let bo = boundOutDim,
               inDim == bi, outRows == bo else { return false }
         if tensor == bound { return true }
+        // Attention-output family: ONLY this explicit view serves other
+        // strict blk.<digits>.attn_output.weight layers, and only with
+        // the EXACT bound (inDim, outDim) — already checked above. Other
+        // shapes (e.g. the global attention output 8192->2816) and view
+        // nil fall through to the incumbent kernels unchanged; nothing
+        // here broadens all-Q4 routing or demands uniform layer dims.
+        if boundView == Q4OpIR.attentionOutputFamilyView {
+            return Q4OpIR.isAttentionOutputTensorName(bound)
+                && Q4OpIR.isAttentionOutputTensorName(tensor)
+        }
         guard boundView == Q4OpIR.expertView else { return false }
         for family in Q4OpIR.expertFamilySuffixes
         where bound.hasSuffix(family) && tensor.hasSuffix(family) {

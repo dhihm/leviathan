@@ -13,9 +13,21 @@ LAYOUTS = ["row-major-q4_0-blocks"]
 QUANTS = ["q4_0"]
 ACCUMULATES = ["f32"]
 INPUT_PRECISIONS = ["f32"]
-VIEWS = [None, "expert-row-slice"]
+VIEWS = [None, "expert-row-slice", "attention-output-family"]
 
 EXPERT_FAMILIES = [".ffn_gate_up_exps.weight", ".ffn_down_exps.weight"]
+
+
+def is_attention_output_tensor_name(name):
+    """STRICT blk.<nonempty ASCII digits>.attn_output.weight recognizer
+    (mirrors Q4OpIR.isAttentionOutputTensorName on the Swift side)."""
+    if not isinstance(name, str):
+        return False
+    prefix, suffix = "blk.", ".attn_output.weight"
+    if not name.startswith(prefix) or not name.endswith(suffix):
+        return False
+    layer = name[len(prefix):len(name) - len(suffix)]
+    return len(layer) > 0 and layer.isascii() and layer.isdigit()
 
 
 class Q4MatvecOp:
@@ -51,6 +63,12 @@ class Q4MatvecOp:
                 raise ValueError(
                     "expert-row-slice binds a blk.<L>.ffn_{gate_up,down}_exps.weight "
                     f"tensor, got {tensor!r}")
+        if view == "attention-output-family":
+            if not is_attention_output_tensor_name(tensor):
+                raise ValueError(
+                    "attention-output-family binds a strict "
+                    "blk.<digits>.attn_output.weight tensor, "
+                    f"got {tensor!r}")
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.tensor = tensor
@@ -94,6 +112,12 @@ def check_op(obj):
     view = obj.get("view")
     if view not in VIEWS:
         raise ValueError(f"view must be one of {VIEWS}, got {view!r}")
+    if view == "attention-output-family" \
+            and not is_attention_output_tensor_name(obj.get("tensor")):
+        raise ValueError(
+            "attention-output-family binds a strict "
+            "blk.<digits>.attn_output.weight tensor, "
+            f"got {obj.get('tensor')!r}")
     # Re-run the constructor checks (tensor/view consistency included).
     Q4MatvecOp(obj["inDim"], obj["outDim"], tensor=obj.get("tensor"),
                representative_rows=rows, view=view)

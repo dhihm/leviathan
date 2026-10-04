@@ -642,3 +642,5 @@ The [bounded attention Forge experiment](docs/ATTENTION_FORGE_EXPERIMENT.md) doc
 The [static value DAG Forge experiment](docs/DAG_FORGE_RUNTIME.md) adds actual Python residual/fanout graphs, safe fusion, measured baseline selection, and bound fresh-process artifacts. It remains a bounded FP32 module experiment.
 
 The [loaded DAG runtime](docs/LOADED_DAG_RUNTIME.md) retains one validated model and Metal helper across real inputs, separating initial preparation from measured request latency.
+
+The [hardware-derived Q4 SIMD lowering](docs/Q4_SIMD_FORGE.md) adds a bounded shape-specific candidate and strict attention-output family routing, with actual component measurements and unchanged full-model gates.

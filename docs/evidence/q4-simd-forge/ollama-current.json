@@ -1,0 +1,133 @@
+{
+  "modelSHA256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+  "ollamaBlobSHA256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+  "ollamaVersion": "0.23.0",
+  "measuredRounds": 5,
+  "numPredict": 32,
+  "failures": [],
+  "userDaemonTouched": false,
+  "modelDownloaded": false,
+  "scope": "server decode counters; not HTTP token intervals",
+  "rounds": [
+    {
+      "apiServer": {
+        "load_duration_s": 0.215212375,
+        "prompt_eval_duration_s": 0.025782333,
+        "prompt_eval_count": 2,
+        "eval_duration_s": 0.540650666,
+        "eval_count": 32,
+        "decode_note": "eval_duration/eval_count is the standard server decode metric (per generated token, N=eval_count); eval_duration/(eval_count-1) is an alternate first-to-last normalization reported only for comparison"
+      },
+      "doneReason": "length",
+      "nonemptyChunks": 32,
+      "cacheGroups": [
+        "0",
+        "6",
+        "2",
+        "1",
+        "1"
+      ],
+      "client": {
+        "ttft_first_nonempty_s": 0.24447575025260448,
+        "total_to_done_s": 0.8406110419891775,
+        "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+      }
+    },
+    {
+      "apiServer": {
+        "load_duration_s": 0.240188875,
+        "prompt_eval_duration_s": 0.025859709,
+        "prompt_eval_count": 2,
+        "eval_duration_s": 0.544866669,
+        "eval_count": 32,
+        "decode_note": "eval_duration/eval_count is the standard server decode metric (per generated token, N=eval_count); eval_duration/(eval_count-1) is an alternate first-to-last normalization reported only for comparison"
+      },
+      "doneReason": "length",
+      "nonemptyChunks": 32,
+      "cacheGroups": [
+        "0",
+        "6",
+        "2",
+        "1",
+        "1"
+      ],
+      "client": {
+        "ttft_first_nonempty_s": 0.2707130420021713,
+        "total_to_done_s": 0.885619499720633,
+        "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+      }
+    },
+    {
+      "apiServer": {
+        "load_duration_s": 0.237290083,
+        "prompt_eval_duration_s": 0.02470775,
+        "prompt_eval_count": 2,
+        "eval_duration_s": 0.577867,
+        "eval_count": 32,
+        "decode_note": "eval_duration/eval_count is the standard server decode metric (per generated token, N=eval_count); eval_duration/(eval_count-1) is an alternate first-to-last normalization reported only for comparison"
+      },
+      "doneReason": "length",
+      "nonemptyChunks": 32,
+      "cacheGroups": [
+        "0",
+        "6",
+        "2",
+        "1",
+        "1"
+      ],
+      "client": {
+        "ttft_first_nonempty_s": 0.26598795782774687,
+        "total_to_done_s": 0.9387259581126273,
+        "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+      }
+    },
+    {
+      "apiServer": {
+        "load_duration_s": 0.326586875,
+        "prompt_eval_duration_s": 0.02371675,
+        "prompt_eval_count": 2,
+        "eval_duration_s": 0.560296332,
+        "eval_count": 32,
+        "decode_note": "eval_duration/eval_count is the standard server decode metric (per generated token, N=eval_count); eval_duration/(eval_count-1) is an alternate first-to-last normalization reported only for comparison"
+      },
+      "doneReason": "length",
+      "nonemptyChunks": 32,
+      "cacheGroups": [
+        "0",
+        "6",
+        "2",
+        "1",
+        "1"
+      ],
+      "client": {
+        "ttft_first_nonempty_s": 0.3547370000742376,
+        "total_to_done_s": 0.9761733328923583,
+        "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+      }
+    },
+    {
+      "apiServer": {
+        "load_duration_s": 0.31052,
+        "prompt_eval_duration_s": 0.026218208,
+        "prompt_eval_count": 2,
+        "eval_duration_s": 0.550982751,
+        "eval_count": 32,
+        "decode_note": "eval_duration/eval_count is the standard server decode metric (per generated token, N=eval_count); eval_duration/(eval_count-1) is an alternate first-to-last normalization reported only for comparison"
+      },
+      "doneReason": "length",
+      "nonemptyChunks": 32,
+      "cacheGroups": [
+        "0",
+        "6",
+        "2",
+        "1",
+        "1"
+      ],
+      "client": {
+        "ttft_first_nonempty_s": 0.3438008753582835,
+        "total_to_done_s": 0.9583044582977891,
+        "note": "HTTP chunk receipt is buffered/coalesced; these are NOT token-receipt-interval claims"
+      }
+    }
+  ]
+}
