@@ -1,0 +1,16 @@
+{
+  "appliedUtc": "2026-10-04T18:52:03.502190+00:00",
+  "exactAuthorPatch": true,
+  "semanticSupervisorEdits": false,
+  "entries": [
+    {
+      "path": "Sources/LeviathanCore/GemmaShadowComposition.swift",
+      "sha256": "d79c68ee34daca8951ebcdda4a314acd205288be218c9ab1d944f2f9795f6c50"
+    },
+    {
+      "path": "Sources/leviathan-tests/main.swift",
+      "replacementSha256": "b637893f742a34b8dda60d9694067fe62fdb6e78807e9c50c00795c4601fb3da",
+      "fileSha256": "b3cf8b1c28540c38ae41749431f6681aac76c364f3170625ad7ca92977c2fe1e"
+    }
+  ]
+}

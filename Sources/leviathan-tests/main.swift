@@ -7671,6 +7671,425 @@ func runOpportunityDiscoveryGates() {
 
 runOpportunityDiscoveryGates()
 
+// MARK: - Two-axis shadow composition (gpuCacheAppend + rmsStatisticsReuse)
+
+private typealias SCReport = GemmaComposedOpportunityReport
+
+/// Independent whole-tuple oracle over the manual list: index 0 is pinned,
+/// every later tuple is kept, in order, only when each composed axis it
+/// enables is supported. All other flags ride along untouched.
+private func scExpectedShadow(cache: Bool, rms: Bool) -> [GemmaForgeCandidate] {
+    GemmaForge.candidates().enumerated()
+        .filter { $0.offset == 0
+            || ((!$0.element.gpuCacheAppend || cache)
+                && (!$0.element.rmsStatisticsReuse || rms)) }
+        .map(\.element)
+}
+
+/// Re-encodes a report through Foundation JSON, editing only `body`, so a
+/// tampered fixture is a genuinely decoded report (never a public init).
+private func scTampered(_ report: SCReport,
+                        _ edit: (inout [String: Any]) -> Void) throws -> SCReport {
+    let data = try JSONEncoder().encode(report)
+    var obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+    var body = obj["body"] as? [String: Any] ?? [:]
+    edit(&body)
+    obj["body"] = body
+    return try JSONDecoder().decode(
+        SCReport.self, from: JSONSerialization.data(withJSONObject: obj))
+}
+
+@MainActor
+private func scExpectTamperFails(_ name: String, _ original: SCReport,
+                                 _ tampered: SCReport) {
+    check("\(name): edit changes body", tampered.body != original.body)
+    do {
+        let verified = try tampered.verifyDigest()
+        check("\(name): edit fails digest", !verified)
+        let recomputed = try SCReport.digest(of: tampered.body)
+        check("\(name): recomputed digest differs", recomputed != original.reportDigest)
+    } catch {
+        failed += 1; print("FAIL: \(name) - threw \(error)")
+    }
+}
+
+/// One support combination end to end: both evidence pieces equal the
+/// independent direct analyses, verdicts follow the stated predicates,
+/// and the fresh shadow list is the exact whole-tuple filter.
+@MainActor
+private func scCheckCombination(_ name: String, _ ssa: GemmaSSAIR,
+                                _ config: GemmaGraphIR.GraphConfig, epsilon: Float,
+                                cache: Bool, rms: Bool,
+                                filteredCount: Int) -> SCReport? {
+    let hw = odHardware()
+    do {
+        let report = try GemmaShadowComposition.discover(
+            ssa: ssa, config: config, hardware: hw, epsilon: epsilon)
+        let directCache = try GemmaOpportunityDiscovery.discover(
+            ssa: ssa, config: config, hardware: hw)
+        let directPlan = try RMSStatisticsPlan.analyze(ssa: ssa, epsilon: epsilon)
+        checkEqual("\(name): cache evidence is the existing report",
+                   report.body.cacheReport, directCache)
+        checkEqual("\(name): RMS evidence is the direct existing plan",
+                   report.body.rmsPlan, directPlan)
+        checkEqual("\(name): ordered axes", report.body.verdicts.map(\.axis),
+                   SCReport.Axis.allCases)
+        checkEqual("\(name): cache verdict reflects existing report",
+                   report.verdict(for: .gpuCacheAppend)?.supported,
+                   directCache.body.supported)
+        checkEqual("\(name): cache verdict",
+                   report.verdict(for: .gpuCacheAppend)?.supported, cache)
+        checkEqual("\(name): cache reason",
+                   report.verdict(for: .gpuCacheAppend)?.reason,
+                   cache ? nil : SCReport.ReasonCode.cacheAppendUnsupported)
+        checkEqual("\(name): RMS verdict follows groupCount>0 && reuseCount>0",
+                   report.verdict(for: .rmsStatisticsReuse)?.supported,
+                   directPlan.groupCount > 0 && directPlan.reuseCount > 0)
+        checkEqual("\(name): RMS verdict",
+                   report.verdict(for: .rmsStatisticsReuse)?.supported, rms)
+        checkEqual("\(name): RMS reason",
+                   report.verdict(for: .rmsStatisticsReuse)?.reason,
+                   rms ? nil : SCReport.ReasonCode.noReusableGroups)
+        checkEqual("\(name): epsilon bits recorded exactly",
+                   report.body.epsilonBits, epsilon.bitPattern)
+        checkEqual("\(name): composition version", report.body.compositionVersion,
+                   GemmaShadowComposition.compositionVersion)
+        checkEqual("\(name): RMS analysis version", report.body.rmsAnalysisVersion,
+                   RMSStatisticsPlan.analysisVersion)
+        checkEqual("\(name): recorded cache report version unchanged",
+                   report.body.cacheReport.body.analysisVersion, 1)
+        let verified = try report.verifyDigest()
+        check("\(name): digest verifies", verified)
+        let shadow = try GemmaShadowComposition.shadowCandidates(
+            ssa: ssa, config: config, hardware: hw, epsilon: epsilon)
+        checkEqual("\(name): shadow whole tuples", shadow,
+                   scExpectedShadow(cache: cache, rms: rms))
+        checkEqual("\(name): shadow count pinned", shadow.count, filteredCount)
+        checkEqual("\(name): manual baseline retained first", shadow.first,
+                   GemmaForge.candidates().first)
+        return report
+    } catch {
+        failed += 1; print("FAIL: \(name) - threw \(error)")
+        return nil
+    }
+}
+
+@MainActor
+func runShadowCompositionGates() {
+    let hw = odHardware()
+    let manual = GemmaForge.candidates()
+    // Explicit test epsilons; the composed API has no default epsilon.
+    let epsA: Float = 1e-6
+    let epsB: Float = 1e-3
+
+    checkEqual("sc manual baseline count pinned", manual.count, 32)
+    checkEqual("sc manual gpuCacheAppend tuples pinned",
+               manual.filter(\.gpuCacheAppend).count, 18)
+    checkEqual("sc manual rmsStatisticsReuse tuples pinned",
+               manual.filter(\.rmsStatisticsReuse).count, 6)
+    check("sc manual rmsStatisticsReuse tuples all carry gpuCacheAppend",
+          manual.filter(\.rmsStatisticsReuse).allSatisfy(\.gpuCacheAppend))
+    check("sc manual index 0 enables neither axis",
+          !manual[0].gpuCacheAppend && !manual[0].rmsStatisticsReuse)
+    checkEqual("sc existing cache analysis version unchanged",
+               GemmaOpportunityDiscovery.analysisVersion, 1)
+    checkEqual("sc existing RMS analysis version", RMSStatisticsPlan.analysisVersion, 2)
+    checkEqual("sc composition version", GemmaShadowComposition.compositionVersion, 1)
+
+    // Canonical real config lowered from the expected sequence.
+    let canonicalConfig: GemmaGraphIR.GraphConfig
+    let canonicalSSA: GemmaSSAIR
+    do {
+        var b = GGUFTestBuilder()
+        b.appendGemma4Metadata()
+        let cfg = try Gemma4Config(file: GGUFReader.parse(b.finish()))
+        canonicalConfig = GemmaGraphIR.GraphConfig(
+            layerCount: cfg.layerCount, hidden: cfg.hiddenSize, qHeads: cfg.qHeads,
+            localKVHeads: cfg.localKVHeads, globalKVHeads: cfg.globalKVHeads,
+            localHeadDim: cfg.localHeadDim, globalHeadDim: cfg.globalHeadDim,
+            slidingWindow: cfg.slidingWindow, vocabSize: cfg.vocabSize,
+            expertCount: cfg.expertCount, expertUsedCount: cfg.topKExperts,
+            expertIntermediate: cfg.expertIntermediate,
+            sharedIntermediate: cfg.sharedIntermediate,
+            finalSoftcap: cfg.finalSoftcap, globalLayers: cfg.globalLayers)
+        canonicalSSA = try GemmaSSA.lower(GemmaGraphIR(
+            schema: 1, model: "gemma4-26b-a4b", config: canonicalConfig,
+            ops: GemmaGraph.expectedSequence(canonicalConfig)))
+    } catch {
+        failed += 1; print("FAIL: sc canonical setup - threw \(error)")
+        return
+    }
+
+    // Combination 1: canonical, both axes supported.
+    let both = scCheckCombination("sc canonical (both supported)", canonicalSSA,
+                                  canonicalConfig, epsilon: epsA, cache: true,
+                                  rms: true, filteredCount: 32)
+    if let both {
+        let plan = both.body.rmsPlan
+        checkEqual("sc canonical: 30 cache proofs",
+                   both.body.cacheReport.body.proofs.count, 30)
+        checkEqual("sc canonical: 30 RMS groups", plan.groupCount, 30)
+        checkEqual("sc canonical: 60 RMS reuses", plan.reuseCount, 60)
+        let actions = plan.actions.compactMap { $0 }
+        checkEqual("sc canonical: 30 compute actions",
+                   actions.filter { $0.kind == .compute }.count, 30)
+        checkEqual("sc canonical: 60 reuse actions",
+                   actions.filter { $0.kind == .reuse }.count, 60)
+        checkEqual("sc canonical: dense actions cover every instruction",
+                   plan.actions.count, canonicalSSA.instructions.count)
+        check("sc canonical: every group is one compute plus two reuses",
+              plan.groups.allSatisfy { $0.useIndices.count == 2 })
+        checkEqual("sc canonical: one group per layer, in order",
+                   plan.groups.map { canonicalSSA.instructions[$0.firstInstructionIndex].layer },
+                   (0..<30).map { Optional($0) })
+        check("sc canonical: groups keyed on x at hidden width with the given epsilon",
+              plan.groups.allSatisfy {
+                  $0.inputID.hasPrefix("x@") && $0.width == canonicalConfig.hidden
+                      && $0.vectors == 1 && $0.epsilonBits == epsA.bitPattern })
+        checkEqual("sc canonical: plan epsilon bits", plan.epsilonBits, epsA.bitPattern)
+        check("sc canonical: embedded cache report verifies",
+              (try? both.body.cacheReport.verifyDigest()) == true)
+        checkEqual("sc canonical: existing single-axis shadow helper unchanged",
+                   try? GemmaOpportunityDiscovery.shadowCandidates(
+                       ssa: canonicalSSA, config: canonicalConfig, hardware: hw),
+                   manual)
+    }
+
+    // Combination 2: swapped first cache inputs (cache no, RMS yes).
+    if let idx = canonicalSSA.instructions.firstIndex(where: { $0.op == "cache_append" }),
+       let swapped = odMutated(canonicalSSA, { obj in
+           var insts = obj["instructions"] as? [[String: Any]] ?? []
+           insts[idx]["inputs"] = Array(canonicalSSA.instructions[idx].inputs.reversed())
+           obj["instructions"] = insts
+       }), swapped != canonicalSSA {
+        if odValidates("sc swapped first cache inputs", swapped, canonicalConfig),
+           let r = scCheckCombination("sc swapped (cache unsupported, RMS supported)",
+                                      swapped, canonicalConfig, epsilon: epsA,
+                                      cache: false, rms: true, filteredCount: 14) {
+            checkEqual("sc swapped: existing cache reason codes",
+                       r.body.cacheReport.body.reasons.map(\.code), [.operandBinding])
+            checkEqual("sc swapped: remaining layers proven",
+                       r.body.cacheReport.body.proofs.map(\.layer),
+                       Array(1..<canonicalConfig.layerCount))
+            checkEqual("sc swapped: RMS groups unaffected", r.body.rmsPlan.groupCount, 30)
+            checkEqual("sc swapped: RMS reuses unaffected", r.body.rmsPlan.reuseCount, 60)
+        }
+    } else {
+        failed += 1; print("FAIL: sc swapped fixture unrepresentable or unchanged")
+    }
+
+    // Combinations 3 and 4: synthetic schedules with no rmsnorm at all.
+    let synthConfig = odSyntheticConfig()
+    let local0 = ODAppendSpec(layer: 0, kvHeads: 2, headDim: 4, width: 8)
+    let global1 = ODAppendSpec(layer: 1, kvHeads: 1, headDim: 8, width: 8)
+    let base = odSyntheticSSA([local0, global1])
+    if let base {
+        if odValidates("sc cache-only fixture", base, synthConfig),
+           let r = scCheckCombination("sc cache-only (RMS unsupported)", base, synthConfig,
+                                      epsilon: epsA, cache: true, rms: false,
+                                      filteredCount: 26) {
+            checkEqual("sc cache-only: cache proofs present",
+                       r.body.cacheReport.body.proofs.map(\.layer), [0, 1])
+            checkEqual("sc cache-only: no RMS groups", r.body.rmsPlan.groupCount, 0)
+            checkEqual("sc cache-only: no RMS reuses", r.body.rmsPlan.reuseCount, 0)
+            checkEqual("sc cache-only: dense actions cover every instruction",
+                       r.body.rmsPlan.actions.count, base.instructions.count)
+            check("sc cache-only: every action nil",
+                  r.body.rmsPlan.actions.allSatisfy { $0 == nil })
+        }
+    } else {
+        failed += 1; print("FAIL: sc cache-only fixture unrepresentable")
+    }
+    if let zero = odSyntheticSSA([]) {
+        if odValidates("sc zero-append fixture", zero, synthConfig),
+           let r = scCheckCombination("sc zero-append (both unsupported)", zero, synthConfig,
+                                      epsilon: epsA, cache: false, rms: false,
+                                      filteredCount: 14) {
+            checkEqual("sc zero-append: existing missing-coverage reasons",
+                       r.body.cacheReport.body.reasons.map(\.code),
+                       [.missingLayer, .missingLayer])
+            checkEqual("sc zero-append: no cache proofs",
+                       r.body.cacheReport.body.proofs.count, 0)
+            checkEqual("sc zero-append: no RMS groups", r.body.rmsPlan.groupCount, 0)
+        }
+    } else {
+        failed += 1; print("FAIL: sc zero-append fixture unrepresentable")
+    }
+
+    // Determinism, Codable, and digest tamper on the canonical report.
+    if let both {
+        do {
+            let again = try GemmaShadowComposition.discover(
+                ssa: canonicalSSA, config: canonicalConfig, hardware: hw, epsilon: epsA)
+            checkEqual("sc repeated: identical report", again, both)
+            checkEqual("sc repeated: identical digest", again.reportDigest, both.reportDigest)
+            let encoded = try JSONEncoder().encode(both)
+            let decoded = try JSONDecoder().decode(SCReport.self, from: encoded)
+            checkEqual("sc codable: report roundtrip", decoded, both)
+            checkEqual("sc codable: digest recomputed from body alone",
+                       try SCReport.digest(of: decoded.body), both.reportDigest)
+            let decodedVerified = try decoded.verifyDigest()
+            check("sc codable: decoded digest verifies", decodedVerified)
+            let control = try scTampered(both) { _ in }
+            checkEqual("sc tamper control: untouched JSON roundtrip equal", control, both)
+            let controlVerified = try control.verifyDigest()
+            check("sc tamper control: untouched JSON roundtrip verifies", controlVerified)
+
+            let firstCompute = both.body.rmsPlan.groups.first?.firstInstructionIndex ?? 0
+            let groupTamper = try scTampered(both) { b in
+                var plan = b["rmsPlan"] as? [String: Any] ?? [:]
+                var groups = plan["groups"] as? [[String: Any]] ?? []
+                if !groups.isEmpty { groups[0]["useIndices"] = [Int]() }
+                plan["groups"] = groups
+                b["rmsPlan"] = plan
+            }
+            scExpectTamperFails("sc tamper RMS group proof", both, groupTamper)
+            let actionTamper = try scTampered(both) { b in
+                var plan = b["rmsPlan"] as? [String: Any] ?? [:]
+                var actions = plan["actions"] as? [Any] ?? []
+                if firstCompute < actions.count { actions[firstCompute] = NSNull() }
+                plan["actions"] = actions
+                b["rmsPlan"] = plan
+            }
+            scExpectTamperFails("sc tamper RMS action", both, actionTamper)
+            let epsilonTamper = try scTampered(both) { b in
+                b["epsilonBits"] = NSNumber(value: epsB.bitPattern)
+            }
+            scExpectTamperFails("sc tamper epsilon bits", both, epsilonTamper)
+            let verdictTamper = try scTampered(both) { b in
+                var verdicts = b["verdicts"] as? [[String: Any]] ?? []
+                if verdicts.count == 2 {
+                    verdicts[1]["supported"] = false
+                    verdicts[1]["reason"] = "noReusableGroups"
+                }
+                b["verdicts"] = verdicts
+            }
+            scExpectTamperFails("sc tamper verdict", both, verdictTamper)
+            let cacheTamper = try scTampered(both) { b in
+                var cache = b["cacheReport"] as? [String: Any] ?? [:]
+                var cacheBody = cache["body"] as? [String: Any] ?? [:]
+                var proofs = cacheBody["proofs"] as? [[String: Any]] ?? []
+                if !proofs.isEmpty { proofs[0]["headDim"] = 7 }
+                cacheBody["proofs"] = proofs
+                cache["body"] = cacheBody
+                b["cacheReport"] = cache
+            }
+            scExpectTamperFails("sc tamper cache proof", both, cacheTamper)
+        } catch {
+            failed += 1; print("FAIL: sc determinism/codable/tamper - threw \(error)")
+        }
+
+        // A different positive epsilon changes bits and digest only.
+        do {
+            let other = try GemmaShadowComposition.discover(
+                ssa: canonicalSSA, config: canonicalConfig, hardware: hw, epsilon: epsB)
+            check("sc epsilon variant: test epsilons differ in bits",
+                  epsA.bitPattern != epsB.bitPattern)
+            checkEqual("sc epsilon variant: bits recorded exactly",
+                       other.body.epsilonBits, epsB.bitPattern)
+            checkEqual("sc epsilon variant: plan bits recorded",
+                       other.body.rmsPlan.epsilonBits, epsB.bitPattern)
+            check("sc epsilon variant: digest changes", other.reportDigest != both.reportDigest)
+            checkEqual("sc epsilon variant: verdicts stable",
+                       other.body.verdicts, both.body.verdicts)
+            checkEqual("sc epsilon variant: cache evidence stable",
+                       other.body.cacheReport, both.body.cacheReport)
+            checkEqual("sc epsilon variant: group count stable", other.body.rmsPlan.groupCount, 30)
+            checkEqual("sc epsilon variant: reuse count stable", other.body.rmsPlan.reuseCount, 60)
+            checkEqual("sc epsilon variant: group indices stable",
+                       other.body.rmsPlan.groups.map(\.useIndices),
+                       both.body.rmsPlan.groups.map(\.useIndices))
+            checkEqual("sc epsilon variant: plan equals direct analysis", other.body.rmsPlan,
+                       try RMSStatisticsPlan.analyze(ssa: canonicalSSA, epsilon: epsB))
+            let otherShadow = try GemmaShadowComposition.shadowCandidates(
+                ssa: canonicalSSA, config: canonicalConfig, hardware: hw, epsilon: epsB)
+            checkEqual("sc epsilon variant: shadow list stable", otherShadow, manual)
+        } catch {
+            failed += 1; print("FAIL: sc epsilon variant - threw \(error)")
+        }
+    }
+
+    // Invalid epsilon: typed error carrying the exact bits, from both entry points.
+    let invalidEpsilons: [(String, Float)] = [
+        ("NaN", Float.nan), ("+infinity", Float.infinity),
+        ("-infinity", -Float.infinity), ("zero", Float(0)),
+        ("negative zero", Float(-0.0)), ("negative", Float(-1e-6)),
+    ]
+    for (label, e) in invalidEpsilons {
+        checkThrows("sc epsilon \(label) rejected (discover)",
+                    GemmaShadowCompositionError.invalidEpsilon(e.bitPattern)) {
+            _ = try GemmaShadowComposition.discover(
+                ssa: canonicalSSA, config: canonicalConfig, hardware: hw, epsilon: e)
+        }
+        checkThrows("sc epsilon \(label) rejected (shadowCandidates)",
+                    GemmaShadowCompositionError.invalidEpsilon(e.bitPattern)) {
+            _ = try GemmaShadowComposition.shadowCandidates(
+                ssa: canonicalSSA, config: canonicalConfig, hardware: hw, epsilon: e)
+        }
+    }
+
+    // Errors from the wrapped analyses propagate unchanged.
+    if let stale = odMutated(canonicalSSA, { obj in
+        obj["instructions"] = (obj["instructions"] as? [[String: Any]] ?? []).map { inst in
+            var i = inst
+            if (i["op"] as? String) == "rmsnorm", var ins = i["inputs"] as? [String],
+               ins.first?.hasPrefix("x@") == true {
+                ins[0] = "x@0"; i["inputs"] = ins
+            }
+            return i
+        }
+    }) {
+        check("sc stale: fixture rejected by GemmaSSA.validate",
+              (try? GemmaSSA.validate(stale, config: canonicalConfig)) == nil)
+        odExpectThrows("sc stale reference propagates malformedSSA (discover)",
+                       odIsSSAError) {
+            _ = try GemmaShadowComposition.discover(
+                ssa: stale, config: canonicalConfig, hardware: hw, epsilon: epsA)
+        }
+        odExpectThrows("sc stale reference propagates malformedSSA (shadowCandidates)",
+                       odIsSSAError) {
+            _ = try GemmaShadowComposition.shadowCandidates(
+                ssa: stale, config: canonicalConfig, hardware: hw, epsilon: epsA)
+        }
+        checkThrows("sc epsilon validated before any analysis",
+                    GemmaShadowCompositionError.invalidEpsilon(Float.infinity.bitPattern)) {
+            _ = try GemmaShadowComposition.discover(
+                ssa: stale, config: canonicalConfig, hardware: hw, epsilon: .infinity)
+        }
+    } else {
+        failed += 1; print("FAIL: sc stale fixture unrepresentable")
+    }
+    if let base {
+        if let unknown = odMutated(base, { obj in
+            var insts = obj["instructions"] as? [[String: Any]] ?? []
+            insts[1]["op"] = "conv2d"
+            obj["instructions"] = insts
+        }) {
+            odExpectThrows("sc unknown op propagates malformedSSA", odIsSSAError) {
+                _ = try GemmaShadowComposition.discover(
+                    ssa: unknown, config: synthConfig, hardware: hw, epsilon: epsA)
+            }
+        } else {
+            failed += 1; print("FAIL: sc unknown-op fixture unrepresentable")
+        }
+        odExpectThrows("sc invalid config propagates invalidConfig", odIsConfigError) {
+            _ = try GemmaShadowComposition.discover(
+                ssa: base, config: odSyntheticConfig(hidden: Int.max / 4),
+                hardware: hw, epsilon: epsA)
+        }
+        odExpectThrows("sc invalid profile propagates invalidHardware", odIsHardwareError) {
+            _ = try GemmaShadowComposition.shadowCandidates(
+                ssa: base, config: synthConfig,
+                hardware: ForgeHardwareProfile(
+                    deviceName: "", maxTotalThreadsPerThreadgroup: 1024,
+                    threadExecutionWidth: 32, recommendedMaxWorkingSetSize: 1 << 30),
+                epsilon: epsA)
+        }
+    }
+}
+
+runShadowCompositionGates()
+
 // MARK: - Summary
 
 print("\(passed) passed, \(failed) failed")

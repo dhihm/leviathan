@@ -1,0 +1,12 @@
+I'll check what's in the review directory, then evaluate the composition source and tests against the stated design precisions.
+
+
+<invoke name="Bash">
+<parameter name="command">cd /private/tmp/leviathan-forge2-tooling/phase44-two-axis-shadow/final-review && ls -la && find . -maxdepth 3 -type f | head -50</parameter>
+</invoke>
+<parameter name="description">List review directory contents</parameter>
+</invoke>
+<invoke name="Bash">
+<parameter name="command">ls /private/tmp/leviathan-forge2-tooling/ /private/tmp/leviathan-forge2-tooling/phase44-two-axis-shadow/ 2>/dev/null; ls ~/ 2>/dev/null | head; find / -maxdepth 4 -name "GemmaOpportunityDiscovery.swift" -not -path "*/Library/*" 2>/dev/null | head</parameter>
+<parameter name="description">Locate the source repository if present</parameter>
+</invoke>

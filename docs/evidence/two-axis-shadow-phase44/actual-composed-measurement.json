@@ -1,0 +1,18 @@
+{
+  "cacheProofCount" : 30,
+  "cacheSupported" : true,
+  "candidateCount" : 32,
+  "candidateListEqualsManual" : true,
+  "digestVerified" : true,
+  "epsilon" : 9.9999999747524271e-07,
+  "epsilonBits" : 897988541,
+  "epsilonSource" : "Validated Gemma4Config fixed model-family epsilon; not a tunable default in composition",
+  "reportDigest" : "8d6b0e9688e38b6d300014894df88fe2421d2a7f54d56d0d9f4c930df7dfb93a",
+  "rmsActionCount" : 934,
+  "rmsGroupCount" : 30,
+  "rmsReuseCount" : 60,
+  "rmsSupported" : true,
+  "scope" : "Independent read-only measurement on GGUF tensor-contract\/graph validated actual IR. Captured actual hardware profile from prior validated lifecycle. No Metal dispatch, runtime activation or throughput claim.",
+  "ssaDigest" : "28a04586de4fe9b62d56c56723e55ba9f8668548d3cb29db1a565a42097f8583",
+  "ssaInstructions" : 934
+}

@@ -1,0 +1,30 @@
+prompt ids: 2 9259
+hashing GGUF for composite + plan identity (streaming, one pass)…
+validated region/graph/model (resident, 30 layers, pipeline max 1024)
+cache hit: existing composite g4_q4_matvec@w64 validated and installed through the public installer
+composite: enabled, installed true, cache hit true, artifact digest a82d1319a75a2575…
+plan identity validated: 50107816f506952aa3bee1389563d59cb849841c427566ee92ae2f4b844114b8 (selected GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: false, matvecTiledQ6: false, rmsnormTiled: false, matvecTiledF32: false, vectorizedLoads: true, gpuCacheAppend: true, parallelAttention: true, rmsnormCooperative: true, matvecCooperativeQ6: true, rmsStatisticsReuse: true, routerGPUResidency: true, routerLaunchDivisor: 1))
+prepared execution: ON (prepared.ssa asserted equal to plan.schedule)
+selected candidate flags: batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1 gpuCacheAppend=1 parallelAttention=1 rmsCoop=1 q6Coop=1 rmsStats=1 routerGPU=1 routerDiv=1
+identity validation prep: 8248.5 ms (graph parse + GGUF hash + plan load)
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 1/4: prefill/TTFT: 73.7 ms (2 prompt tokens) | decode: 2295.3 ms total (31 steps), median ms/token 71.80 | gpu total: 1944.3 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 2/4: prefill/TTFT: 110.8 ms (2 prompt tokens) | decode: 2915.2 ms total (31 steps), median ms/token 90.44 | gpu total: 2161.8 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 3/4: prefill/TTFT: 98.6 ms (2 prompt tokens) | decode: 3581.2 ms total (31 steps), median ms/token 110.21 | gpu total: 2438.4 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 4/4: prefill/TTFT: 140.8 ms (2 prompt tokens) | decode: 3371.9 ms total (31 steps), median ms/token 99.14 | gpu total: 2350.7 ms | metal device allocated sample: 15.168 GiB
+parallel attention totals: applied 3960, fallback 0
+rms cooperative totals: applied 31812, fallback 0
+q6 cooperative totals: applied 132, fallback 0
+rms statistics totals: computed 3960, reused 7920, fallback 0
+router residency totals: scale applied 3960, scale fallback 0, zero applied 3960, zero fallback 0, launch applied 3960, launch fallback 0
+composite moe counters: GU 7920, ACT 7920, DN 7920, merges 31680, resident fallback 0
+composite q4 launch width: applied 27060, fallback 0
+load (once): 467.1 ms (runtime Metal library + pipeline compile within it: 4.8 ms)
+GENERATION_COMPLETED

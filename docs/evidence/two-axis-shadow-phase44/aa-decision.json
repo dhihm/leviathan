@@ -1,0 +1,32 @@
+{
+  "completedUtc": "2026-10-04T19:12:38.314262+00:00",
+  "allVisitsRetained": true,
+  "mediansMsPerToken": [
+    83.99677419354839,
+    92.35161290322581,
+    82.94516129032259,
+    97.91935483870968,
+    71.40322580645162,
+    108.7709677419355,
+    92.43870967741935
+  ],
+  "medianMsPerToken": 92.35161290322581,
+  "relativeSpread": 0.40462468126724654,
+  "spreadThreshold": 0.05,
+  "spreadPass": false,
+  "filesUnchanged": true,
+  "allGeneratedIDsMatchValidatedBaseline": true,
+  "allReportedFallbackZero": true,
+  "observationCount": 14,
+  "noRecordedThermalOrPerformanceWarnings": true,
+  "ACAndBatteryAtLeast20IfReported": true,
+  "memoryActivityDeltas": {
+    "Pageouts": 884,
+    "Swapins": 42871,
+    "Swapouts": 58296
+  },
+  "noPageoutOrSwapoutGrowth": false,
+  "matchedRMSOnOffStarted": false,
+  "matchedDecision": "SKIP: baseline relative spread exceeds predeclared 5% threshold. Do not repeat/drop visits or reopen previously failed candidates.",
+  "scope": "Reproducibility control of frozen validated execution; not full-vocabulary new correctness gates or optimization evidence; no current Ollama ratio or causal attribution."
+}

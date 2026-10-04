@@ -1,0 +1,22 @@
+{
+  "session_id": "d53f60c6-e378-4006-a1f7-dc1da000fa2d",
+  "modelUsage": {
+    "claude-fable-5-1": {
+      "inputTokens": 2,
+      "outputTokens": 9848,
+      "cacheReadInputTokens": 3322,
+      "cacheCreationInputTokens": 53414,
+      "webSearchRequests": 0,
+      "costUSD": 1.5615305000000002,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 6885,
+      "canonicalModel": "claude-fable-5-1",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "duration_ms": 151541
+}
