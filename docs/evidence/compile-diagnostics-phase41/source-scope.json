@@ -1,0 +1,8 @@
+{
+  "base": "cc1219fe0b07abfea7dd872466fa10e4f865b1d7",
+  "changedSwiftFiles": [
+    "Sources/LeviathanCore/Gemma4.swift",
+    "Sources/leviathan-tests/main.swift"
+  ],
+  "otherSwiftSourcesByteIdentical": true
+}

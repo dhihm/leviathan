@@ -7013,6 +7013,90 @@ func runGemmaCompositeForgeLoaderGates() {
 }
 
 runGemmaCompositeForgeLoaderGates()
+
+// MARK: - Structured compile diagnostics (Gemma4CompileDiagnostic)
+
+/// Synthetic NSError payloads per stage, Codable roundtrip, Gemma4Error
+/// payload equality, and one REAL Metal invalid-source compile. Messages
+/// are compared only against the originating error's own
+/// localizedDescription, never against literal localized text.
+@MainActor
+func runCompileDiagnosticGates() {
+    let synthetic = NSError(domain: "leviathan.test.compile", code: 42,
+                            userInfo: [NSLocalizedDescriptionKey: "synthetic compile failure"])
+    let stages: [Gemma4CompileDiagnostic.Stage] = [.library, .function, .pipeline]
+    checkEqual("compile diagnostic stages distinct", Set(stages.map(\.rawValue)).count, 3)
+    for stage in stages {
+        let kernel = "k_\(stage.rawValue)"
+        let d = Gemma4CompileDiagnostic.make(stage: stage, kernel: kernel, error: synthetic)
+        checkEqual("compile diagnostic \(stage.rawValue): stage retained", d.stage, stage)
+        checkEqual("compile diagnostic \(stage.rawValue): kernel retained", d.kernel, kernel)
+        checkEqual("compile diagnostic \(stage.rawValue): domain retained", d.domain, synthetic.domain)
+        checkEqual("compile diagnostic \(stage.rawValue): code retained", d.code, synthetic.code)
+        checkEqual("compile diagnostic \(stage.rawValue): message is localizedDescription",
+                   d.message, synthetic.localizedDescription)
+        do {
+            let data = try JSONEncoder().encode(d)
+            let back = try JSONDecoder().decode(Gemma4CompileDiagnostic.self, from: data)
+            checkEqual("compile diagnostic \(stage.rawValue): Codable roundtrip", back, d)
+        } catch {
+            failed += 1; print("FAIL: compile diagnostic \(stage.rawValue) Codable — threw \(error)")
+        }
+    }
+
+    let a = Gemma4CompileDiagnostic.make(stage: .pipeline, kernel: "k", error: synthetic)
+    let sameA = Gemma4CompileDiagnostic.make(stage: .pipeline, kernel: "k", error: synthetic)
+    let otherStage = Gemma4CompileDiagnostic.make(stage: .library, kernel: "k", error: synthetic)
+    let otherCode = Gemma4CompileDiagnostic.make(
+        stage: .pipeline, kernel: "k",
+        error: NSError(domain: synthetic.domain, code: 43, userInfo: synthetic.userInfo))
+    check("Gemma4Error.compileFailed equal for equal payloads",
+          Gemma4Error.compileFailed(a) == .compileFailed(sameA))
+    check("Gemma4Error.compileFailed differs by stage",
+          Gemma4Error.compileFailed(a) != .compileFailed(otherStage))
+    check("Gemma4Error.compileFailed differs by code",
+          Gemma4Error.compileFailed(a) != .compileFailed(otherCode))
+    check("Gemma4Error.compileFailed distinct from shaderCompileFailed",
+          Gemma4Error.compileFailed(a) != .shaderCompileFailed("k"))
+
+    guard let device = MTLCreateSystemDefaultDevice() else {
+        print("SKIP: compile diagnostic Metal invalid-source gate (no Metal device)")
+        return
+    }
+    // Same contract as the runner's lazy accessors: a failed compile is
+    // thrown as Gemma4Error.compileFailed, never a fallback library.
+    let invalidSource = "kernel void g4_diag_invalid( { this is not valid MSL"
+    var originalError: NSError?
+    func compileInvalid() throws -> MTLLibrary {
+        do { return try device.makeLibrary(source: invalidSource, options: nil) }
+        catch {
+            originalError = error as NSError
+            throw Gemma4Error.compileFailed(
+                .make(stage: .library, kernel: "g4_diag_invalid", error: error))
+        }
+    }
+    do {
+        _ = try compileInvalid()
+        failed += 1; print("FAIL: invalid MSL source compiled without throwing")
+    } catch let Gemma4Error.compileFailed(diagnostic) {
+        guard let original = originalError else {
+            failed += 1; print("FAIL: invalid MSL compile — original NSError not captured")
+            return
+        }
+        passed += 1
+        checkEqual("metal invalid source: stage is library", diagnostic.stage, .library)
+        checkEqual("metal invalid source: kernel retained", diagnostic.kernel, "g4_diag_invalid")
+        checkEqual("metal invalid source: domain retained", diagnostic.domain, original.domain)
+        checkEqual("metal invalid source: code retained", diagnostic.code, original.code)
+        checkEqual("metal invalid source: message is original localizedDescription",
+                   diagnostic.message, original.localizedDescription)
+        check("metal invalid source: domain non-empty", !diagnostic.domain.isEmpty)
+    } catch {
+        failed += 1; print("FAIL: invalid MSL compile — unexpected error \(error)")
+    }
+}
+
+runCompileDiagnosticGates()
 // MARK: - Summary
 
 print("\(passed) passed, \(failed) failed")

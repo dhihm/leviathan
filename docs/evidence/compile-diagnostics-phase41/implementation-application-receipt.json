@@ -1,0 +1,55 @@
+{
+  "appliedUtc": "2026-10-04T17:04:49.251298+00:00",
+  "replacements": [
+    {
+      "path": "Sources/LeviathanCore/Gemma4.swift",
+      "oldSha256": "5f1b4e027377c26a793ec03d62a86f5b96e0b5ea99acb65c57c87bb6a01f7475",
+      "newSha256": "335bbe5d9adb7cbde802da510c7d4ed97404e4c64172b51c492fd2043a570050"
+    },
+    {
+      "path": "Sources/LeviathanCore/Gemma4.swift",
+      "oldSha256": "d3a1379de35b7e23889a32b8f675952e0aacf495c197cb5f35312f0c250fc3ab",
+      "newSha256": "294376407d62667ebcf53974a0997a479869675f12be9e528d092a5d687b2a3f"
+    },
+    {
+      "path": "Sources/LeviathanCore/Gemma4.swift",
+      "oldSha256": "b96f7cee27de47fe26bc89abddc124d0c1d5d16e47f25d6570132beb1cf7bba4",
+      "newSha256": "aa8814151cc27397cd53528b9253b15e8ee22fe5aa119b7ac84727a6dc427689"
+    },
+    {
+      "path": "Sources/LeviathanCore/Gemma4.swift",
+      "oldSha256": "7a3f457191404205f48126b17bfb7d73be176e965d736b312558f0bd47a01a77",
+      "newSha256": "1943b3eeae6621e8aa38c4be4cfd66c8f31bed46546f9ef0d1ccf63feea7fcd5"
+    },
+    {
+      "path": "Sources/LeviathanCore/Gemma4.swift",
+      "oldSha256": "458ac9aad453e95bcda89d15be9af9a3498f80300bd32fd55ff6e36c054f8af9",
+      "newSha256": "ef3aa184e12cc6944c9b2af5b821247b23f86f0b6a8ea23b3ffbbf38ef884505"
+    },
+    {
+      "path": "Sources/LeviathanCore/Gemma4.swift",
+      "oldSha256": "990a3547c887d66196eec1a15db5a45f52900778a40f8ceda85aeff6307124c3",
+      "newSha256": "f77a453d0fcf682ad2cfeef8ae80c0d196a2a8bed3ebdb0e5431f1da07ef139b"
+    },
+    {
+      "path": "Sources/LeviathanCore/Gemma4.swift",
+      "oldSha256": "ca53384d7e8eb120de0a041f6340c91a63662a9b51159cad7c2b3329f3489451",
+      "newSha256": "4900c8dab0692a9fe2af0ebcf5d2b623af081252682d06975bed10180f818cc9"
+    },
+    {
+      "path": "Sources/LeviathanCore/Gemma4.swift",
+      "oldSha256": "b8f8b1718f68ae8ad7ac6a34218a073cf0b1f44458e78407fd1a350d043f11a4",
+      "newSha256": "06954e5d64765cd21174e61334b18ce5e13efdfc79991a2870d2d93124c6c8e0"
+    },
+    {
+      "path": "Sources/leviathan-tests/main.swift",
+      "oldSha256": "936bf7c5b8fd213f51b045544adae26899a3d451b08879d879aa4c2045baa0a1",
+      "newSha256": "7504a725f4f446694b488f35af4d8571ab5234a0f97b002413fb0af7314a0ecc"
+    }
+  ],
+  "sourceHashes": {
+    "Sources/LeviathanCore/Gemma4.swift": "f963dfd990091d88de52c1dd05f55c0c5ec0615330f6cc98505db7652b67c365",
+    "Sources/leviathan-tests/main.swift": "19bb8860f69c2dc86701f5a85fdc558e6ceada0ba59353b42d98ba13f335547c"
+  },
+  "semanticSupervisorEdits": false
+}

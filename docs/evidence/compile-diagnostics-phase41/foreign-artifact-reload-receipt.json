@@ -1,0 +1,33 @@
+{
+  "command": [
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-compile-diagnostics-phase41/.build/release/leviathan-cli",
+    "gemma-generate",
+    "--file",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "--graph",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "--plan",
+    "/tmp/leviathan-forge2-tooling/phase40-rms-launch-profile/baseline-plan.json",
+    "--composite-plan",
+    "/tmp/leviathan-forge2-tooling/phase40-rms-launch-profile/baseline-composite.json",
+    "--moe-region",
+    "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+    "--text",
+    "Hello",
+    "--max-tokens",
+    "1",
+    "--repeat",
+    "1",
+    "--bos-align"
+  ],
+  "exit": 1,
+  "elapsedSeconds": 9.445523582864553,
+  "completedUtc": "2026-10-04T17:11:15.623003+00:00",
+  "artifactsUnchanged": true,
+  "artifactFileHashes": {
+    "baseline-plan.json": "e615a00490531c66618ef8ba8679468a66b5b1e118e21621af7cfe411d95944d",
+    "baseline-composite.json": "0126cb04a74ed44bc0b3a50d35a51d13a8739e8445d7e57f1a67e2e24f712a43"
+  },
+  "generationCompleted": false,
+  "expected": "Prior executable-bound composite rejected; no selection or artifact rewrite"
+}

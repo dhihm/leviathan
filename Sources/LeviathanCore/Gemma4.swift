@@ -2,6 +2,40 @@ import Foundation
 import CryptoKit
 import Metal
 
+/// Structured diagnostic for a runtime Metal shader compile failure: the
+/// compile stage, the kernel being built, and the ORIGINAL NSError domain,
+/// code, and localized description (never re-parsed from message text).
+public struct Gemma4CompileDiagnostic: Equatable, Codable, Sendable {
+    /// Which compile step failed.
+    public enum Stage: String, Equatable, Codable, Sendable {
+        case library
+        case function
+        case pipeline
+    }
+
+    public let stage: Stage
+    public let kernel: String
+    public let domain: String
+    public let code: Int
+    public let message: String
+
+    public init(stage: Stage, kernel: String, domain: String, code: Int, message: String) {
+        self.stage = stage
+        self.kernel = kernel
+        self.domain = domain
+        self.code = code
+        self.message = message
+    }
+
+    /// Builds a diagnostic from a thrown compile error, preserving its
+    /// NSError domain, code, and localizedDescription.
+    public static func make(stage: Stage, kernel: String, error: Error) -> Gemma4CompileDiagnostic {
+        let ns = error as NSError
+        return Gemma4CompileDiagnostic(stage: stage, kernel: kernel, domain: ns.domain,
+                                       code: ns.code, message: ns.localizedDescription)
+    }
+}
+
 /// Errors from the Gemma 4 (26B-A4B, QAT Q4_0) original runtime.
 public enum Gemma4Error: Error, Equatable, Sendable {
     case missingMetadata(String)
@@ -17,6 +51,8 @@ public enum Gemma4Error: Error, Equatable, Sendable {
     case mmapFailed(errno: Int32)
     case badTokenId(Int)
     case contextTooLong(Int, max: Int)
+    /// Structured runtime shader compile failure (lazy pipeline accessors).
+    case compileFailed(Gemma4CompileDiagnostic)
 }
 
 /// Architecture facts for the exact downloaded GGUF, parsed from its own
@@ -1235,19 +1271,27 @@ public final class Gemma4Runner {
 
     /// Compiles (once) the cooperative RMSNorm pipeline from the PUBLIC
     /// RMSCooperative enum source with default compiler options on the
-    /// runner's OWN device. Compilation failure fails CLOSED as
-    /// Gemma4Error (shaderCompileFailed / functionMissing).
+    /// runner's OWN device. Library and pipeline compile failures fail
+    /// CLOSED as Gemma4Error.compileFailed (original NSError domain, code
+    /// and description plus the kernel name); a missing function stays
+    /// functionMissing. The pipeline is cached only after success.
     internal func rmsCooperativePipeline() throws -> MTLComputePipelineState {
         if let cached = rmsCooperativePipelineState { return cached }
         let device = self.device
         let library: MTLLibrary
         do { library = try device.makeLibrary(source: RMSCooperative.source, options: nil) }
-        catch { throw Gemma4Error.shaderCompileFailed("rms cooperative: \(error)") }
+        catch {
+            throw Gemma4Error.compileFailed(
+                .make(stage: .library, kernel: RMSCooperative.kernelName, error: error))
+        }
         guard let fn = library.makeFunction(name: RMSCooperative.kernelName) else {
             throw Gemma4Error.functionMissing(RMSCooperative.kernelName)
         }
-        guard let pipe = try? device.makeComputePipelineState(function: fn) else {
-            throw Gemma4Error.shaderCompileFailed("rms cooperative pipeline")
+        let pipe: MTLComputePipelineState
+        do { pipe = try device.makeComputePipelineState(function: fn) }
+        catch {
+            throw Gemma4Error.compileFailed(
+                .make(stage: .pipeline, kernel: RMSCooperative.kernelName, error: error))
         }
         rmsCooperativePipelineState = pipe
         return pipe
@@ -1334,19 +1378,27 @@ public final class Gemma4Runner {
 
     /// Compiles (once) the cooperative Q6_K pipeline from the PUBLIC
     /// Q6Cooperative enum source with default compiler options on the
-    /// runner's OWN device. Compilation failure fails CLOSED as
-    /// Gemma4Error (shaderCompileFailed / functionMissing).
+    /// runner's OWN device. Library and pipeline compile failures fail
+    /// CLOSED as Gemma4Error.compileFailed (original NSError domain, code
+    /// and description plus the kernel name); a missing function stays
+    /// functionMissing. The pipeline is cached only after success.
     internal func q6CooperativePipeline() throws -> MTLComputePipelineState {
         if let cached = q6CooperativePipelineState { return cached }
         let device = self.device
         let library: MTLLibrary
         do { library = try device.makeLibrary(source: Q6Cooperative.source, options: nil) }
-        catch { throw Gemma4Error.shaderCompileFailed("q6 cooperative: \(error)") }
+        catch {
+            throw Gemma4Error.compileFailed(
+                .make(stage: .library, kernel: Q6Cooperative.kernelName, error: error))
+        }
         guard let fn = library.makeFunction(name: Q6Cooperative.kernelName) else {
             throw Gemma4Error.functionMissing(Q6Cooperative.kernelName)
         }
-        guard let pipe = try? device.makeComputePipelineState(function: fn) else {
-            throw Gemma4Error.shaderCompileFailed("q6 cooperative pipeline")
+        let pipe: MTLComputePipelineState
+        do { pipe = try device.makeComputePipelineState(function: fn) }
+        catch {
+            throw Gemma4Error.compileFailed(
+                .make(stage: .pipeline, kernel: Q6Cooperative.kernelName, error: error))
         }
         q6CooperativePipelineState = pipe
         return pipe
@@ -1467,37 +1519,57 @@ public final class Gemma4Runner {
 
     /// Compiles (once) the statistics compute pipeline from the PUBLIC
     /// RMSStatisticsKernels source on the runner's OWN device with
-    /// default compiler options. Compilation failure fails CLOSED as
-    /// Gemma4Error.
+    /// default compiler options. Library and pipeline compile failures
+    /// fail CLOSED as Gemma4Error.compileFailed (original NSError domain,
+    /// code and description plus the kernel name); a missing function
+    /// stays functionMissing. The pipeline is cached only after success.
     internal func rmsStatsComputePipeline() throws -> MTLComputePipelineState {
         if let cached = rmsStatsComputePipelineState { return cached }
         let device = self.device
         let library: MTLLibrary
         do { library = try device.makeLibrary(source: RMSStatisticsKernels.source, options: nil) }
-        catch { throw Gemma4Error.shaderCompileFailed("rms statistics: \(error)") }
+        catch {
+            throw Gemma4Error.compileFailed(
+                .make(stage: .library, kernel: RMSStatisticsKernels.computeKernelName,
+                      error: error))
+        }
         guard let fn = library.makeFunction(name: RMSStatisticsKernels.computeKernelName) else {
             throw Gemma4Error.functionMissing(RMSStatisticsKernels.computeKernelName)
         }
-        guard let pipe = try? device.makeComputePipelineState(function: fn) else {
-            throw Gemma4Error.shaderCompileFailed("rms statistics compute pipeline")
+        let pipe: MTLComputePipelineState
+        do { pipe = try device.makeComputePipelineState(function: fn) }
+        catch {
+            throw Gemma4Error.compileFailed(
+                .make(stage: .pipeline, kernel: RMSStatisticsKernels.computeKernelName,
+                      error: error))
         }
         rmsStatsComputePipelineState = pipe
         return pipe
     }
 
     /// Compiles (once) the cached-apply pipeline (same source, its own
-    /// separate pipeline object).
+    /// separate pipeline object), with the same structured
+    /// compileFailed / functionMissing failure contract as the compute
+    /// accessor; cached only after success.
     internal func rmsStatsCachedPipeline() throws -> MTLComputePipelineState {
         if let cached = rmsStatsCachedPipelineState { return cached }
         let device = self.device
         let library: MTLLibrary
         do { library = try device.makeLibrary(source: RMSStatisticsKernels.source, options: nil) }
-        catch { throw Gemma4Error.shaderCompileFailed("rms statistics: \(error)") }
+        catch {
+            throw Gemma4Error.compileFailed(
+                .make(stage: .library, kernel: RMSStatisticsKernels.applyKernelName,
+                      error: error))
+        }
         guard let fn = library.makeFunction(name: RMSStatisticsKernels.applyKernelName) else {
             throw Gemma4Error.functionMissing(RMSStatisticsKernels.applyKernelName)
         }
-        guard let pipe = try? device.makeComputePipelineState(function: fn) else {
-            throw Gemma4Error.shaderCompileFailed("rms statistics cached pipeline")
+        let pipe: MTLComputePipelineState
+        do { pipe = try device.makeComputePipelineState(function: fn) }
+        catch {
+            throw Gemma4Error.compileFailed(
+                .make(stage: .pipeline, kernel: RMSStatisticsKernels.applyKernelName,
+                      error: error))
         }
         rmsStatsCachedPipelineState = pipe
         return pipe
@@ -1636,14 +1708,19 @@ public final class Gemma4Runner {
     /// diagnostic slot, never diagnostic counters. Hardware limits are
     /// validated against the ACTUAL compiled pipeline (threadgroup width
     /// and static threadgroup memory); violations fail closed as
-    /// Gemma4Error (shaderCompileFailed / functionMissing / badTensorGeometry
-    /// — the existing enum cases).
+    /// Gemma4Error.badTensorGeometry. A library or pipeline compile failure
+    /// throws Gemma4Error.compileFailed with the original NSError domain,
+    /// code and description; a missing function stays functionMissing.
+    /// The pipeline is cached only after every check succeeds.
     internal func parallelAttentionPipeline() throws -> MTLComputePipelineState {
         if let cached = parallelAttentionPipelineState { return cached }
         let device = self.device
         let library: MTLLibrary
         do { library = try device.makeLibrary(source: AttentionDiagnostic.candidateSource, options: nil) }
-        catch { throw Gemma4Error.shaderCompileFailed("parallel attention: \(error)") }
+        catch {
+            throw Gemma4Error.compileFailed(
+                .make(stage: .library, kernel: AttentionDiagnostic.kernelName, error: error))
+        }
         guard let fn = library.makeFunction(name: AttentionDiagnostic.kernelName) else {
             throw Gemma4Error.functionMissing(AttentionDiagnostic.kernelName)
         }
@@ -1652,7 +1729,10 @@ public final class Gemma4Runner {
         desc.label = AttentionDiagnostic.productionLabel
         let pipe: MTLComputePipelineState
         do { pipe = try device.makeComputePipelineState(descriptor: desc, options: [], reflection: nil) }
-        catch { throw Gemma4Error.shaderCompileFailed("parallel attention pipeline: \(error)") }
+        catch {
+            throw Gemma4Error.compileFailed(
+                .make(stage: .pipeline, kernel: AttentionDiagnostic.kernelName, error: error))
+        }
         guard pipe.maxTotalThreadsPerThreadgroup >= AttentionDiagnostic.threads,
               pipe.staticThreadgroupMemoryLength <= device.maxThreadgroupMemoryLength else {
             throw Gemma4Error.badTensorGeometry(

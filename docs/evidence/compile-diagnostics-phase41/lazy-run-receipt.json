@@ -1,0 +1,13 @@
+{
+  "command": [
+    "/tmp/leviathan-forge2-tooling/phase41-compiler-integrity-review/lazy-verification",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+    "/tmp/leviathan-forge2-tooling/phase41-compiler-integrity-review/lazy-results.json"
+  ],
+  "exit": 0,
+  "elapsedSeconds": 2.9578936668112874,
+  "completedUtc": "2026-10-04T17:10:27.360789+00:00",
+  "binarySha256": "f5085422713b0c3d27b89d911bc0943320f655d60a115aa05506b68ce96b3ada"
+}

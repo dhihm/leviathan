@@ -1,0 +1,18 @@
+{
+  "completedUtc": "2026-10-04T17:12:12.985777+00:00",
+  "base": "cc1219fe0b07abfea7dd872466fa10e4f865b1d7",
+  "releaseBuildExit": 0,
+  "testsPassed": 1669,
+  "testsFailed": 0,
+  "initialFailure": "Test harness expected debug CLI path; corrected with symlink to identical release executable, no source changes",
+  "cliSha256": "b77e692ff46dd80116500335c86000273e1744cd35ebb31a5a5aed48a1ef0f5a",
+  "actualAuthorModel": "claude-opus-5-5",
+  "finalReviewerModel": "claude-fable-5-1",
+  "finalReviewAccepted": true,
+  "productChanges": "Typed diagnostics and ten catch sites in five lazy accessors only",
+  "runtimePolicyChanged": false,
+  "performanceClaim": false,
+  "freshProductionForgeOrPositivePlanReloadRun": false,
+  "foreignArtifactReloadRejected": true,
+  "mainPromoted": false
+}

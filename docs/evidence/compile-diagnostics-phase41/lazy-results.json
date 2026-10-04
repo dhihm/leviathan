@@ -1,0 +1,45 @@
+{
+  "bitExact" : true,
+  "exactIDs" : true,
+  "firstArmCounts" : {
+    "parallelAttentionApplied" : 90,
+    "parallelAttentionFallback" : 0,
+    "q6CooperativeApplied" : 3,
+    "q6CooperativeFallback" : 0,
+    "rmsCooperativeApplied" : 723,
+    "rmsCooperativeFallback" : 0,
+    "rmsStatsComputed" : 90,
+    "rmsStatsFallback" : 0,
+    "rmsStatsReused" : 180
+  },
+  "fullVocab" : 262144,
+  "groupCount" : 30,
+  "identityStable" : true,
+  "processedTokens" : 3,
+  "prompt" : [
+    2,
+    9259
+  ],
+  "referenceIDs" : [
+    3324,
+    236772
+  ],
+  "replayCounts" : {
+    "parallelAttentionApplied" : 90,
+    "parallelAttentionFallback" : 0,
+    "q6CooperativeApplied" : 3,
+    "q6CooperativeFallback" : 0,
+    "rmsCooperativeApplied" : 723,
+    "rmsCooperativeFallback" : 0,
+    "rmsStatsComputed" : 90,
+    "rmsStatsFallback" : 0,
+    "rmsStatsReused" : 180
+  },
+  "replayIDs" : [
+    3324,
+    236772
+  ],
+  "reuseCount" : 60,
+  "scope" : "Actual resident model lazy-path verification on current main modern candidate (all existing flags true, router divisor 2). Prompt [2,9259] plus one teacher-forced continuation, replayed with the same prepared executor. Diagnostic E4R32\/Q4 width64 install; not production selection, qualification, or throughput approval. No artifacts rewritten.",
+  "steps" : 2
+}
