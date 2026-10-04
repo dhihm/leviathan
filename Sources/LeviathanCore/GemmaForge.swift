@@ -228,6 +228,16 @@ public struct GemmaPreparedExecution {
     let configFingerprint: GemmaConfigFingerprint
     /// Precomputed immutable value table (id -> value), built once.
     public let byID: [String: GemmaSSAIR.Value]
+    /// Lightweight composite-install binding captured at prepare time:
+    /// the installed MoE lowering's artifact digest and the installed Q4
+    /// launch width. assertBound compares these cheap values on every
+    /// reuse and rejects a CHANGED install state BEFORE any GPU work —
+    /// even for the same runner object and the same graph. The
+    /// per-call candidate axis flags (e.g. parallel attention) vary per
+    /// call and are deliberately NOT part of this binding; nothing here
+    /// hashes the executable or kernel source per token.
+    let boundMoeArtifactDigest: String?
+    let boundQ4LaunchWidth: Int?
 
     private init(ssa: GemmaSSAIR, runner: Gemma4Runner, graph: GemmaGraphIR,
                  configFingerprint: GemmaConfigFingerprint,
@@ -237,6 +247,8 @@ public struct GemmaPreparedExecution {
         self.boundGraph = graph
         self.configFingerprint = configFingerprint
         self.byID = byID
+        self.boundMoeArtifactDigest = runner.moeGenerated?.artifactDigest
+        self.boundQ4LaunchWidth = runner.q4LaunchWidth
     }
 
     /// One-time preparation: validates the graph against the runner's
@@ -279,6 +291,15 @@ public struct GemmaPreparedExecution {
         guard graph == boundGraph else {
             throw GemmaForgeError.invalidPlan(
                 "prepared execution graph mismatch")
+        }
+        // Cheap composite-state binding: reject a changed install state
+        // (MoE artifact digest / Q4 launch width) before any GPU work,
+        // even for the same owner runner and the same graph. These are
+        // lightweight value comparisons only.
+        guard runner.moeGenerated?.artifactDigest == boundMoeArtifactDigest,
+              runner.q4LaunchWidth == boundQ4LaunchWidth else {
+            throw GemmaForgeError.invalidPlan(
+                "prepared execution composite install state changed — re-prepare required")
         }
     }
 }

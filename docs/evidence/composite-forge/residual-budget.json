@@ -1,0 +1,88 @@
+{
+  "baseline": "4e59c10db0282cd84bf2e635f94b444a37e09b98",
+  "decodeWallMillisPerToken": 389.07970148689515,
+  "batchedPercent": {
+    "gpu": 73.4242664830308,
+    "flushHost": 17.38848864554305,
+    "encode": 1.3654135998911987,
+    "readCopy": 2.1509380824237048,
+    "writeCopy": 0.10492566281022286,
+    "residual": 5.565967526301016
+  },
+  "buffersPerToken": 97.0,
+  "dispatchesPerToken": 1829.0,
+  "intrusiveReplayNormalizedDiff": 0,
+  "intrusiveDiagnosticRanking": [
+    {
+      "name": "g4_q4_matvec",
+      "percent": 65.62797057078227,
+      "callsPerToken": 685.0
+    },
+    {
+      "name": "g4_rmsnorm_vl",
+      "percent": 18.74229445553039,
+      "callsPerToken": 331.0
+    },
+    {
+      "name": "g4_q6_matvec",
+      "percent": 6.058815042935027,
+      "callsPerToken": 1.0
+    },
+    {
+      "name": "g4_f32_matvec",
+      "percent": 4.67705245331923,
+      "callsPerToken": 30.0
+    },
+    {
+      "name": "g4_gelu_up",
+      "percent": 1.4044723552673422,
+      "callsPerToken": 270.0
+    },
+    {
+      "name": "g4_axpy",
+      "percent": 1.380877882185108,
+      "callsPerToken": 300.0
+    },
+    {
+      "name": "g4_rope",
+      "percent": 0.7825918461934607,
+      "callsPerToken": 60.0
+    },
+    {
+      "name": "g4_attn_par64_diag",
+      "percent": 0.7453725298429483,
+      "callsPerToken": 30.0
+    },
+    {
+      "name": "g4_scale",
+      "percent": 0.2610432494838517,
+      "callsPerToken": 60.0
+    },
+    {
+      "name": "g4_add",
+      "percent": 0.14983532181267326,
+      "callsPerToken": 30.0
+    },
+    {
+      "name": "g4_cache_append",
+      "percent": 0.14800091950966063,
+      "callsPerToken": 30.0
+    },
+    {
+      "name": "g4_softcap",
+      "percent": 0.016807343494589757,
+      "callsPerToken": 1.0
+    },
+    {
+      "name": "g4_q6_embed_row",
+      "percent": 0.004866029643447763,
+      "callsPerToken": 1.0
+    }
+  ],
+  "pureGPUOptimizationHypotheticalMaximumSpeedup": 3.762831228577296,
+  "boundAssumption": "Only GPU time changes; all measured host work held fixed. This single instrumented shared-Mac workload is not an architecture-wide ceiling or an Ollama-comparable TPS prediction.",
+  "selectedBatch": "Connect existing E4 plus hardware-derived Q4 launch selection/production artifact into normal model compile/inference, bind actual installed backend state, reuse-only inference. No new arithmetic, no relaxed gates.",
+  "expectedGain": "No promised TPS or percentage. Previous E4/Q4/attention diagnostics suggest substantial gain, but new matched evaluation must decide. Intrusive shares cannot become normal GPU shares.",
+  "modelBackendLayout": "Same 14.44GB GGUF kept for fair comparison; execution schedule identified as actionable. MLX/layout causality not measured and no conversion/download undertaken.",
+  "measurementWarmup": "First generation after a two-token prefill, without a full-generation warmup. These shares may include cold page/resource effects; they are not a stable warm serving budget. The later intrusive replay was primed by that generation."
+}

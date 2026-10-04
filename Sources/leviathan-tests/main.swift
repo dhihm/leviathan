@@ -5312,6 +5312,78 @@ if let device = MTLCreateSystemDefaultDevice() {
     print("SKIP cache-append GPU copy: Metal unavailable")
 }
 
+// MARK: - GemmaCompositeForge.loadArtifact bounded-loader gates
+
+/// Bounded-temporary-fixture IO gates for the composite artifact loader
+/// (the ONLY public surface of GemmaCompositeForge that is testable
+/// without a real GGUF): missing file -> nil, undecodable JSON -> decode
+/// rejection, and a file exactly ONE BYTE over the public read limit ->
+/// size-guard rejection BEFORE any decode is attempted (the oversized
+/// fixture is deliberately '{'-bytes, i.e. also undecodable, so a
+/// decode-flavored error would prove the guard ran too late). The
+/// oversized fixture is written in bounded 1 MiB chunks; every fixture
+/// is removed by defer.
+@MainActor
+func runGemmaCompositeForgeLoaderGates() {
+    let tmp = FileManager.default.temporaryDirectory
+    func freshURL(_ tag: String) -> URL {
+        tmp.appendingPathComponent(
+            "leviathan-composite-\(tag)-\(UUID().uuidString).json")
+    }
+
+    // Missing file: nil, never an error — callers distinguish reuse-only.
+    let missing = freshURL("missing")
+    do {
+        let loaded = try GemmaCompositeForge.loadArtifact(from: missing)
+        check("composite loader: missing file returns nil", loaded == nil)
+    } catch {
+        failed += 1
+        print("FAIL: composite loader: missing file returns nil — threw \(error)")
+    }
+
+    // Undecodable JSON at a normal size: decode rejection.
+    let bad = freshURL("badjson")
+    do {
+        try Data("{ not json".utf8).write(to: bad)
+        defer { try? FileManager.default.removeItem(at: bad) }
+        _ = try GemmaCompositeForge.loadArtifact(from: bad)
+        failed += 1
+        print("FAIL: composite loader: invalid JSON rejected — no error")
+    } catch {
+        check("composite loader: invalid JSON rejected (decode error)",
+              "\(error)".contains("decode"))
+    }
+
+    // Exactly limit+1 bytes, written in bounded chunks: the size guard
+    // must fire, and must fire BEFORE decode (the bytes are also
+    // undecodable, so a decode error here would mean the guard ran late).
+    let big = freshURL("oversize")
+    do {
+        let total = GemmaCompositeForge.artifactReadLimitBytes + 1
+        FileManager.default.createFile(atPath: big.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: big)
+        let chunk = Data(repeating: 0x7B, count: 1 << 20)
+        var written = 0
+        while written < total {
+            let n = min(chunk.count, total - written)
+            try handle.write(contentsOf: chunk[0..<n])
+            written += n
+        }
+        try handle.close()
+        defer { try? FileManager.default.removeItem(at: big) }
+        _ = try GemmaCompositeForge.loadArtifact(from: big)
+        failed += 1
+        print("FAIL: composite loader: oversized artifact rejected — no error")
+    } catch {
+        let message = "\(error)"
+        check("composite loader: oversized artifact rejected by size guard",
+              message.contains("exceeds"))
+        check("composite loader: size guard fires before decode",
+              !message.contains("decode"))
+    }
+}
+
+runGemmaCompositeForgeLoaderGates()
 // MARK: - Summary
 
 print("\(passed) passed, \(failed) failed")

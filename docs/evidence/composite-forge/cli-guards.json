@@ -1,0 +1,36 @@
+{
+  "passed": 6,
+  "scope": "Argument errors precede model/region reads and allocation; deliberately nonexistent model provided. No GPU or performance claim.",
+  "cases": [
+    {
+      "case": "forge-lone-flag",
+      "exit": 1,
+      "guard": "error: --composite-plan and --moe-region must be passed together (both or neither)"
+    },
+    {
+      "case": "generate-lone-flag",
+      "exit": 1,
+      "guard": "error: --composite-plan and --moe-region must be passed together (both or neither)"
+    },
+    {
+      "case": "generate-requires-plan",
+      "exit": 1,
+      "guard": "error: --composite-plan/--moe-region require --plan"
+    },
+    {
+      "case": "forge-rejects-cache",
+      "exit": 1,
+      "guard": "error: --composite-plan/--moe-region require resident weights and cannot be combined with --expert-cache-budget (streaming expert cache)"
+    },
+    {
+      "case": "generate-rejects-cache",
+      "exit": 1,
+      "guard": "error: --composite-plan/--moe-region require resident weights and cannot be combined with --expert-cache-budget (streaming expert cache)"
+    },
+    {
+      "case": "forge-full32-required",
+      "exit": 1,
+      "guard": "error: --composite-plan requires --gen-tokens 32 (full gated workload)"
+    }
+  ]
+}

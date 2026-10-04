@@ -26,6 +26,12 @@ func usage() -> Never {
       gemma-forge --file <model.gguf> --graph <g.json> --plan <p.json>
                   [--prompt-ids 2,9259 | --text T [--chat]] [--gen-tokens 8]
                   [--expert-cache-budget BYTES]
+                  [--composite-plan <c.json> --moe-region <r.json>]
+          Paired optional composite flags (both or neither): install the
+          production composite Q4 launch-geometry + MoE lowering artifact
+          (existing artifact required; invalid artifacts fail closed)
+          before forge identity/selection. Requires --gen-tokens 32 and
+          resident mode (no --expert-cache-budget).
           Validate the captured Gemma graph against the real GGUF, gate
           and measure all legal engine candidates, select by per-token
           wall median, save a reusable plan artifact (typed SSA schedule
@@ -688,6 +694,23 @@ case "forge":
         // The instrumentation adds two clock reads per primitive call; the
         // overhead control is the SAME workload run without --breakdown.
         let breakdown = args.contains("--breakdown")
+        // Paired composite flags (both or neither), validated BEFORE any
+        // GPU allocation. Composite here is inference / timed generation
+        // ONLY: an existing composite artifact is required and selection is
+        // NEVER allowed (the helper runs with allowSelection false).
+        let compositeOpts = parseCompositeOptions(args)
+        if let comp = compositeOpts {
+            guard args.contains("--plan") else {
+                fail("--composite-plan/--moe-region require --plan")
+            }
+            guard FileManager.default.fileExists(atPath: comp.compositePlanPath) else {
+                fail("composite artifact not found: \(comp.compositePlanPath)")
+            }
+            guard !args.contains("--expert-cache-budget") else {
+                fail("--composite-plan/--moe-region require resident weights and cannot "
+                      + "be combined with --expert-cache-budget (streaming expert cache)")
+            }
+        }
         do {
             // Parse and validate the prompt BEFORE any GPU allocation.
             let fileURL = URL(fileURLWithPath: path)
@@ -758,9 +781,29 @@ case "forge":
                     fail("graph file > 8 MiB: \(graphPath)")
                 }
                 graphOpt = try GemmaGraph.parse(graphData)
-                let engine = GemmaForge.engineDigest(try runner.engineIdentity())
-                print("hashing GGUF for plan identity (streaming, one pass)…")
+                // Composite state binding: after the standard graph/plan
+                // reads and the GGUF hash, BEFORE the engine digest and
+                // plan-identity validation. allowSelection false — this is
+                // inference / timed generation, never selection. One-shot
+                // preparatory work only (no per-token IO or hashing).
+                print("hashing GGUF for composite + plan identity (streaming, one pass)…")
                 let ggufDigest = try GemmaForge.fileDigest(fileURL)
+                if let comp = compositeOpts {
+                    let regionJSON = try readMoERegionBounded(comp.moeRegionPath)
+                    _ = try MoERegionIR.parse(regionJSON)
+                    let result = try GemmaCompositeForge.prepare(
+                        regionJSON: regionJSON, ggufURL: fileURL, graph: graphOpt!,
+                        runner: runner, ggufDigest: ggufDigest,
+                        artifactURL: URL(fileURLWithPath: comp.compositePlanPath),
+                        fixtures: try canonicalCompositeFixtures(tokenizer: tokenizer),
+                        isEndOfGeneration: { tokenizer.isEndOfGeneration($0) },
+                        allowSelection: false)
+                    for line in result.log { print(line) }
+                    print("composite: enabled, installed \(result.installed), "
+                          + "cache hit \(result.cacheHit), artifact digest "
+                          + result.artifactDigest.prefix(16) + "…")
+                }
+                let engine = GemmaForge.engineDigest(try runner.engineIdentity())
                 planOpt = try GemmaForge.loadPlan(
                     from: URL(fileURLWithPath: planPath))
                 try GemmaForge.validatePlanIdentity(
@@ -1001,6 +1044,14 @@ case "forge":
                 }
             }
             print("parallel attention totals: applied \(runner.parallelAttentionAppliedCount), fallback \(runner.parallelAttentionFallbackCount)")
+            if compositeOpts != nil {
+                // Actual-run evidence that the composite lowering executed:
+                // batched MoE stage dispatches (GU/ACT/DN), ordered axpy
+                // merges, resident fallbacks, and the Q4 launch-width
+                // applications — counters read from the public runner state.
+                print("composite moe counters: GU \(runner.moeGuDispatchCount), ACT \(runner.moeActDispatchCount), DN \(runner.moeDnDispatchCount), merges \(runner.moeAxpyMergeCount), resident fallback \(runner.moeResidentFallbackCount)")
+                print("composite q4 launch width: applied \(runner.q4LaunchAppliedCount), fallback \(runner.q4LaunchFallbackCount)")
+            }
             print(String(format: "load (once): %.1f ms (runtime Metal library + pipeline compile within it: %.1f ms)",
                          loadMs, runner.metalCompileMicros / 1000))
             print("GENERATION_COMPLETED")
@@ -2806,6 +2857,21 @@ case "forge":
         let genTokens = args.firstIndex(of: "--gen-tokens").map { _ in
             Int(requireValue("--gen-tokens", args)) ?? 0 } ?? 8
         guard genTokens >= 2, genTokens <= 64 else { fail("--gen-tokens must be 2...64") }
+        // Paired composite flags (both or neither), parsed BEFORE any GPU
+        // allocation; incompatible combinations are rejected here, never
+        // after the runner exists.
+        let compositeOpts = parseCompositeOptions(args)
+        if compositeOpts != nil {
+            guard !args.contains("--expert-cache-budget") else {
+                fail("--composite-plan/--moe-region require resident weights and cannot "
+                      + "be combined with --expert-cache-budget (streaming expert cache)")
+            }
+            // The composite artifact's 3x32 gate record and this forge's
+            // full-workload gate must both run at the full 32-token length.
+            guard genTokens == 32 else {
+                fail("--composite-plan requires --gen-tokens 32 (full gated workload)")
+            }
+        }
         do {
             // Optional chat/text workload: prompt IDs from the ORIGINAL
             // GGUF-backed tokenizer with the canonical chat template —
@@ -2858,6 +2924,14 @@ case "forge":
                 fail("bad prompt workload")
             }
             try GemmaGraph.validate(graph, config: preConfig, file: preFile)
+            // Bounded, IR-validated region read BEFORE the runner (GPU) is
+            // allocated — an oversized/empty/invalid region fails closed here.
+            var compositeRegion: Data? = nil
+            if let comp = compositeOpts {
+                let regionJSON = try readMoERegionBounded(comp.moeRegionPath)
+                _ = try MoERegionIR.parse(regionJSON)
+                compositeRegion = regionJSON
+            }
 
             // Optional SSD/streaming expert mode: non-expert weights are
             // compacted to a dedicated GPU buffer and expert slices
@@ -2893,6 +2967,30 @@ case "forge":
             if let b = expertBudget {
                 print("expert cache mode: budget \(b) bytes (bounded startup, no whole-file mapping)")
             }
+            // Composite Q4 launch + MoE lowering via the shared production
+            // helper: existing Q4LaunchSelect workflow (hardware-derived
+            // width + E4 composite), PUBLIC atomic install, invalid artifact
+            // fails closed, no-win leaves the incumbent. Invoked AFTER the
+            // runner exists and the GGUF hash is computed, but BEFORE the
+            // engine digest / hardware profile / Forge plan-cache identity
+            // and selection — the installed composite state is part of what
+            // the forge then measures and gates.
+            print("hashing GGUF for composite + plan identity (streaming, one pass)…")
+            let ggufDigest = try GemmaForge.fileDigest(fileURL)
+            if let comp = compositeOpts, let regionJSON = compositeRegion {
+                let compTokenizer = try GemmaTokenizer(gguf: preFile)
+                let result = try GemmaCompositeForge.prepare(
+                    regionJSON: regionJSON, ggufURL: fileURL, graph: graph,
+                    runner: runner, ggufDigest: ggufDigest,
+                    artifactURL: URL(fileURLWithPath: comp.compositePlanPath),
+                    fixtures: try canonicalCompositeFixtures(tokenizer: compTokenizer),
+                    isEndOfGeneration: { compTokenizer.isEndOfGeneration($0) },
+                    allowSelection: true)
+                for line in result.log { print(line) }
+                print("composite: enabled, installed \(result.installed), "
+                      + "cache hit \(result.cacheHit), artifact digest "
+                      + result.artifactDigest.prefix(16) + "…")
+            }
             let hardware = runner.hardwareProfile()
             let engine = GemmaForge.engineDigest(try runner.engineIdentity())
             print("graph validated: \(graph.ops.count) ops, model \(graph.model)")
@@ -2903,8 +3001,6 @@ case "forge":
             var forgedFresh = false
             let planURL = URL(fileURLWithPath: planPath)
             if FileManager.default.fileExists(atPath: planPath) {
-                print("hashing GGUF for plan identity (streaming, one pass)…")
-                let ggufDigest = try GemmaForge.fileDigest(fileURL)
                 if let loaded = try? GemmaForge.loadPlan(from: planURL),
                    (try? GemmaForge.validatePlan(loaded, graph: graph,
                                                  ggufDigest: ggufDigest,

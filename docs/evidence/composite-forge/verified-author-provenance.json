@@ -1,0 +1,23 @@
+{
+  "baseline": "4e59c10db0282cd84bf2e635f94b444a37e09b98",
+  "patches": [
+    "phase32-composite-repair-applied-patch.json",
+    "phase32-cli-applied-patch.json",
+    "cli-repair-applied.json",
+    "tests-applied.json",
+    "type-repair-applied.json"
+  ],
+  "exactReplayMatches": true,
+  "newFiles": [
+    "Sources/LeviathanCore/GemmaCompositeForge.swift",
+    "Sources/leviathan-cli/CompositeCLI.swift"
+  ],
+  "sourceHashes": {
+    "Sources/LeviathanCore/GemmaCompositeForge.swift": "413368d40278485adfeb7b317b09f4b6fef5a942cfffdd1d3f6a3655fcca8509",
+    "Sources/LeviathanCore/Gemma4.swift": "fccd2ee4f2902e4e8196a4828aacc29f30e55a64fdd4705ca06fcecac72eea90",
+    "Sources/LeviathanCore/GemmaForge.swift": "b340da2d230599d28d2a6f759c41e7339580acf3c7877e517730c8be6fbbf9b1",
+    "Sources/leviathan-cli/CompositeCLI.swift": "4e4344e5e948ae63823a185f746beaf8a4d4e0193d3113b341995be04ffbac1a",
+    "Sources/leviathan-cli/main.swift": "d28a288d81873cadf4e42068395405e76286d01915320ec0e515deb10b155ca7",
+    "Sources/leviathan-tests/main.swift": "4b379083c0efd9aeaa49f0e00b940ee9ec9c76cba50395818d15705b879c4d93"
+  }
+}

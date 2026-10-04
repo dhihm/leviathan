@@ -2581,6 +2581,14 @@ public final class Gemma4Runner {
     /// enable), the compiled pipeline set, the SSA schedule schema, and
     /// the candidate-set signature.
     public func engineIdentity() throws -> String {
+        // No memoization: engineIdentity is called at initialization and
+        // validation time, not per token, so the FULL original identity
+        // plus the actual composite binding below is recomputed on every
+        // call. Any memo keyed on a subset of install state (e.g. only
+        // the MoE digest and Q4 width) would silently miss changes to
+        // q4GeneratedArtifactDigest, rmsGeneratedArtifactDigest, expert
+        // cache budget/prefetch, pipeline keys, and every other field
+        // above — and is therefore unsafe and removed.
         let msl = SHA256.hex(SHA256.hash(Array(Self.shaderSource.utf8)))
         let candidates = GemmaForge.candidates()
             .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)/\($0.gpuCacheAppend)/\($0.parallelAttention)" }
@@ -2602,6 +2610,26 @@ public final class Gemma4Runner {
             + "|parAttn=" + AttentionDiagnostic.kernelName
             + "@\(AttentionDiagnostic.threads)"
             + "#\(AttentionDiagnostic.candidateSourceSha256())"
+            + compositeLoweringIdentity()
+    }
+
+    /// ACTUAL installed composite configuration, previously unbound: the
+    /// installed MoE lowering's artifact digest, its region graph SHA,
+    /// its batch/rowsPerGroup schedule, the SHA-256 of the ACTUAL emitted
+    /// kernel source, and the ACTUAL installed Q4 launch width. "none"
+    /// defaults keep a stable identity so a plan cache keyed on this
+    /// string can never interchange composite plans with plain plans.
+    /// The emitted-source SHA is computed fresh here on every call —
+    /// engineIdentity runs at initialization/validation, not per token,
+    /// and a digest-keyed cache would not be unique across regions.
+    private func compositeLoweringIdentity() -> String {
+        let width = "|q4LaunchWidth=" + (q4LaunchWidth.map(String.init) ?? "none")
+        guard let installed = moeGenerated else { return "|moeGen=none" + width }
+        return "|moeGen=" + installed.artifactDigest
+            + "#region=" + installed.region.graphSha256
+            + "#sched=\(installed.schedule.batch)x\(installed.schedule.rowsPerGroup)"
+            + "#src=" + SHA256.hex(SHA256.hash(Array(installed.kernels.source.utf8)))
+            + width
     }
 
     /// Measured hardware profile of the device this runner holds.
