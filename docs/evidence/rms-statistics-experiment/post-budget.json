@@ -1,0 +1,704 @@
+{
+  "scope" : "Phase35 production-selected composed flags mirrored by existing diagnostic E4 and production-selected width install, with a full generation warmup: actual resident GGUF, raw Hello, prepared execution, GPU KV append and parallel attention. Normal batched categories plus separate-command-buffer intrusive replay. Intrusive per-kernel intervals are diagnostic and cannot be substituted for batched shares. Decode-only31 steps, prefill excluded. Intrusive replay full vocab gate against normal reference.",
+  "views" : [
+    {
+      "buffers" : 3007,
+      "decodeSteps" : 31,
+      "dispatches" : 39959,
+      "intrusiveGateWorstNormalizedDiff" : 0,
+      "kernelDiagnostics" : [
+
+      ],
+      "metalAllocatedBytes" : 16286613504,
+      "rmsComputed" : 930,
+      "rmsFallback" : 0,
+      "rmsReused" : 1860,
+      "rowsMicros" : [
+        {
+          "encode" : 1047.3046875,
+          "flush" : 109266.2109375,
+          "gpu" : 67129.794508218765,
+          "readCopy" : 828.080078125,
+          "residual" : 4924.9052734375,
+          "wall" : 116179.625,
+          "writeCopy" : 113.1240234375
+        },
+        {
+          "encode" : 1168.724609375,
+          "flush" : 121235.6220703125,
+          "gpu" : 66473.835147917271,
+          "readCopy" : 335.5419921875,
+          "residual" : 4704.697265625,
+          "wall" : 127555.708984375,
+          "writeCopy" : 111.123046875
+        },
+        {
+          "encode" : 950.8505859375,
+          "flush" : 113464.2529296875,
+          "gpu" : 66426.415927708149,
+          "readCopy" : 274.37890625,
+          "residual" : 4685.849609375,
+          "wall" : 119485.5830078125,
+          "writeCopy" : 110.2509765625
+        },
+        {
+          "encode" : 987.435546875,
+          "flush" : 120584.6669921875,
+          "gpu" : 66757.414489984512,
+          "readCopy" : 245.7490234375,
+          "residual" : 4415.0244140625,
+          "wall" : 126336.3330078125,
+          "writeCopy" : 103.45703125
+        },
+        {
+          "encode" : 1079.302734375,
+          "flush" : 111915.3662109375,
+          "gpu" : 66850.124858319759,
+          "readCopy" : 260.7060546875,
+          "residual" : 4447.3349609375,
+          "wall" : 117808.791015625,
+          "writeCopy" : 106.0810546875
+        },
+        {
+          "encode" : 1333.408203125,
+          "flush" : 113606.8330078125,
+          "gpu" : 66695.581655949354,
+          "readCopy" : 262.2080078125,
+          "residual" : 5057.7626953125,
+          "wall" : 120363.2919921875,
+          "writeCopy" : 103.080078125
+        },
+        {
+          "encode" : 1438.6826171875,
+          "flush" : 116740.248046875,
+          "gpu" : 67444.875836372375,
+          "readCopy" : 564.876953125,
+          "residual" : 6744.4052734375,
+          "wall" : 125660.791015625,
+          "writeCopy" : 172.578125
+        },
+        {
+          "encode" : 3178.1728515625,
+          "flush" : 105451.87109375,
+          "gpu" : 67441.04390963912,
+          "readCopy" : 507.255859375,
+          "residual" : 5559.2451171875,
+          "wall" : 114825.9169921875,
+          "writeCopy" : 129.3720703125
+        },
+        {
+          "encode" : 1340.6669921875,
+          "flush" : 105128.4990234375,
+          "gpu" : 67611.707374453545,
+          "readCopy" : 328.25,
+          "residual" : 6528.625,
+          "wall" : 113486.375,
+          "writeCopy" : 160.333984375
+        },
+        {
+          "encode" : 1085.8583984375,
+          "flush" : 114729.3349609375,
+          "gpu" : 67479.375284165144,
+          "readCopy" : 440.9130859375,
+          "residual" : 5331.0576171875,
+          "wall" : 121702.0830078125,
+          "writeCopy" : 114.9189453125
+        },
+        {
+          "encode" : 1020.97265625,
+          "flush" : 109486.123046875,
+          "gpu" : 67431.500181555748,
+          "readCopy" : 245.5849609375,
+          "residual" : 4432.6513671875,
+          "wall" : 115296.416015625,
+          "writeCopy" : 111.083984375
+        },
+        {
+          "encode" : 1499.134765625,
+          "flush" : 114117.953125,
+          "gpu" : 67067.454569041729,
+          "readCopy" : 350.5009765625,
+          "residual" : 5216.7890625,
+          "wall" : 121323.541015625,
+          "writeCopy" : 139.1630859375
+        },
+        {
+          "encode" : 1060.380859375,
+          "flush" : 113099.951171875,
+          "gpu" : 67876.999266445637,
+          "readCopy" : 272.2890625,
+          "residual" : 4737.6328125,
+          "wall" : 119283.7919921875,
+          "writeCopy" : 113.5380859375
+        },
+        {
+          "encode" : 1215.8466796875,
+          "flush" : 111320.171875,
+          "gpu" : 67827.248014509678,
+          "readCopy" : 220.328125,
+          "residual" : 5682.693359375,
+          "wall" : 118549.833984375,
+          "writeCopy" : 110.7939453125
+        },
+        {
+          "encode" : 1196.7021484375,
+          "flush" : 114279.294921875,
+          "gpu" : 68104.916252195835,
+          "readCopy" : 372.333984375,
+          "residual" : 5241.5419921875,
+          "wall" : 121238.791015625,
+          "writeCopy" : 148.91796875
+        },
+        {
+          "encode" : 1108.3095703125,
+          "flush" : 116363.4970703125,
+          "gpu" : 68405.037745833397,
+          "readCopy" : 313.4150390625,
+          "residual" : 5184.1123046875,
+          "wall" : 123099.7080078125,
+          "writeCopy" : 130.3740234375
+        },
+        {
+          "encode" : 1161.943359375,
+          "flush" : 102673.4130859375,
+          "gpu" : 67485.833540558815,
+          "readCopy" : 257.62109375,
+          "residual" : 5535.3564453125,
+          "wall" : 109777.625,
+          "writeCopy" : 149.291015625
+        },
+        {
+          "encode" : 1161.8125,
+          "flush" : 113969.5439453125,
+          "gpu" : 67759.624682366848,
+          "readCopy" : 389.7080078125,
+          "residual" : 5566.484375,
+          "wall" : 121219.583984375,
+          "writeCopy" : 132.03515625
+        },
+        {
+          "encode" : 1184.1708984375,
+          "flush" : 110466.5048828125,
+          "gpu" : 68138.668313622475,
+          "readCopy" : 743.8818359375,
+          "residual" : 7177.609375,
+          "wall" : 119688.0419921875,
+          "writeCopy" : 115.875
+        },
+        {
+          "encode" : 1729.3203125,
+          "flush" : 124651.5859375,
+          "gpu" : 68426.250945776701,
+          "readCopy" : 310.0810546875,
+          "residual" : 7856.84765625,
+          "wall" : 134710.25,
+          "writeCopy" : 162.4150390625
+        },
+        {
+          "encode" : 1367.7109375,
+          "flush" : 132369.8759765625,
+          "gpu" : 69037.289824336767,
+          "readCopy" : 303.955078125,
+          "residual" : 5826.4169921875,
+          "wall" : 140025.7080078125,
+          "writeCopy" : 157.7490234375
+        },
+        {
+          "encode" : 1424.9384765625,
+          "flush" : 138069.2041015625,
+          "gpu" : 68033.333402127028,
+          "readCopy" : 453.37109375,
+          "residual" : 7237.154296875,
+          "wall" : 147293.875,
+          "writeCopy" : 109.20703125
+        },
+        {
+          "encode" : 1377.703125,
+          "flush" : 138192.4541015625,
+          "gpu" : 68975.540343672037,
+          "readCopy" : 357.541015625,
+          "residual" : 6460.9248046875,
+          "wall" : 146501.2919921875,
+          "writeCopy" : 112.6689453125
+        },
+        {
+          "encode" : 905.5244140625,
+          "flush" : 112526.626953125,
+          "gpu" : 68681.835196912289,
+          "readCopy" : 249.0458984375,
+          "residual" : 4399.38671875,
+          "wall" : 118189.5419921875,
+          "writeCopy" : 108.9580078125
+        },
+        {
+          "encode" : 1387.80859375,
+          "flush" : 108841.708984375,
+          "gpu" : 68635.710049420595,
+          "readCopy" : 294.544921875,
+          "residual" : 5250.8544921875,
+          "wall" : 115889.25,
+          "writeCopy" : 114.3330078125
+        },
+        {
+          "encode" : 1231.2060546875,
+          "flush" : 106471.75390625,
+          "gpu" : 67896.292079240084,
+          "readCopy" : 576.9599609375,
+          "residual" : 5033.4521484375,
+          "wall" : 113421.2919921875,
+          "writeCopy" : 107.919921875
+        },
+        {
+          "encode" : 1153.978515625,
+          "flush" : 117031.552734375,
+          "gpu" : 68603.332620114088,
+          "readCopy" : 353.0859375,
+          "residual" : 4735.83984375,
+          "wall" : 123425.583984375,
+          "writeCopy" : 151.126953125
+        },
+        {
+          "encode" : 1108.6357421875,
+          "flush" : 122305.7919921875,
+          "gpu" : 68977.538961917162,
+          "readCopy" : 237.3349609375,
+          "residual" : 4811.4013671875,
+          "wall" : 128579.9169921875,
+          "writeCopy" : 116.7529296875
+        },
+        {
+          "encode" : 1262.98046875,
+          "flush" : 110207.2490234375,
+          "gpu" : 69019.083399325609,
+          "readCopy" : 337.9560546875,
+          "residual" : 4766.8583984375,
+          "wall" : 116686.875,
+          "writeCopy" : 111.8310546875
+        },
+        {
+          "encode" : 1001.0751953125,
+          "flush" : 111893.041015625,
+          "gpu" : 68312.835413962603,
+          "readCopy" : 145.5380859375,
+          "residual" : 4171.888671875,
+          "wall" : 117326.25,
+          "writeCopy" : 114.70703125
+        },
+        {
+          "encode" : 915.505859375,
+          "flush" : 113731.1328125,
+          "gpu" : 68419.751711189747,
+          "readCopy" : 337.58203125,
+          "residual" : 4096.486328125,
+          "wall" : 119192.0419921875,
+          "writeCopy" : 111.3349609375
+        }
+      ],
+      "segmentBatching" : true,
+      "totalsMicros" : {
+        "encode" : 39086.068359375,
+        "flush" : 3574191.3359375,
+        "flushHost" : 1470765.0904306471,
+        "gpu" : 2103426.2455068529,
+        "readCopy" : 11170.619140625,
+        "residual" : 165821.2900390625,
+        "wall" : 3794123.708984375,
+        "writeCopy" : 3854.3955078125
+      }
+    },
+    {
+      "buffers" : 39959,
+      "decodeSteps" : 31,
+      "dispatches" : 39959,
+      "intrusiveGateWorstNormalizedDiff" : 0,
+      "kernelDiagnostics" : [
+        {
+          "calls" : 6355,
+          "gpuMicros" : 1047761.1697278917,
+          "name" : "g4_q4_matvec"
+        },
+        {
+          "calls" : 7471,
+          "gpuMicros" : 786752.58485600352,
+          "name" : "g4_rmsnorm_coop"
+        },
+        {
+          "calls" : 930,
+          "gpuMicros" : 758669.58918049932,
+          "name" : "g4_f32_matvec"
+        },
+        {
+          "calls" : 1860,
+          "gpuMicros" : 374131.58547133207,
+          "name" : "moegen_gu_E4_R32"
+        },
+        {
+          "calls" : 1860,
+          "gpuMicros" : 195361.04612052441,
+          "name" : "moegen_dn_E4_R32"
+        },
+        {
+          "calls" : 31,
+          "gpuMicros" : 189668.87472197413,
+          "name" : "g4_q6_matvec_coop"
+        },
+        {
+          "calls" : 930,
+          "gpuMicros" : 139897.336717695,
+          "name" : "g4_rmsnorm_stats"
+        },
+        {
+          "calls" : 930,
+          "gpuMicros" : 117302.38003656268,
+          "name" : "g4_attn_par64_diag"
+        },
+        {
+          "calls" : 9300,
+          "gpuMicros" : 115545.43534293771,
+          "name" : "g4_axpy"
+        },
+        {
+          "calls" : 1860,
+          "gpuMicros" : 106958.84423330426,
+          "name" : "g4_rope"
+        },
+        {
+          "calls" : 1860,
+          "gpuMicros" : 73860.918637365103,
+          "name" : "g4_rmsnorm_cached"
+        },
+        {
+          "calls" : 1860,
+          "gpuMicros" : 24721.317924559116,
+          "name" : "moegen_act_E4"
+        },
+        {
+          "calls" : 1860,
+          "gpuMicros" : 21752.218715846539,
+          "name" : "g4_scale"
+        },
+        {
+          "calls" : 930,
+          "gpuMicros" : 12544.665485620499,
+          "name" : "g4_add"
+        },
+        {
+          "calls" : 930,
+          "gpuMicros" : 11648.878455162048,
+          "name" : "g4_gelu_up"
+        },
+        {
+          "calls" : 930,
+          "gpuMicros" : 10896.62779122591,
+          "name" : "g4_cache_append"
+        },
+        {
+          "calls" : 31,
+          "gpuMicros" : 853.70847955346107,
+          "name" : "g4_softcap"
+        },
+        {
+          "calls" : 31,
+          "gpuMicros" : 435.50087139010429,
+          "name" : "g4_q6_embed_row"
+        }
+      ],
+      "metalAllocatedBytes" : 16286613504,
+      "rmsComputed" : 930,
+      "rmsFallback" : 0,
+      "rmsReused" : 1860,
+      "rowsMicros" : [
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 115302.49984934926,
+          "readCopy" : 162.291015625,
+          "residual" : 505024.544921875,
+          "wall" : 505306,
+          "writeCopy" : 119.1640625
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 129829.92408797145,
+          "readCopy" : 164.0390625,
+          "residual" : 524913.1689453125,
+          "wall" : 525199.75,
+          "writeCopy" : 122.5419921875
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 109219.69823539257,
+          "readCopy" : 226.74609375,
+          "residual" : 506670.9189453125,
+          "wall" : 507002.8330078125,
+          "writeCopy" : 105.16796875
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 120706.99781179428,
+          "readCopy" : 776.873046875,
+          "residual" : 520955.96484375,
+          "wall" : 521841.25,
+          "writeCopy" : 108.412109375
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 112939.21340256929,
+          "readCopy" : 148.7451171875,
+          "residual" : 523092.759765625,
+          "wall" : 523341.2919921875,
+          "writeCopy" : 99.787109375
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 112486.6004101932,
+          "readCopy" : 1383.7509765625,
+          "residual" : 499251,
+          "wall" : 500742.4580078125,
+          "writeCopy" : 107.70703125
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 142342.13111922145,
+          "readCopy" : 204.00390625,
+          "residual" : 524903.078125,
+          "wall" : 525222.25,
+          "writeCopy" : 115.16796875
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 135370.42029201984,
+          "readCopy" : 894.794921875,
+          "residual" : 537013.7890625,
+          "wall" : 538017.041015625,
+          "writeCopy" : 108.45703125
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 123484.40987989306,
+          "readCopy" : 175.587890625,
+          "residual" : 531765.623046875,
+          "wall" : 532104.5419921875,
+          "writeCopy" : 163.3310546875
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 121810.70679798722,
+          "readCopy" : 172.58203125,
+          "residual" : 512353.7138671875,
+          "wall" : 512627.375,
+          "writeCopy" : 101.0791015625
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 113202.78514176607,
+          "readCopy" : 418.9619140625,
+          "residual" : 516462.9521484375,
+          "wall" : 516992.125,
+          "writeCopy" : 110.2109375
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 113534.79325771332,
+          "readCopy" : 249.544921875,
+          "residual" : 506356.9521484375,
+          "wall" : 506706.3330078125,
+          "writeCopy" : 99.8359375
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 145838.04225549102,
+          "readCopy" : 846.3251953125,
+          "residual" : 522245.009765625,
+          "wall" : 523207.333984375,
+          "writeCopy" : 115.9990234375
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 111681.67879804969,
+          "readCopy" : 161.25390625,
+          "residual" : 473299.1220703125,
+          "wall" : 473562.8330078125,
+          "writeCopy" : 102.45703125
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 144322.83444330096,
+          "readCopy" : 1105.2490234375,
+          "residual" : 532735.1650390625,
+          "wall" : 533946.833984375,
+          "writeCopy" : 106.419921875
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 137711.54824644327,
+          "readCopy" : 445.2041015625,
+          "residual" : 535531.841796875,
+          "wall" : 536082.625,
+          "writeCopy" : 105.5791015625
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 130724.25033897161,
+          "readCopy" : 903.5,
+          "residual" : 547081.4208984375,
+          "wall" : 548115.4169921875,
+          "writeCopy" : 130.49609375
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 146478.53514179587,
+          "readCopy" : 234.251953125,
+          "residual" : 542129.830078125,
+          "wall" : 542526.625,
+          "writeCopy" : 162.54296875
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 114160.66950187087,
+          "readCopy" : 740.537109375,
+          "residual" : 515919.9609375,
+          "wall" : 516762.8330078125,
+          "writeCopy" : 102.3349609375
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 138706.91414922476,
+          "readCopy" : 192.8330078125,
+          "residual" : 531547.2890625,
+          "wall" : 531861.0830078125,
+          "writeCopy" : 120.9609375
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 111882.67823308706,
+          "readCopy" : 400.4951171875,
+          "residual" : 532453.587890625,
+          "wall" : 532947.0419921875,
+          "writeCopy" : 92.958984375
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 115260.83387434483,
+          "readCopy" : 218.037109375,
+          "residual" : 505760.2998046875,
+          "wall" : 506074.541015625,
+          "writeCopy" : 96.2041015625
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 127215.92001616955,
+          "readCopy" : 141.001953125,
+          "residual" : 525205.041015625,
+          "wall" : 525458.083984375,
+          "writeCopy" : 112.041015625
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 145566.63995608687,
+          "readCopy" : 307.16796875,
+          "residual" : 543524.6669921875,
+          "wall" : 543928.3330078125,
+          "writeCopy" : 96.498046875
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 152143.21110397577,
+          "readCopy" : 489.7900390625,
+          "residual" : 551183.7099609375,
+          "wall" : 551775.791015625,
+          "writeCopy" : 102.291015625
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 146682.00071901083,
+          "readCopy" : 191.208984375,
+          "residual" : 535630.419921875,
+          "wall" : 535934.875,
+          "writeCopy" : 113.24609375
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 147502.2123195231,
+          "readCopy" : 532.70703125,
+          "residual" : 533104.5009765625,
+          "wall" : 533747.5,
+          "writeCopy" : 110.2919921875
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 108848.9256799221,
+          "readCopy" : 470.25390625,
+          "residual" : 495887.25,
+          "wall" : 496471.9169921875,
+          "writeCopy" : 114.4130859375
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 127753.4025721252,
+          "readCopy" : 1091.2109375,
+          "residual" : 521552.0390625,
+          "wall" : 522743.9169921875,
+          "writeCopy" : 100.6669921875
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 134064.45877626538,
+          "readCopy" : 1263.501953125,
+          "residual" : 526732.376953125,
+          "wall" : 528133.875,
+          "writeCopy" : 137.99609375
+        },
+        {
+          "encode" : 0,
+          "flush" : 0,
+          "gpu" : 151987.74635791779,
+          "readCopy" : 676.958984375,
+          "residual" : 554934.33203125,
+          "wall" : 555720.1669921875,
+          "writeCopy" : 108.8759765625
+        }
+      ],
+      "segmentBatching" : false,
+      "totalsMicros" : {
+        "encode" : 0,
+        "flush" : 0,
+        "flushHost" : 0,
+        "gpu" : 3988762.6827694476,
+        "readCopy" : 15389.4091796875,
+        "residual" : 16235222.330078125,
+        "wall" : 16254104.875,
+        "writeCopy" : 3493.1357421875
+      }
+    }
+  ]
+}

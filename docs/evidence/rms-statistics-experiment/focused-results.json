@@ -1,0 +1,32 @@
+{
+  "groupCount" : 30,
+  "identityStableAfterLazyCompilation" : true,
+  "reuseCount" : 60,
+  "rows" : [
+    {
+      "bitExact" : true,
+      "computed" : 150,
+      "exactIDs" : true,
+      "fallback" : 0,
+      "fullVocab" : 262144,
+      "processedTokens" : 5,
+      "repetition" : 1,
+      "reused" : 300,
+      "steps" : 4,
+      "worstNormalizedDiff" : 0
+    },
+    {
+      "bitExact" : true,
+      "computed" : 150,
+      "exactIDs" : true,
+      "fallback" : 0,
+      "fullVocab" : 262144,
+      "processedTokens" : 5,
+      "repetition" : 2,
+      "reused" : 300,
+      "steps" : 4,
+      "worstNormalizedDiff" : 0
+    }
+  ],
+  "scope" : "Actual resident model focused four-step teacher-forced full-logit gate against phase34 same-flags incumbent. Two independent resets; five executed tokens per arm. Diagnostic E4\/width64 install, not production qualification or throughput approval."
+}
