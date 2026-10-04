@@ -2228,6 +2228,7 @@ do {
                  $0["selected"] = ["segmentBatching": true, "top5Diagnostic": false,
                                    "matvecTiledQ4": true, "matvecTiledQ6": true,
                                    "rmsnormTiled": true, "matvecTiledF32": true, "vectorizedLoads": true,
+                                   "rmsStatisticsReuse": false,
                                    "rmsnormCooperative": false, "gpuCacheAppend": false, "parallelAttention": false,
                                    "matvecCooperativeQ6": false]
              })
@@ -2664,6 +2665,588 @@ do {
 } catch {
     failed += 1; print("FAIL: f32 tiled gate — threw \(error)")
 }
+
+// MARK: - RMS statistics plan + kernels (rmsStats)
+
+private func rmsStatsValue(_ name: String, _ version: Int, length: Int,
+                           kind: String = "vector", sliceOffset: Int? = nil) -> String {
+    let slice = sliceOffset == nil ? "null" : String(sliceOffset!)
+    return "{\"name\":\"\(name)\",\"version\":\(version),\"dtype\":\"f32\",\"length\":\(length),\"kind\":\"\(kind)\",\"sliceOffset\":\(slice)}"
+}
+
+private func rmsStatsInst(_ op: String, layer: Int = 0, inputs: [String], output: String,
+                          tensors: [String] = [], attrs: [String: Int] = [:]) -> String {
+    let i = inputs.map { "\"\($0)\"" }.joined(separator: ",")
+    let t = tensors.map { "\"\($0)\"" }.joined(separator: ",")
+    let a = attrs.map { "\"\($0.key)\":\($0.value)" }.joined(separator: ",")
+    return "{\"op\":\"\(op)\",\"layer\":\(layer),\"inputs\":[\(i)],\"output\":\"\(output)\",\"tensors\":[\(t)],\"attrs\":{\(a)}}"
+}
+
+private func rmsStatsIR(_ values: [String], _ instructions: [String]) -> String {
+    "{\"schema\":1,\"values\":[\(values.joined(separator: ","))],\"instructions\":[\(instructions.joined(separator: ","))]}"
+}
+
+private func rmsStatsDecode(_ json: String) throws -> GemmaSSAIR {
+    try JSONDecoder().decode(GemmaSSAIR.self, from: Data(json.utf8))
+}
+
+@MainActor private func rmsStatsAnalyze(_ json: String, epsilon: Float) throws -> RMSStatisticsPlan {
+    try RMSStatisticsPlan.analyze(ssa: rmsStatsDecode(json), epsilon: epsilon)
+}
+
+/// Group-of-3 shape mirroring the measured shared-input evidence: three
+/// rmsnorms on one immutable x version, separated by known-effect ops
+/// (shared-FFW matvec/gelu_up, scale) and one router_topk.
+private func rmsStatsTripleIR(inputLength: Int = 256, outLength: Int = 256,
+                              attrs: [String: Int] = [:], inputSlice: Int? = nil,
+                              outSlice: Int? = nil) -> String {
+    let values = [
+        rmsStatsValue("x", 1, length: inputLength, sliceOffset: inputSlice),
+        rmsStatsValue("h", 2, length: outLength, sliceOffset: outSlice),
+        rmsStatsValue("gate", 1, length: outLength),
+        rmsStatsValue("up", 1, length: outLength),
+        rmsStatsValue("act", 1, length: outLength),
+        rmsStatsValue("h", 3, length: outLength, sliceOffset: outSlice),
+        rmsStatsValue("h", 5, length: outLength, sliceOffset: outSlice),
+    ]
+    let instructions = [
+        rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@2",
+                     tensors: ["blk.0.ffn_norm.weight"], attrs: attrs),
+        rmsStatsInst("matvec", inputs: ["h@2"], output: "gate@1",
+                     tensors: ["blk.0.ffn_gate.weight"]),
+        rmsStatsInst("matvec", inputs: ["h@2"], output: "up@1",
+                     tensors: ["blk.0.ffn_up.weight"]),
+        // Canonical activation op: gelu_up consumes the aliased fused
+        // gate|up pair and writes only its declared y output.
+        rmsStatsInst("gelu_up", inputs: ["gate@1", "up@1"], output: "act@1",
+                     attrs: ["width": outLength]),
+        rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@3", attrs: attrs),
+        rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@5",
+                     tensors: ["blk.0.pre_ffw_norm_2.weight"], attrs: attrs),
+    ]
+    return rmsStatsIR(values, instructions)
+}
+
+@MainActor private func rmsStatsPlanCompileTests() {
+    let epsA: Float = 1e-6
+
+    // Triple on one immutable input: one compute + two reuses, dense
+    // actions indexed by instruction index.
+    do {
+        let plan = try rmsStatsAnalyze(rmsStatsTripleIR(), epsilon: epsA)
+        checkEqual("rmsStats groupCount", plan.groupCount, 1)
+        checkEqual("rmsStats reuseCount", plan.reuseCount, 2)
+        check("rmsStats analysisVersion", plan.analysis == RMSStatisticsPlan.analysisVersion)
+        let g = plan.groups[0]
+        checkEqual("rmsStats width", g.width, 256)
+        checkEqual("rmsStats vectors", g.vectors, 1)
+        checkEqual("rmsStats epsilonBits", g.epsilonBits, epsA.bitPattern)
+        checkEqual("rmsStats inputID", g.inputID, "x@1")
+        checkEqual("rmsStats firstInstructionIndex", g.firstInstructionIndex, 0)
+        checkEqual("rmsStats useIndices", g.useIndices, [4, 5])
+        check("rmsStats dense action count", plan.actions.count == 6)
+        check("rmsStats compute action",
+              plan.actions[0]?.kind == .compute && plan.actions[0]?.slot == 0
+              && plan.actions[0]?.width == 256 && plan.actions[0]?.inputID == "x@1")
+        check("rmsStats reuse actions",
+              plan.actions[4]?.kind == .reuse && plan.actions[5]?.kind == .reuse
+              && plan.actions[4]?.slot == plan.actions[5]?.slot)
+        check("rmsStats non-rms actions nil",
+              plan.actions[1] == nil && plan.actions[2] == nil
+              && plan.actions[3] == nil)
+    } catch {
+        failed += 1
+        print("FAIL: rmsStats triple analyze threw: \(error)")
+    }
+
+    // Epsilon is compared by exact bits: plans must distinguish.
+    do {
+        let p1 = try rmsStatsAnalyze(rmsStatsTripleIR(), epsilon: 1e-6)
+        let p2 = try rmsStatsAnalyze(rmsStatsTripleIR(), epsilon: 1e-3)
+        check("rmsStats epsilon distinguishes bits",
+              p1 != p2 && p1.groups[0].epsilonBits != p2.groups[0].epsilonBits)
+    } catch {
+        failed += 1
+        print("FAIL: rmsStats epsilon compare threw: \(error)")
+    }
+
+    // Invalid epsilon fails closed.
+    for e in [Float.nan, .infinity, -.infinity, 0, -1e-6] {
+        var threw = false
+        do { _ = try rmsStatsAnalyze(rmsStatsTripleIR(), epsilon: e) } catch { threw = true }
+        check("rmsStats invalid epsilon fails closed", threw)
+    }
+
+    // Differing output widths are different keys: no group of >= 2.
+    do {
+        let json = rmsStatsIR(
+            [rmsStatsValue("x", 1, length: 256),
+             rmsStatsValue("h", 2, length: 256),
+             rmsStatsValue("h", 3, length: 512)],
+            [rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@2"),
+             rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@3")])
+        let plan = try rmsStatsAnalyze(json, epsilon: epsA)
+        check("rmsStats differing width prevents sharing", plan.groupCount == 0)
+    } catch {
+        failed += 1
+        print("FAIL: rmsStats differing width threw: \(error)")
+    }
+
+    // Vectorized multi-norm (input length != output length) is skipped.
+    do {
+        let json = rmsStatsIR(
+            [rmsStatsValue("x", 1, length: 512),
+             rmsStatsValue("h", 2, length: 256),
+             rmsStatsValue("h", 3, length: 256)],
+            [rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@2"),
+             rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@3")])
+        let plan = try rmsStatsAnalyze(json, epsilon: epsA)
+        check("rmsStats multivector skipped", plan.groupCount == 0)
+    } catch {
+        failed += 1
+        print("FAIL: rmsStats multivector threw: \(error)")
+    }
+
+    // width attr: mismatch skips, exact match still groups.
+    do {
+        let bad = try rmsStatsAnalyze(rmsStatsTripleIR(attrs: ["width": 512]), epsilon: epsA)
+        check("rmsStats width attr mismatch skips", bad.groupCount == 0)
+        let good = try rmsStatsAnalyze(rmsStatsTripleIR(attrs: ["width": 256]), epsilon: epsA)
+        check("rmsStats width attr match groups", good.groupCount == 1 && good.reuseCount == 2)
+    } catch {
+        failed += 1
+        print("FAIL: rmsStats width attr threw: \(error)")
+    }
+
+    // Layout: non-zero input/output slice offsets are skipped; 0 is fine.
+    do {
+        let inSliced = try rmsStatsAnalyze(rmsStatsTripleIR(inputSlice: 4), epsilon: epsA)
+        check("rmsStats input slice skip", inSliced.groupCount == 0)
+        let outSliced = try rmsStatsAnalyze(rmsStatsTripleIR(outSlice: 4), epsilon: epsA)
+        check("rmsStats output slice skip", outSliced.groupCount == 0)
+        let zero = try rmsStatsAnalyze(rmsStatsTripleIR(inputSlice: 0, outSlice: 0), epsilon: epsA)
+        check("rmsStats zero slices group", zero.groupCount == 1 && zero.reuseCount == 2)
+    } catch {
+        failed += 1
+        print("FAIL: rmsStats slices threw: \(error)")
+    }
+
+    // vectors != 1 and unknown attrs are skipped.
+    do {
+        let multi = try rmsStatsAnalyze(rmsStatsTripleIR(attrs: ["vectors": 2]), epsilon: epsA)
+        check("rmsStats vectors=2 skips", multi.groupCount == 0)
+        let unknown = try rmsStatsAnalyze(rmsStatsTripleIR(attrs: ["foo": 1]), epsilon: epsA)
+        check("rmsStats unknown attr skips", unknown.groupCount == 0)
+    } catch {
+        failed += 1
+        print("FAIL: rmsStats attrs threw: \(error)")
+    }
+
+    // Same physical buffer rewritten between the two norms: different
+    // SSA versions never share.
+    do {
+        let json = rmsStatsIR(
+            [rmsStatsValue("x", 1, length: 256),
+             rmsStatsValue("h", 2, length: 256),
+             rmsStatsValue("t1", 1, length: 256),
+             rmsStatsValue("x", 2, length: 256),
+             rmsStatsValue("h", 3, length: 256)],
+            [rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@2"),
+             rmsStatsInst("matvec", inputs: ["h@2"], output: "t1@1", tensors: ["m"]),
+             rmsStatsInst("matvec", inputs: ["t1@1"], output: "x@2", tensors: ["m"]),
+             rmsStatsInst("rmsnorm", inputs: ["x@2"], output: "h@3")])
+        let plan = try rmsStatsAnalyze(json, epsilon: epsA)
+        check("rmsStats mutated physical no sharing", plan.groupCount == 0)
+    } catch {
+        failed += 1
+        print("FAIL: rmsStats mutated physical threw: \(error)")
+    }
+
+    // Stale reference to the overwritten version fails closed.
+    do {
+        let json = rmsStatsIR(
+            [rmsStatsValue("x", 1, length: 256),
+             rmsStatsValue("h", 2, length: 256),
+             rmsStatsValue("t1", 1, length: 256),
+             rmsStatsValue("x", 2, length: 256),
+             rmsStatsValue("h", 3, length: 256)],
+            [rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@2"),
+             rmsStatsInst("matvec", inputs: ["h@2"], output: "t1@1", tensors: ["m"]),
+             rmsStatsInst("matvec", inputs: ["t1@1"], output: "x@2", tensors: ["m"]),
+             rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@3")])
+        var threw = false
+        do { _ = try rmsStatsAnalyze(json, epsilon: epsA) } catch { threw = true }
+        check("rmsStats stale reference throws", threw)
+    }
+
+    // gate/up alias the shared GU backing: a write through `up` is a
+    // physical barrier for a group keyed on `gate`.
+    do {
+        let json = rmsStatsIR(
+            [rmsStatsValue("gate", 1, length: 256),
+             rmsStatsValue("h", 2, length: 256),
+             rmsStatsValue("up", 2, length: 256),
+             rmsStatsValue("h", 3, length: 256)],
+            [rmsStatsInst("rmsnorm", inputs: ["gate@1"], output: "h@2"),
+             rmsStatsInst("matvec", inputs: ["h@2"], output: "up@2", tensors: ["m"]),
+             rmsStatsInst("rmsnorm", inputs: ["gate@1"], output: "h@3")])
+        let plan = try rmsStatsAnalyze(json, epsilon: epsA)
+        check("rmsStats gate/up alias write barrier", plan.groupCount == 0)
+    } catch {
+        failed += 1
+        print("FAIL: rmsStats gate/up alias threw: \(error)")
+    }
+
+    // Aliased norm OUTPUT on the shared GU backing: the first stats
+    // are computed from gate@1, another norm writes its output through
+    // the alias (up), and the later gate norm must NOT reuse the first
+    // statistics across that physically aliased write.
+    do {
+        let json = rmsStatsIR(
+            [rmsStatsValue("gate", 1, length: 256),
+             rmsStatsValue("x", 1, length: 256),
+             rmsStatsValue("h", 2, length: 256),
+             rmsStatsValue("up", 2, length: 256),
+             rmsStatsValue("h", 3, length: 256)],
+            [rmsStatsInst("rmsnorm", inputs: ["gate@1"], output: "h@2"),
+             rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "up@2"),
+             rmsStatsInst("rmsnorm", inputs: ["gate@1"], output: "h@3")])
+        let plan = try rmsStatsAnalyze(json, epsilon: epsA)
+        check("rmsStats aliased norm output prevents reuse", plan.groupCount == 0)
+    } catch {
+        failed += 1
+        print("FAIL: rmsStats aliased norm output threw: \(error)")
+    }
+
+    // In-place first norm writes its own input backing: no sharing.
+    do {
+        let json = rmsStatsIR(
+            [rmsStatsValue("x", 1, length: 256),
+             rmsStatsValue("x", 2, length: 256),
+             rmsStatsValue("h", 2, length: 256)],
+            [rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "x@2"),
+             rmsStatsInst("rmsnorm", inputs: ["x@2"], output: "h@2")])
+        let plan = try rmsStatsAnalyze(json, epsilon: epsA)
+        check("rmsStats in-place first norm cannot share", plan.groupCount == 0)
+    } catch {
+        failed += 1
+        print("FAIL: rmsStats in-place threw: \(error)")
+    }
+
+    // Opaque unknown ops seal every open group.
+    for op in ["attention", "expert_matvec_chain", "cache_append"] {
+        do {
+            let json = rmsStatsIR(
+                [rmsStatsValue("x", 1, length: 256),
+                 rmsStatsValue("h", 2, length: 256),
+                 rmsStatsValue("t1", 1, length: 256),
+                 rmsStatsValue("h", 3, length: 256)],
+                [rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@2"),
+                 rmsStatsInst(op, inputs: ["h@2"], output: "t1@1"),
+                 rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@3")])
+            let plan = try rmsStatsAnalyze(json, epsilon: epsA)
+            check("rmsStats opaque op \(op) breaks group", plan.groupCount == 0)
+        } catch {
+            failed += 1
+            print("FAIL: rmsStats opaque op \(op) threw: \(error)")
+        }
+    }
+
+    // router_topk reads router scores / host routing state only: the
+    // activation group survives across it.
+    do {
+        let json = rmsStatsIR(
+            [rmsStatsValue("x", 1, length: 256),
+             rmsStatsValue("h", 2, length: 256),
+             rmsStatsValue("router", 1, length: 8),
+             rmsStatsValue("rout", 1, length: 2, kind: "routing"),
+             rmsStatsValue("h", 3, length: 256)],
+            [rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@2"),
+             rmsStatsInst("router_topk", inputs: ["router@1"], output: "rout@1",
+                         attrs: ["topK": 2]),
+             rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "h@3")])
+        let plan = try rmsStatsAnalyze(json, epsilon: epsA)
+        check("rmsStats router_topk keeps group",
+              plan.groupCount == 1 && plan.reuseCount == 1)
+    } catch {
+        failed += 1
+        print("FAIL: rmsStats router_topk threw: \(error)")
+    }
+
+    // Malformed SSA handled without traps.
+    do {
+        let dup = rmsStatsIR(
+            [rmsStatsValue("x", 1, length: 256), rmsStatsValue("x", 1, length: 256)],
+            [rmsStatsInst("rmsnorm", inputs: ["x@1"], output: "x@1")])
+        var threw = false
+        do { _ = try rmsStatsAnalyze(dup, epsilon: epsA) } catch { threw = true }
+        check("rmsStats duplicate IDs throw", threw)
+    }
+    do {
+        let missing = rmsStatsIR(
+            [rmsStatsValue("x", 1, length: 256), rmsStatsValue("h", 2, length: 256)],
+            [rmsStatsInst("rmsnorm", inputs: ["x@9"], output: "h@2")])
+        var threw = false
+        do { _ = try rmsStatsAnalyze(missing, epsilon: epsA) } catch { threw = true }
+        check("rmsStats missing input throws", threw)
+    }
+    do {
+        let nonvector = rmsStatsIR(
+            [rmsStatsValue("kv", 1, length: 256, kind: "kvstate"),
+             rmsStatsValue("h", 2, length: 256),
+             rmsStatsValue("h", 3, length: 256)],
+            [rmsStatsInst("rmsnorm", inputs: ["kv@1"], output: "h@2"),
+             rmsStatsInst("rmsnorm", inputs: ["kv@1"], output: "h@3")])
+        let plan = try rmsStatsAnalyze(nonvector, epsilon: epsA)
+        check("rmsStats nonvector input skipped, no trap", plan.groupCount == 0)
+    } catch {
+        failed += 1
+        print("FAIL: rmsStats nonvector threw: \(error)")
+    }
+    do {
+        let badDtype = "{\"schema\":1,\"values\":[{\"name\":\"x\",\"version\":1,\"dtype\":\"f16\",\"length\":256,\"kind\":\"vector\",\"sliceOffset\":null}],\"instructions\":[]}"
+        var threw = false
+        do { _ = try rmsStatsDecode(badDtype) } catch { threw = true }
+        check("rmsStats unsupported dtype decode fails closed", threw)
+    }
+    do {
+        let badSchema = "{\"schema\":2,\"values\":[],\"instructions\":[]}"
+        var threw = false
+        do { _ = try rmsStatsAnalyze(badSchema, epsilon: epsA) } catch { threw = true }
+        check("rmsStats schema rejected", threw)
+    }
+}
+
+@MainActor private func rmsStatsShaderTests() {
+    guard let device = MTLCreateSystemDefaultDevice() else {
+        failed += 1
+        print("FAIL: rmsStats shader: no Metal device")
+        return
+    }
+    guard let queue = device.makeCommandQueue() else {
+        failed += 1
+        print("FAIL: rmsStats shader: no command queue")
+        return
+    }
+    let combinedSource = RMSCooperative.source + "\n" + RMSStatisticsKernels.source
+    guard let library = try? device.makeLibrary(source: combinedSource, options: nil) else {
+        failed += 1
+        print("FAIL: rmsStats shader: library compile failed")
+        return
+    }
+    guard let coopFn = library.makeFunction(name: RMSCooperative.kernelName),
+          let statsFn = library.makeFunction(name: RMSStatisticsKernels.computeKernelName),
+          let cachedFn = library.makeFunction(name: RMSStatisticsKernels.applyKernelName) else {
+        failed += 1
+        print("FAIL: rmsStats shader: function lookup failed")
+        return
+    }
+    guard let coopPipe = try? device.makeComputePipelineState(function: coopFn),
+          let statsPipe = try? device.makeComputePipelineState(function: statsFn),
+          let cachedPipe = try? device.makeComputePipelineState(function: cachedFn) else {
+        failed += 1
+        print("FAIL: rmsStats shader: pipeline creation failed")
+        return
+    }
+    check("rmsStats source sha is hex sha256",
+          RMSStatisticsKernels.sourceSha256().count == 64)
+    check("rmsStats weight offset 16-byte guard",
+          RMSStatisticsKernels.weightOffsetIsAligned(0)
+          && RMSStatisticsKernels.weightOffsetIsAligned(16)
+          && !RMSStatisticsKernels.weightOffsetIsAligned(2))
+    check("rmsStats elementCount overflow checked",
+          RMSStatisticsKernels.elementCount(width: 256, vectors: 1) == 256
+          && RMSStatisticsKernels.elementCount(width: 0, vectors: 1) == nil
+          && RMSStatisticsKernels.elementCount(width: Int.max, vectors: 2) == nil)
+
+    func rmsStatsReadFloats(_ buffer: MTLBuffer, _ count: Int) -> [Float] {
+        Array(UnsafeBufferPointer(
+            start: buffer.contents().assumingMemoryBound(to: Float.self), count: count))
+    }
+
+    let strideU32 = MemoryLayout<UInt32>.stride
+    let widths = [256, 704, 2816]
+    let epsilons: [Float] = [1e-6, 1e-3]
+
+    for width in widths {
+        for eps in epsilons {
+            for weighted in [false, true] {
+                let tag = "w=\(width) eps=\(eps) weighted=\(weighted)"
+                var rng = SplitMix64(seed: UInt64(width &* 613) &+ UInt64(eps.bitPattern) &+ (weighted ? 7 : 13))
+                var x = [Float](repeating: 0, count: width)
+                for i in 0..<width {
+                    x[i] = Float(Double(rng.next() % 4096) / 2048.0 - 1.0) * 2.0
+                }
+                // Weighted passes use different signed scales per lane.
+                var w = [Float](repeating: 0, count: width)
+                for i in 0..<width {
+                    w[i] = (i % 2 == 0 ? 1.5 : -0.75) * Float(i % 7 + 1)
+                }
+                let originalX = x
+                guard let pBuf = device.makeBuffer(bytes: [UInt32(width), UInt32(1)],
+                                                   length: strideU32 * 2),
+                      let epsBuf = device.makeBuffer(bytes: [eps],
+                                                     length: MemoryLayout<Float>.stride),
+                      let scaleBuf = device.makeBuffer(bytes: [Int32(weighted ? 1 : 0)],
+                                                       length: MemoryLayout<Int32>.stride),
+                      let wOffBuf = device.makeBuffer(bytes: [UInt64(0)],
+                                                      length: MemoryLayout<UInt64>.stride),
+                      let xBuf = device.makeBuffer(bytes: x,
+                                                   length: width * MemoryLayout<Float>.stride),
+                      let wBuf = device.makeBuffer(bytes: w,
+                                                   length: width * MemoryLayout<Float>.stride),
+                      let yCoopBuf = device.makeBuffer(length: width * MemoryLayout<Float>.stride),
+                      let yStatsBuf = device.makeBuffer(length: width * MemoryLayout<Float>.stride),
+                      let yCachedBuf = device.makeBuffer(length: width * MemoryLayout<Float>.stride),
+                      let invBuf = device.makeBuffer(length: MemoryLayout<Float>.stride) else {
+                    failed += 1
+                    print("FAIL: rmsStats shader buffers \(tag)")
+                    continue
+                }
+                let coopThreads = RMSCooperative.threadCount(
+                    n: width, executionWidth: coopPipe.threadExecutionWidth,
+                    maxThreads: coopPipe.maxTotalThreadsPerThreadgroup)
+                let statsThreads = RMSStatisticsKernels.threadCount(
+                    n: width, executionWidth: statsPipe.threadExecutionWidth,
+                    maxThreads: statsPipe.maxTotalThreadsPerThreadgroup)
+                let cachedThreads = RMSStatisticsKernels.threadCount(
+                    n: width, executionWidth: cachedPipe.threadExecutionWidth,
+                    maxThreads: cachedPipe.maxTotalThreadsPerThreadgroup)
+                let tgLen = RMSStatisticsKernels.threadgroupMemoryLength(n: width)
+                guard coopThreads > 0, statsThreads > 0, cachedThreads > 0, tgLen > 0,
+                      tgLen <= device.maxThreadgroupMemoryLength else {
+                    failed += 1
+                    print("FAIL: rmsStats shader schedule \(tag)")
+                    continue
+                }
+                guard let cmd = queue.makeCommandBuffer(),
+                      let enc = cmd.makeComputeCommandEncoder() else {
+                    failed += 1
+                    print("FAIL: rmsStats encoder \(tag)")
+                    continue
+                }
+                func rmsStatsBind(_ enc: MTLComputeCommandEncoder) {
+                    enc.setBuffer(pBuf, offset: 0, index: 0)
+                    enc.setBuffer(epsBuf, offset: 0, index: 1)
+                    enc.setBuffer(scaleBuf, offset: 0, index: 2)
+                    enc.setBuffer(wOffBuf, offset: 0, index: 3)
+                    enc.setBuffer(wBuf, offset: 0, index: 4)
+                }
+                // All three kernels share one ordered encoder so the
+                // cached dispatch depends on the stats dispatch on-GPU.
+                rmsStatsBind(enc)
+                enc.setBuffer(xBuf, offset: 0, index: 5)
+                enc.setBuffer(yCoopBuf, offset: 0, index: 6)
+                enc.setBuffer(invBuf, offset: 0, index: 7)
+                enc.setComputePipelineState(coopPipe)
+                enc.setThreadgroupMemoryLength(tgLen, index: 0)
+                enc.dispatchThreadgroups(MTLSize(width: 1, height: 1, depth: 1),
+                                         threadsPerThreadgroup: MTLSize(width: coopThreads, height: 1, depth: 1))
+                rmsStatsBind(enc)
+                enc.setBuffer(xBuf, offset: 0, index: 5)
+                enc.setBuffer(yStatsBuf, offset: 0, index: 6)
+                enc.setBuffer(invBuf, offset: 0, index: 7)
+                enc.setComputePipelineState(statsPipe)
+                enc.setThreadgroupMemoryLength(tgLen, index: 0)
+                enc.dispatchThreadgroups(MTLSize(width: 1, height: 1, depth: 1),
+                                         threadsPerThreadgroup: MTLSize(width: statsThreads, height: 1, depth: 1))
+                rmsStatsBind(enc)
+                enc.setBuffer(xBuf, offset: 0, index: 5)
+                enc.setBuffer(yCachedBuf, offset: 0, index: 6)
+                enc.setBuffer(invBuf, offset: 0, index: 7)
+                enc.setComputePipelineState(cachedPipe)
+                enc.dispatchThreadgroups(MTLSize(width: 1, height: 1, depth: 1),
+                                         threadsPerThreadgroup: MTLSize(width: cachedThreads, height: 1, depth: 1))
+                enc.endEncoding()
+                cmd.commit()
+                cmd.waitUntilCompleted()
+                guard cmd.status == .completed else {
+                    failed += 1
+                    print("FAIL: rmsStats gpu completion \(tag) status=\(cmd.status.rawValue)")
+                    continue
+                }
+                let coopOut = rmsStatsReadFloats(yCoopBuf, width)
+                let statsOut = rmsStatsReadFloats(yStatsBuf, width)
+                let cachedOut = rmsStatsReadFloats(yCachedBuf, width)
+                var statsExact = true
+                var cachedExact = true
+                var xHeld = true
+                for i in 0..<width {
+                    if statsOut[i].bitPattern != coopOut[i].bitPattern { statsExact = false }
+                    if cachedOut[i].bitPattern != coopOut[i].bitPattern { cachedExact = false }
+                    if x[i] != originalX[i] { xHeld = false }
+                }
+                check("rmsStats first output bit-exact \(tag)", statsExact)
+                check("rmsStats cached output bit-exact \(tag)", cachedExact)
+                check("rmsStats input held immutable \(tag)", xHeld)
+                let inv = rmsStatsReadFloats(invBuf, 1)[0]
+                var ms64 = 0.0
+                for i in 0..<width { ms64 += Double(originalX[i]) * Double(originalX[i]) }
+                let expected64 = 1.0 / (ms64 / Double(width) + Double(eps)).squareRoot()
+                check("rmsStats inverse vs FP64 \(tag)",
+                      inv.isFinite && abs(Double(inv) - expected64) <= expected64 * 1e-5)
+                check("rmsStats all outputs finite \(tag)",
+                      statsOut.allSatisfy { $0.isFinite }
+                      && cachedOut.allSatisfy { $0.isFinite })
+
+                // In-place variants (x == y) for the weighted case only,
+                // tested separately for the first compute and the cached
+                // apply; the compiler-level rejection of reuse across a
+                // mutated input is covered by the plan tests above.
+                if weighted {
+                    let byteLen = width * MemoryLayout<Float>.stride
+                    guard let xInStats = device.makeBuffer(bytes: originalX, length: byteLen),
+                          let xInCached = device.makeBuffer(bytes: originalX, length: byteLen),
+                          let cmd2 = queue.makeCommandBuffer(),
+                          let enc2 = cmd2.makeComputeCommandEncoder() else {
+                        failed += 1
+                        print("FAIL: rmsStats in-place setup w=\(width)")
+                        continue
+                    }
+                    rmsStatsBind(enc2)
+                    enc2.setBuffer(xInStats, offset: 0, index: 5)
+                    enc2.setBuffer(xInStats, offset: 0, index: 6)
+                    enc2.setBuffer(invBuf, offset: 0, index: 7)
+                    enc2.setComputePipelineState(statsPipe)
+                    enc2.setThreadgroupMemoryLength(tgLen, index: 0)
+                    enc2.dispatchThreadgroups(MTLSize(width: 1, height: 1, depth: 1),
+                                              threadsPerThreadgroup: MTLSize(width: statsThreads, height: 1, depth: 1))
+                    rmsStatsBind(enc2)
+                    enc2.setBuffer(xInCached, offset: 0, index: 5)
+                    enc2.setBuffer(xInCached, offset: 0, index: 6)
+                    enc2.setBuffer(invBuf, offset: 0, index: 7)
+                    enc2.setComputePipelineState(cachedPipe)
+                    enc2.dispatchThreadgroups(MTLSize(width: 1, height: 1, depth: 1),
+                                              threadsPerThreadgroup: MTLSize(width: cachedThreads, height: 1, depth: 1))
+                    enc2.endEncoding()
+                    cmd2.commit()
+                    cmd2.waitUntilCompleted()
+                    guard cmd2.status == .completed else {
+                        failed += 1
+                        print("FAIL: rmsStats in-place completion w=\(width)")
+                        continue
+                    }
+                    let inStatsOut = rmsStatsReadFloats(xInStats, width)
+                    let inCachedOut = rmsStatsReadFloats(xInCached, width)
+                    var inStatsExact = true
+                    var inCachedExact = true
+                    for i in 0..<width {
+                        if inStatsOut[i].bitPattern != coopOut[i].bitPattern { inStatsExact = false }
+                        if inCachedOut[i].bitPattern != coopOut[i].bitPattern { inCachedExact = false }
+                    }
+                    check("rmsStats in-place first compute bit-exact w=\(width)", inStatsExact)
+                    check("rmsStats in-place cached apply bit-exact w=\(width)", inCachedExact)
+                }
+            }
+        }
+    }
+}
+
+@MainActor func rmsStatsRunAllTests() {
+    rmsStatsPlanCompileTests()
+    rmsStatsShaderTests()
+}
+rmsStatsRunAllTests()
 
 // MARK: - Intra-block SIMD-reduction Q6_K matvec vs FP64 oracle (ACTUAL runtime shader)
 
@@ -5479,12 +6062,75 @@ do {
     let legacyNoQ6C = "{\"segmentBatching\":true,\"top5Diagnostic\":false,\"matvecTiledQ4\":false,\"matvecTiledQ6\":false,\"rmsnormTiled\":false,\"matvecTiledF32\":false,\"vectorizedLoads\":false,\"gpuCacheAppend\":false,\"parallelAttention\":false,\"rmsnormCooperative\":false}"
     check("legacy artifact without matvecCooperativeQ6 rejected",
           (try? dec.decode(GemmaForgeCandidate.self, from: Data(legacyNoQ6C.utf8))) == nil)
+    // rmsStatisticsReuse axis: explicit Codable key, roundtrip, default
+    // false, and missing-key rejection for legacy artifacts. The legacy
+    // fixture carries ALL older fields INCLUDING matvecCooperativeQ6:false
+    // so the rejection is attributable to the MISSING rmsStatisticsReuse
+    // key alone (no false-positive missingkey from an older field).
+    let sr = GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                 vectorizedLoads: true, rmsStatisticsReuse: true)
+    let srj = String(data: try enc.encode(sr), encoding: .utf8) ?? ""
+    check("rmsStatisticsReuse JSON reflects true", srj.contains("\"rmsStatisticsReuse\":true"))
+    check("rmsStatisticsReuse JSON reflects false", fj.contains("\"rmsStatisticsReuse\":false"))
+    check("rmsStatisticsReuse JSON roundtrip",
+          (try? dec.decode(GemmaForgeCandidate.self, from: enc.encode(sr))) == sr)
+    check("rmsStatisticsReuse default false",
+          !GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false).rmsStatisticsReuse)
+    let legacyNoSR = "{\"segmentBatching\":true,\"top5Diagnostic\":false,\"matvecTiledQ4\":false,\"matvecTiledQ6\":false,\"rmsnormTiled\":false,\"matvecTiledF32\":false,\"vectorizedLoads\":false,\"gpuCacheAppend\":false,\"parallelAttention\":false,\"rmsnormCooperative\":false,\"matvecCooperativeQ6\":false}"
+    check("legacy artifact without rmsStatisticsReuse rejected",
+          (try? dec.decode(GemmaForgeCandidate.self, from: Data(legacyNoSR.utf8))) == nil)
+    // Statistics candidate legality (PURE, device-free): legal only
+    // with cooperative RMSNorm + vectorized loads and tiled RMSNorm
+    // off; every incompatible combination is rejected.
+    check("legal statistics candidate validates",
+          (try? GemmaForge.validateCandidate(GemmaForgeCandidate(
+              segmentBatching: true, top5Diagnostic: false,
+              vectorizedLoads: true, rmsnormCooperative: true,
+              rmsStatisticsReuse: true))) != nil)
+    check("statistics candidate rejected with rmsnormCooperative=false",
+          (try? GemmaForge.validateCandidate(GemmaForgeCandidate(
+              segmentBatching: true, top5Diagnostic: false,
+              vectorizedLoads: true,
+              rmsStatisticsReuse: true))) == nil)
+    check("statistics candidate rejected with vectorizedLoads=false",
+          (try? GemmaForge.validateCandidate(GemmaForgeCandidate(
+              segmentBatching: true, top5Diagnostic: false,
+              rmsnormCooperative: true,
+              rmsStatisticsReuse: true))) == nil)
+    check("statistics candidate rejected with rmsnormTiled=true",
+          (try? GemmaForge.validateCandidate(GemmaForgeCandidate(
+              segmentBatching: true, top5Diagnostic: false,
+              rmsnormTiled: true, vectorizedLoads: true,
+              rmsnormCooperative: true,
+              rmsStatisticsReuse: true))) == nil)
+    // Statistics kernel/plan guard surface (device-free subset).
+    check("rms statistics elementCount overflow fails closed",
+          RMSStatisticsKernels.elementCount(width: Int.max, vectors: 2) == nil
+          && RMSStatisticsKernels.elementCount(width: 0, vectors: 1) == nil
+          && RMSStatisticsKernels.elementCount(width: 4, vectors: 1) == 4)
+    check("rms statistics weight offset alignment rule",
+          RMSStatisticsKernels.weightOffsetIsAligned(0)
+          && RMSStatisticsKernels.weightOffsetIsAligned(16)
+          && !RMSStatisticsKernels.weightOffsetIsAligned(8)
+          && !RMSStatisticsKernels.weightOffsetIsAligned(-16))
+    check("rms statistics eligibility mirrors cooperative gate",
+          RMSStatisticsKernels.eligible(n: 256) && RMSStatisticsKernels.eligible(n: 8192)
+          && !RMSStatisticsKernels.eligible(n: 254) && !RMSStatisticsKernels.eligible(n: 8196))
+    let shaStats = RMSStatisticsKernels.sourceSha256()
+    check("rms statistics source sha is 64 lowercase hex chars",
+          shaStats.count == 64
+          && shaStats.allSatisfy { ($0 >= "0" && $0 <= "9") || ($0 >= "a" && $0 <= "f") })
     let cands = GemmaForge.candidates()
-    checkEqual("bounded candidate count", cands.count, 26)
-    checkEqual("gpuCacheAppend candidates", cands.filter { $0.gpuCacheAppend }.count, 12)
-    checkEqual("parallelAttention candidates", cands.filter { $0.parallelAttention }.count, 11)
-    checkEqual("rmsnormCooperative candidates", cands.filter { $0.rmsnormCooperative }.count, 5)
-    checkEqual("matvecCooperativeQ6 candidates", cands.filter { $0.matvecCooperativeQ6 }.count, 2)
+    checkEqual("bounded candidate count", cands.count, 27)
+    checkEqual("gpuCacheAppend candidates", cands.filter { $0.gpuCacheAppend }.count, 13)
+    checkEqual("parallelAttention candidates", cands.filter { $0.parallelAttention }.count, 12)
+    checkEqual("rmsnormCooperative candidates", cands.filter { $0.rmsnormCooperative }.count, 6)
+    checkEqual("matvecCooperativeQ6 candidates", cands.filter { $0.matvecCooperativeQ6 }.count, 3)
+    checkEqual("rmsStatisticsReuse candidates", cands.filter { $0.rmsStatisticsReuse }.count, 1)
+    check("no legal candidate enables rmsStatisticsReuse and rmsnormTiled together",
+          !cands.contains { $0.rmsStatisticsReuse && $0.rmsnormTiled })
+    check("every bounded candidate passes validateCandidate",
+          cands.allSatisfy { (try? GemmaForge.validateCandidate($0)) != nil })
     check("no legal candidate enables rmsnormCooperative and rmsnormTiled together",
           !cands.contains { $0.rmsnormCooperative && $0.rmsnormTiled })
     check("no legal candidate enables matvecCooperativeQ6 and matvecTiledQ6 together",
@@ -5492,7 +6138,8 @@ do {
     check("old baseline default false", !cands[0].gpuCacheAppend && !cands[1].gpuCacheAppend
           && !cands[0].parallelAttention && !cands[1].parallelAttention
           && !cands[0].rmsnormCooperative && !cands[1].rmsnormCooperative
-          && !cands[0].matvecCooperativeQ6 && !cands[1].matvecCooperativeQ6)
+          && !cands[0].matvecCooperativeQ6 && !cands[1].matvecCooperativeQ6
+          && !cands[0].rmsStatisticsReuse && !cands[1].rmsStatisticsReuse)
 } catch {
     failed += 1
     print("FAIL cache-append candidate JSON: \(error)")

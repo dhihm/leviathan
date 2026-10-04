@@ -107,6 +107,15 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
     /// is rejected, never silently defaulted.
     public let matvecCooperativeQ6: Bool
 
+    /// Reusable RMS statistics (default false): the first RMSNorm of a
+    /// compatible SSA statistics group computes the inverse statistic
+    /// once (stored GPU-side in a tiny persistent buffer) and later
+    /// RMSNorms with the SAME live input version reuse it with the
+    /// identical per-element arithmetic. Explicit Codable key — an
+    /// artifact missing this field is rejected, never silently
+    /// defaulted.
+    public let rmsStatisticsReuse: Bool
+
     public init(segmentBatching: Bool, top5Diagnostic: Bool,
                 matvecTiledQ4: Bool = false, matvecTiledQ6: Bool = false,
                 rmsnormTiled: Bool = false, matvecTiledF32: Bool = false,
@@ -114,7 +123,8 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
                 gpuCacheAppend: Bool = false,
                 parallelAttention: Bool = false,
                 rmsnormCooperative: Bool = false,
-                matvecCooperativeQ6: Bool = false) {
+                matvecCooperativeQ6: Bool = false,
+                rmsStatisticsReuse: Bool = false) {
         self.segmentBatching = segmentBatching
         self.top5Diagnostic = top5Diagnostic
         self.matvecTiledQ4 = matvecTiledQ4
@@ -126,12 +136,14 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
         self.parallelAttention = parallelAttention
         self.rmsnormCooperative = rmsnormCooperative
         self.matvecCooperativeQ6 = matvecCooperativeQ6
+        self.rmsStatisticsReuse = rmsStatisticsReuse
     }
 
     private enum CodingKeys: String, CodingKey {
         case segmentBatching, top5Diagnostic, matvecTiledQ4, matvecTiledQ6
         case rmsnormTiled, matvecTiledF32, vectorizedLoads, gpuCacheAppend
-        case parallelAttention, rmsnormCooperative, matvecCooperativeQ6
+        case parallelAttention, rmsnormCooperative, matvecCooperativeQ6,
+             rmsStatisticsReuse
     }
 
     public init(from decoder: Decoder) throws {
@@ -156,6 +168,10 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
             throw DecodingError.keyNotFound(CodingKeys.matvecCooperativeQ6, DecodingError.Context(
                 codingPath: c.codingPath, debugDescription: "matvecCooperativeQ6 missing (pre-axis artifact)"))
         }
+        guard let rmsStatisticsReuse = try c.decodeIfPresent(Bool.self, forKey: .rmsStatisticsReuse) else {
+            throw DecodingError.keyNotFound(CodingKeys.rmsStatisticsReuse, DecodingError.Context(
+                codingPath: c.codingPath, debugDescription: "rmsStatisticsReuse missing (pre-axis artifact)"))
+        }
         self.segmentBatching = try c.decode(Bool.self, forKey: .segmentBatching)
         self.top5Diagnostic = try c.decode(Bool.self, forKey: .top5Diagnostic)
         self.matvecTiledQ4 = try c.decode(Bool.self, forKey: .matvecTiledQ4)
@@ -167,6 +183,7 @@ public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
         self.parallelAttention = parallelAttention
         self.rmsnormCooperative = rmsnormCooperative
         self.matvecCooperativeQ6 = matvecCooperativeQ6
+        self.rmsStatisticsReuse = rmsStatisticsReuse
     }
 }
 
@@ -267,6 +284,10 @@ public struct GemmaPreparedExecution {
     let configFingerprint: GemmaConfigFingerprint
     /// Precomputed immutable value table (id -> value), built once.
     public let byID: [String: GemmaSSAIR.Value]
+    /// Read-only reusable RMS statistics plan derived ONCE at prepare
+    /// time from the validated SSA and the runner's epsilon — never
+    /// re-derived per token.
+    public let statisticsPlan: RMSStatisticsPlan
     /// Lightweight composite-install binding captured at prepare time:
     /// the installed MoE lowering's artifact digest and the installed Q4
     /// launch width. assertBound compares these cheap values on every
@@ -280,12 +301,14 @@ public struct GemmaPreparedExecution {
 
     private init(ssa: GemmaSSAIR, runner: Gemma4Runner, graph: GemmaGraphIR,
                  configFingerprint: GemmaConfigFingerprint,
-                 byID: [String: GemmaSSAIR.Value]) {
+                 byID: [String: GemmaSSAIR.Value],
+                 statisticsPlan: RMSStatisticsPlan) {
         self.ssa = ssa
         self.runner = runner
         self.boundGraph = graph
         self.configFingerprint = configFingerprint
         self.byID = byID
+        self.statisticsPlan = statisticsPlan
         self.boundMoeArtifactDigest = runner.moeGenerated?.artifactDigest
         self.boundQ4LaunchWidth = runner.q4LaunchWidth
     }
@@ -300,10 +323,12 @@ public struct GemmaPreparedExecution {
         try GemmaGraph.validate(graph, config: runner.config, file: runner.ggufFile)
         let ssa = try GemmaSSA.lower(graph)
         try GemmaSSA.validate(ssa, config: graph.config)
+        let statisticsPlan = try RMSStatisticsPlan.analyze(
+            ssa: ssa, epsilon: runner.config.rmsNormEps)
         return GemmaPreparedExecution(
             ssa: ssa, runner: runner, graph: graph,
             configFingerprint: GemmaConfigFingerprint(runner.config),
-            byID: valueTable(ssa))
+            byID: valueTable(ssa), statisticsPlan: statisticsPlan)
     }
 
     /// Builds the id -> value dictionary for a schedule (shared by the
@@ -581,7 +606,38 @@ public enum GemmaForge {
                                 vectorizedLoads: true, gpuCacheAppend: true,
                                 parallelAttention: true, rmsnormCooperative: true,
                                 matvecCooperativeQ6: true),
+            // Reusable RMS statistics (bounded new pass): the validated
+            // plan turns the measured 30 groups / 60 duplicated statistic
+            // reductions per token into one compute + N cached applies,
+            // bit-exact by construction against the incumbent arithmetic.
+            // Appended alone on the ALWAYS batched + VL + GPU-KV +
+            // parallel-attention + cooperative-RMS + cooperative-Q6
+            // baseline (all tiled axes false, never rmsnormTiled).
+            // Total candidate set: 27.
+            GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false,
+                                vectorizedLoads: true, gpuCacheAppend: true,
+                                parallelAttention: true, rmsnormCooperative: true,
+                                matvecCooperativeQ6: true,
+                                rmsStatisticsReuse: true),
         ]
+    }
+
+    /// PURE device-free candidate legality guard: reusable RMS
+    /// statistics reuse the EXACT cooperative + vectorized incumbent
+    /// arithmetic, so rmsStatisticsReuse is legal only when
+    /// rmsnormCooperative and vectorizedLoads are enabled and
+    /// rmsnormTiled is disabled. Both public executors invoke this
+    /// BEFORE any runner reset or GPU work — an incompatible artifact
+    /// is rejected rather than silently falling back.
+    public static func validateCandidate(_ candidate: GemmaForgeCandidate) throws {
+        if candidate.rmsStatisticsReuse {
+            guard candidate.rmsnormCooperative, candidate.vectorizedLoads,
+                  !candidate.rmsnormTiled else {
+                throw GemmaForgeError.invalidGraph(
+                    "rmsStatisticsReuse requires rmsnormCooperative=true, " +
+                    "vectorizedLoads=true, rmsnormTiled=false")
+            }
+        }
     }
 
     /// Streaming SHA-256 of a large file (the 14.4 GB GGUF), read in
@@ -628,6 +684,7 @@ public enum GemmaForge {
         // ordinary paths are unchanged.
         let ssa: GemmaSSAIR
         let byID: [String: GemmaSSAIR.Value]
+        let statisticsPlan: RMSStatisticsPlan
         if let prepared {
             guard schedule == nil else {
                 throw GemmaForgeError.executionFailed(
@@ -636,6 +693,7 @@ public enum GemmaForge {
             try prepared.assertBound(to: runner, graph: graph)
             ssa = prepared.ssa
             byID = prepared.byID
+            statisticsPlan = prepared.statisticsPlan
         } else {
             try GemmaGraph.validate(graph, config: runner.config, file: runner.ggufFile)
             if let schedule {
@@ -655,7 +713,12 @@ public enum GemmaForge {
                 ssa = try GemmaSSA.lower(graph)
             }
             byID = GemmaPreparedExecution.valueTable(ssa)
+            statisticsPlan = try RMSStatisticsPlan.analyze(
+                ssa: ssa, epsilon: runner.config.rmsNormEps)
         }
+        // Axis legality is enforced BEFORE any runner reset or GPU
+        // work: an incompatible statistics candidate is rejected here.
+        try validateCandidate(candidate)
         let gpuBefore = runner.gpuMicrosTotal
         let dispatchBefore = runner.dispatchCountTotal
         let buffersBefore = runner.submittedBuffers
@@ -671,7 +734,8 @@ public enum GemmaForge {
                 }
                 argmax = try executeToken(ssa, byID: byID, runner,
                                           token: token, position: pos,
-                                          candidate: candidate)
+                                          candidate: candidate,
+                                          statisticsPlan: statisticsPlan)
                 runner.advancePosition()
                 logits = try runner.read(runner.bufLogits, runner.config.vocabSize)
             }
@@ -705,6 +769,7 @@ public enum GemmaForge {
         // unchanged on every path. Ordinary paths validate as before.
         let ssa: GemmaSSAIR
         let byID: [String: GemmaSSAIR.Value]
+        let statisticsPlan: RMSStatisticsPlan
         if let prepared {
             guard schedule == nil else {
                 throw GemmaForgeError.executionFailed(
@@ -713,6 +778,7 @@ public enum GemmaForge {
             try prepared.assertBound(to: runner, graph: graph)
             ssa = prepared.ssa
             byID = prepared.byID
+            statisticsPlan = prepared.statisticsPlan
         } else {
             try GemmaGraph.validate(graph, config: runner.config, file: runner.ggufFile)
             if let schedule {
@@ -727,7 +793,12 @@ public enum GemmaForge {
                 ssa = try GemmaSSA.lower(graph)
             }
             byID = GemmaPreparedExecution.valueTable(ssa)
+            statisticsPlan = try RMSStatisticsPlan.analyze(
+                ssa: ssa, epsilon: runner.config.rmsNormEps)
         }
+        // Axis legality is enforced BEFORE any GPU work: an
+        // incompatible statistics candidate is rejected here.
+        try validateCandidate(candidate)
         guard token >= 0, token < runner.config.vocabSize,
               runner.contextPosition() < runner.maxContext else {
             throw GemmaForgeError.executionFailed("token/position out of bounds")
@@ -739,7 +810,8 @@ public enum GemmaForge {
         do {
             let argmax = try executeToken(ssa, byID: byID, runner,
                                           token: token, position: position,
-                                          candidate: candidate)
+                                          candidate: candidate,
+                                          statisticsPlan: statisticsPlan)
             runner.advancePosition()
             let logits = try runner.read(runner.bufLogits, runner.config.vocabSize)
             return (argmax, logits, runner.gpuMicrosTotal - gpuBefore,
@@ -760,7 +832,8 @@ public enum GemmaForge {
                                      byID: [String: GemmaSSAIR.Value],
                                      _ runner: Gemma4Runner,
                                      token: Int, position: Int,
-                                     candidate: GemmaForgeCandidate) throws -> Int {
+                                     candidate: GemmaForgeCandidate,
+                                     statisticsPlan: RMSStatisticsPlan?) throws -> Int {
         let config = runner.config
         // The schedule was lowered, validated, and turned into a value
         // table ONCE by the caller; the executor dispatches kernels from
@@ -807,6 +880,7 @@ public enum GemmaForge {
         runner.parallelAttentionKernel = candidate.parallelAttention
         runner.rmsCooperativeKernel = candidate.rmsnormCooperative
         runner.matvecCooperativeQ6Kernel = candidate.matvecCooperativeQ6
+        runner.rmsStatisticsReuse = candidate.rmsStatisticsReuse
         defer {
             runner.autoSegment = false
             runner.q4TiledKernel = false
@@ -818,10 +892,15 @@ public enum GemmaForge {
             runner.parallelAttentionKernel = false
             runner.rmsCooperativeKernel = false
             runner.matvecCooperativeQ6Kernel = false
+            runner.rmsStatisticsReuse = false
         }
         var routerState = [Int: (topIdx: [Int], weights: [Float])]()
 
-        for inst in ssa.instructions {
+        // Fresh per-token readiness: a statistic computed in a previous
+        // token, before a reset, or across a failed run is NEVER reused.
+        var readySlots = [Bool](repeating: false, count: statisticsPlan?.groupCount ?? 0)
+
+        for (index, inst) in ssa.instructions.enumerated() {
             switch inst.op {
             case "embed_row":
                 guard inst.tensors.first == "token_embd.weight" else {
@@ -839,9 +918,67 @@ public enum GemmaForge {
                 // width for vectorized norms, the total length otherwise.
                 let vectors = max(1, a(inst, "vectors"))
                 let n = vectors == 1 ? byID[inst.output]!.length : a(inst, "width")
-                try runner.rmsnorm(x: try vb(inst.inputs[0]), y: try vb(inst.output),
-                                   n: n, vectors: vectors,
-                                   weightTensor: inst.tensors.first)
+                let xBuf = try vb(inst.inputs[0])
+                let yBuf = try vb(inst.output)
+                // Reusable statistics path. The installed GENERATED RMS
+                // kernel family keeps precedence (never mixed reduction
+                // arithmetic — count a fallback and use the chain below).
+                // The planned action is rechecked against the CURRENT
+                // call (input id, width, vectors, epsilon bits) before
+                // any trust; unknown/unplanned/ineligible calls and any
+                // guard failure use the ordinary incumbent RMS chain.
+                // Reusable statistics path: only PLANNED actions touch
+                // the production fallback counter, and each planned
+                // action that falls back increments EXACTLY once. The
+                // installed GENERATED RMS kernel family keeps precedence
+                // (never mixed reduction arithmetic); a plan guard
+                // mismatch or a not-yet-ready reuse slot counts here in
+                // the executor, while the dispatch helpers count their
+                // own guard failures themselves — never both. Unplanned
+                // RMSNorm calls (no action at this instruction index)
+                // never count. Every fallback runs the unchanged
+                // ordinary incumbent RMS chain below.
+                var statsServed = false
+                var statsFallback = false
+                if candidate.rmsStatisticsReuse,
+                   let plan = statisticsPlan,
+                   plan.epsilonBits == config.rmsNormEps.bitPattern,
+                   let action = plan.action(at: index) {
+                    if runner.rmsGeneratedKernel != nil {
+                        statsFallback = true
+                    } else if action.inputID != inst.inputs.first
+                        || action.width != n || action.vectors != vectors {
+                        statsFallback = true
+                    } else if action.kind == .compute {
+                        if try runner.rmsStatisticsCompute(
+                            n: n, vectors: vectors,
+                            weightTensor: inst.tensors.first,
+                            slots: plan.groupCount, slot: action.slot,
+                            x: xBuf, y: yBuf) {
+                            if action.slot < readySlots.count {
+                                readySlots[action.slot] = true
+                            }
+                            statsServed = true
+                        }
+                    } else if action.slot >= readySlots.count
+                        || !readySlots[action.slot] {
+                        statsFallback = true
+                    } else if try runner.rmsStatisticsCachedApply(
+                        n: n, vectors: vectors,
+                        weightTensor: inst.tensors.first,
+                        slots: plan.groupCount, slot: action.slot,
+                        x: xBuf, y: yBuf) {
+                        statsServed = true
+                    }
+                }
+                if statsFallback {
+                    runner.rmsStatisticsCountFallback()
+                }
+                if !statsServed {
+                    try runner.rmsnorm(x: xBuf, y: yBuf,
+                                       n: n, vectors: vectors,
+                                       weightTensor: inst.tensors.first)
+                }
             case "matvec":
                 // Physical capacity includes the slice offset (shared_up
                 // writes the upper half of the fused gate|up buffer); the

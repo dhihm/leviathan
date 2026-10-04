@@ -1396,6 +1396,239 @@ public final class Gemma4Runner {
         return true
     }
 
+    // MARK: - reusable RMS statistics plumbing
+
+    /// PRODUCTION reusable-statistics axis (default false). When true,
+    /// planned eligible RMSNorm calls dispatch the g4_rmsnorm_stats /
+    /// g4_rmsnorm_cached kernel pair from the public RMSStatisticsKernels
+    /// source: the first member of a group computes the inverse statistic
+    /// once (stored GPU-side) and later members reuse it with the
+    /// identical per-element arithmetic. The installed GENERATED RMS
+    /// kernel family keeps precedence in the executor (never mixed
+    /// reduction arithmetic). Never stored in the shared `pipelines`
+    /// dictionary, so engineIdentity() pipeline keys are unchanged — the
+    /// axis identity is bound explicitly via the |rmsStats= segment.
+    public internal(set) var rmsStatisticsReuse = false
+    /// Lazily compiled once per runner (own library, own pipelines —
+    /// ZERO eager pipeline-compile cost at init; identity unchanged).
+    internal private(set) var rmsStatsComputePipelineState: MTLComputePipelineState?
+    internal private(set) var rmsStatsCachedPipelineState: MTLComputePipelineState?
+    /// Persistent tiny shared buffer of inverse statistics (slot * 4
+    /// bytes each, <= 1024 slots; the real 30-group model needs 120
+    /// bytes). Allocated lazily on the first compute dispatch, resized
+    /// only when a larger slot count is required, and only after the
+    /// pending GPU work is flushed. NEVER read back by the CPU.
+    internal private(set) var rmsStatsInverseBuffer: MTLBuffer?
+    /// PRODUCTION statistics counters (computed / reused / fallback),
+    /// incremented in the dispatch helpers themselves (valid in
+    /// segment-batched mode too).
+    public private(set) var rmsStatsComputedCount = 0
+    public private(set) var rmsStatsReusedCount = 0
+    public private(set) var rmsStatsFallbackCount = 0
+
+    /// Zeroes the production reusable-statistics counters.
+    public func rmsStatisticsCountersReset() {
+        rmsStatsComputedCount = 0
+        rmsStatsReusedCount = 0
+        rmsStatsFallbackCount = 0
+    }
+
+    /// Counts a production statistics fallback (axis enabled but the
+    /// call was served by the incumbent chain — e.g. the generated RMS
+    /// kernel family keeps precedence in the executor).
+    internal func rmsStatisticsCountFallback() {
+        rmsStatsFallbackCount += 1
+    }
+
+    /// Hard slot budget for the persistent inverse buffer.
+    private static let rmsStatsMaxSlots = 1024
+
+    /// Returns the persistent inverse-statistics buffer sized for
+    /// `slots` slots. Grows only when needed; the pending GPU work is
+    /// flushed BEFORE the old buffer is dropped. Throws (fail closed)
+    /// on a non-positive or over-budget slot count.
+    internal func rmsStatisticsInverse(slots: Int) throws -> MTLBuffer {
+        if let b = rmsStatsInverseBuffer,
+           slots > 0, slots <= Self.rmsStatsMaxSlots, b.length >= slots * 4 {
+            return b
+        }
+        guard slots > 0, slots <= Self.rmsStatsMaxSlots else {
+            throw Gemma4Error.badTensorGeometry(
+                "rms statistics slots out of range: \(slots)")
+        }
+        try flushOpenSegment()
+        guard let buf = device.makeBuffer(length: slots * 4,
+                                          options: .storageModeShared) else {
+            throw Gemma4Error.metalUnavailable
+        }
+        rmsStatsInverseBuffer = buf
+        return buf
+    }
+
+    /// Compiles (once) the statistics compute pipeline from the PUBLIC
+    /// RMSStatisticsKernels source on the runner's OWN device with
+    /// default compiler options. Compilation failure fails CLOSED as
+    /// Gemma4Error.
+    internal func rmsStatsComputePipeline() throws -> MTLComputePipelineState {
+        if let cached = rmsStatsComputePipelineState { return cached }
+        let device = self.device
+        let library: MTLLibrary
+        do { library = try device.makeLibrary(source: RMSStatisticsKernels.source, options: nil) }
+        catch { throw Gemma4Error.shaderCompileFailed("rms statistics: \(error)") }
+        guard let fn = library.makeFunction(name: RMSStatisticsKernels.computeKernelName) else {
+            throw Gemma4Error.functionMissing(RMSStatisticsKernels.computeKernelName)
+        }
+        guard let pipe = try? device.makeComputePipelineState(function: fn) else {
+            throw Gemma4Error.shaderCompileFailed("rms statistics compute pipeline")
+        }
+        rmsStatsComputePipelineState = pipe
+        return pipe
+    }
+
+    /// Compiles (once) the cached-apply pipeline (same source, its own
+    /// separate pipeline object).
+    internal func rmsStatsCachedPipeline() throws -> MTLComputePipelineState {
+        if let cached = rmsStatsCachedPipelineState { return cached }
+        let device = self.device
+        let library: MTLLibrary
+        do { library = try device.makeLibrary(source: RMSStatisticsKernels.source, options: nil) }
+        catch { throw Gemma4Error.shaderCompileFailed("rms statistics: \(error)") }
+        guard let fn = library.makeFunction(name: RMSStatisticsKernels.applyKernelName) else {
+            throw Gemma4Error.functionMissing(RMSStatisticsKernels.applyKernelName)
+        }
+        guard let pipe = try? device.makeComputePipelineState(function: fn) else {
+            throw Gemma4Error.shaderCompileFailed("rms statistics cached pipeline")
+        }
+        rmsStatsCachedPipelineState = pipe
+        return pipe
+    }
+
+    /// Shared host-side guards: validates vectors == 1, eligibility
+    /// (n multiple of 4, 0 < n <= 8192), slot bounds against the hard
+    /// 1024-slot budget, weight F32 geometry with the 16-byte offset
+    /// alignment rule, checked logical grid (overflow-safe), and the
+    /// x/y byte spans. PURE (no state mutation); nil = ineligible.
+    private func rmsStatsGuards(n: Int, vectors: Int, weightTensor: String?,
+                                slots: Int, slot: Int,
+                                x: MTLBuffer, y: MTLBuffer) -> (wOff: UInt64, wb: MTLBuffer)? {
+        guard vectors == 1, RMSStatisticsKernels.eligible(n: n),
+              RMSStatisticsKernels.elementCount(width: n, vectors: vectors) != nil,
+              slot >= 0, slot < slots, slots <= Self.rmsStatsMaxSlots else { return nil }
+        var wOff: UInt64 = 0
+        if let name = weightTensor {
+            guard let r = ref[name], r.type == .float32, r.inDim == n,
+                  r.end - r.offset == n * 4,
+                  RMSStatisticsKernels.weightOffsetIsAligned(r.offset) else { return nil }
+            wOff = UInt64(r.offset)
+        }
+        guard Self.rmsVectorLoadGuards(n: n, scaled: weightTensor != nil, wOff: wOff) else {
+            return nil
+        }
+        guard let wb = weightsBuffer else { return nil }
+        let (span, of) = n.multipliedReportingOverflow(by: vectors * 4)
+        guard !of, x.length >= span, y.length >= span else { return nil }
+        return (wOff, wb)
+    }
+
+    /// PRODUCTION statistics compute dispatch: the FIRST member of a
+    /// group. Incumbent ABI 0..6 plus the inverse buffer at binding 7
+    /// (byte offset slot * 4) and dynamic threadgroup memory
+    /// (n + 4) * 4 floats at index 0. Threads and the threadgroup-memory
+    /// budget are derived from the ACTUAL compiled pipeline and device
+    /// caps. Any guard failure counts a PRODUCTION fallback and returns
+    /// false — the caller runs the unchanged incumbent chain (never a
+    /// silent application). Dispatches through the SAME ordered
+    /// compute-segment path (dispatchPipeline) as every other kernel;
+    /// NO CPU/GPU synchronization happens here.
+    internal func rmsStatisticsCompute(n: Int, vectors: Int, weightTensor: String?,
+                                       slots: Int, slot: Int,
+                                       x: MTLBuffer, y: MTLBuffer) throws -> Bool {
+        guard rmsStatisticsReuse else { return false }
+        guard let g = rmsStatsGuards(n: n, vectors: vectors,
+                                     weightTensor: weightTensor, slots: slots,
+                                     slot: slot, x: x, y: y) else {
+            rmsStatsFallbackCount += 1
+            return false
+        }
+        let pipe = try rmsStatsComputePipeline()
+        let threads = RMSStatisticsKernels.threadCount(
+            n: n, executionWidth: pipe.threadExecutionWidth,
+            maxThreads: pipe.maxTotalThreadsPerThreadgroup)
+        let tgLen = RMSStatisticsKernels.threadgroupMemoryLength(n: n)
+        guard threads > 0, tgLen > 0,
+              pipe.staticThreadgroupMemoryLength <= device.maxThreadgroupMemoryLength,
+              tgLen <= device.maxThreadgroupMemoryLength
+                  - pipe.staticThreadgroupMemoryLength else {
+            rmsStatsFallbackCount += 1
+            return false
+        }
+        let inverse = try rmsStatisticsInverse(slots: slots)
+        var eps = config.rmsNormEps
+        var dims = SIMD2<UInt32>(UInt32(n), UInt32(vectors))
+        var withScale: Int32 = weightTensor == nil ? 0 : 1
+        var wOff = g.wOff
+        rmsStatsComputedCount += 1
+        try dispatchPipeline(pipe, name: RMSStatisticsKernels.computeKernelName,
+                             groups: vectors, threads: threads) { enc in
+            enc.setThreadgroupMemoryLength(tgLen, index: 0)
+            enc.setBytes(&dims, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
+            enc.setBytes(&eps, length: MemoryLayout<Float>.stride, index: 1)
+            enc.setBytes(&withScale, length: MemoryLayout<Int32>.stride, index: 2)
+            enc.setBytes(&wOff, length: MemoryLayout<UInt64>.stride, index: 3)
+            enc.setBuffer(g.wb, offset: 0, index: 4)
+            enc.setBuffer(x, offset: 0, index: 5)
+            enc.setBuffer(y, offset: 0, index: 6)
+            enc.setBuffer(inverse, offset: slot * 4, index: 7)
+        }
+        return true
+    }
+
+    /// PRODUCTION statistics cached-apply dispatch: later group members
+    /// re-apply the stored inverse. NO threadgroup memory, NO host
+    /// readback, NO synchronization. Same guards as the compute; any
+    /// failure counts a fallback and returns false.
+    internal func rmsStatisticsCachedApply(n: Int, vectors: Int, weightTensor: String?,
+                                           slots: Int, slot: Int,
+                                           x: MTLBuffer, y: MTLBuffer) throws -> Bool {
+        guard rmsStatisticsReuse else { return false }
+        guard let g = rmsStatsGuards(n: n, vectors: vectors,
+                                     weightTensor: weightTensor, slots: slots,
+                                     slot: slot, x: x, y: y) else {
+            rmsStatsFallbackCount += 1
+            return false
+        }
+        let pipe = try rmsStatsCachedPipeline()
+        guard pipe.staticThreadgroupMemoryLength <= device.maxThreadgroupMemoryLength else {
+            rmsStatsFallbackCount += 1
+            return false
+        }
+        let threads = RMSStatisticsKernels.threadCount(
+            n: n, executionWidth: pipe.threadExecutionWidth,
+            maxThreads: pipe.maxTotalThreadsPerThreadgroup)
+        guard threads > 0 else {
+            rmsStatsFallbackCount += 1
+            return false
+        }
+        let inverse = try rmsStatisticsInverse(slots: slots)
+        var eps = config.rmsNormEps
+        var dims = SIMD2<UInt32>(UInt32(n), UInt32(vectors))
+        var withScale: Int32 = weightTensor == nil ? 0 : 1
+        var wOff = g.wOff
+        rmsStatsReusedCount += 1
+        try dispatchPipeline(pipe, name: RMSStatisticsKernels.applyKernelName,
+                             groups: vectors, threads: threads) { enc in
+            enc.setBytes(&dims, length: MemoryLayout<SIMD2<UInt32>>.stride, index: 0)
+            enc.setBytes(&eps, length: MemoryLayout<Float>.stride, index: 1)
+            enc.setBytes(&withScale, length: MemoryLayout<Int32>.stride, index: 2)
+            enc.setBytes(&wOff, length: MemoryLayout<UInt64>.stride, index: 3)
+            enc.setBuffer(g.wb, offset: 0, index: 4)
+            enc.setBuffer(x, offset: 0, index: 5)
+            enc.setBuffer(y, offset: 0, index: 6)
+            enc.setBuffer(inverse, offset: slot * 4, index: 7)
+        }
+        return true
+    }
+
     /// Compiles (once) the production parallel-attention pipeline from the
     /// SAME unmodified candidateSource (the actual constant in
     /// AttentionLowering.swift), with default compiler options, on the
@@ -2817,7 +3050,7 @@ public final class Gemma4Runner {
         // above — and is therefore unsafe and removed.
         let msl = SHA256.hex(SHA256.hash(Array(Self.shaderSource.utf8)))
         let candidates = GemmaForge.candidates()
-            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)/\($0.gpuCacheAppend)/\($0.parallelAttention)/\($0.rmsnormCooperative)/\($0.matvecCooperativeQ6)" }
+            .map { "\($0.segmentBatching)/\($0.matvecTiledQ4)/\($0.matvecTiledQ6)/\($0.rmsnormTiled)/\($0.matvecTiledF32)/\($0.vectorizedLoads)/\($0.gpuCacheAppend)/\($0.parallelAttention)/\($0.rmsnormCooperative)/\($0.matvecCooperativeQ6)/\($0.rmsStatisticsReuse)" }
             .sorted().joined(separator: ",")
         return "gemma-graph-executor-v1|exe=" + (try Self.executableDigest())
             + "|msl=" + msl
@@ -2842,6 +3075,11 @@ public final class Gemma4Runner {
             + "|q6Coop=" + Q6Cooperative.kernelName
             + "@v\(Q6Cooperative.version)"
             + "#\(Q6Cooperative.sourceSha256())"
+            + "|rmsStats=" + RMSStatisticsKernels.computeKernelName
+            + "@v\(RMSStatisticsKernels.version)"
+            + "#\(RMSStatisticsKernels.sourceSha256())"
+            + "|rmsStatsPlan=v\(RMSStatisticsPlan.analysisVersion)"
+            + "|rmsStatsCand=\(GemmaForge.candidates().contains { $0.rmsStatisticsReuse } ? 1 : 0)"
             + compositeLoweringIdentity()
     }
 
