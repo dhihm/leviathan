@@ -1,0 +1,232 @@
+[
+  {
+    "file": "Sources/LeviathanCore/MoELowering.swift",
+    "line": 1956,
+    "call": "let ggufDigest = try GemmaForge.fileDigest(ggufURL)",
+    "nearestDeclaration": [
+      1923,
+      "func bitsEqual(_ a: [Float], _ b: [Float]) -> Bool {"
+    ],
+    "snippet": "        }\n        guard let winner = best else {\n            throw MoELoweringError.componentGateFailed(\n                results.map { \"\\($0.schedule): \\($0.note)\" }.joined(separator: \"; \"))\n        }\n        let ggufDigest = try GemmaForge.fileDigest(ggufURL)\n        let artifact = try MoELoweringArtifact.withDigest(MoELoweringArtifact(\n            artifactSchema: MoELoweringArtifact.schema,\n            codegenVersion: MoEKernelEmitter.codegenVersion,\n            regionDigest: try region.digest(), region: region,\n            binding: binding, schedule: winner.schedule,\n            guKernelName: winner.schedule.guKernelName,"
+  },
+  {
+    "file": "Sources/LeviathanCore/MoELowering.swift",
+    "line": 2263,
+    "call": "let ggufDigest = try GemmaForge.fileDigest(ggufURL)",
+    "nearestDeclaration": [
+      1988,
+      "public static func selectAndPersist(regionJSON: Data, ggufURL: URL,"
+    ],
+    "snippet": "            diagnostic: diagnostic,\n            genTokens: genTokens, timedTokens: timedTokens,\n            fixtures: fixtureRecords, results: modelResults,\n            incumbentWallPerFixture: incWalls, incumbentGpuPerFixture: incGpus,\n            performanceSelected: performanceSelected, policyNote: policyNote)\n        let ggufDigest = try GemmaForge.fileDigest(ggufURL)\n        let artifact = try MoELoweringArtifact.withDigest(MoELoweringArtifact(\n            artifactSchema: componentArtifact.artifactSchema,\n            codegenVersion: componentArtifact.codegenVersion,\n            regionDigest: componentArtifact.regionDigest, region: region,\n            binding: componentArtifact.binding, schedule: selectedSchedule,\n            guKernelName: selectedSchedule.guKernelName,"
+  },
+  {
+    "file": "Sources/LeviathanCore/Q4Lowering.swift",
+    "line": 1225,
+    "call": "ggufDigest = try GemmaForge.fileDigest(ggufURL)",
+    "nearestDeclaration": [
+      1208,
+      "public static func forge(opJSON: Data, ggufURL: URL?) throws"
+    ],
+    "snippet": "                throw Q4LoweringError.invalidOp(\"op binds a tensor; --gguf is required\")\n            }\n            let f = try GGUFReader.read(ggufURL)\n            try op.validateAgainst(file: f)\n            file = f\n            ggufDigest = try GemmaForge.fileDigest(ggufURL)\n        }\n        let workingSet = Int(clamping: device.recommendedMaxWorkingSetSize)\n        let blocksPerRow = op.inDim / Q4_0.valuesPerBlock\n\n        // The incumbent reference kernel, compiled from the runner's own\n        // embedded MSL \u2014 the same g4_q4_matvec the production path uses."
+  },
+  {
+    "file": "Sources/LeviathanCore/Q4Lowering.swift",
+    "line": 1487,
+    "call": "let ggufDigest = try GemmaForge.fileDigest(ggufURL)",
+    "nearestDeclaration": [
+      1471,
+      "func resetIncumbentConfig() throws {"
+    ],
+    "snippet": "        let op = try Q4OpIR.parse(opJSON)\n        guard let boundTensor = op.tensor else {\n            throw Q4LoweringError.invalidOp(\"orchestration requires a bound tensor\")\n        }\n        try op.validateAgainst(file: runner.ggufFile)\n        let ggufDigest = try GemmaForge.fileDigest(ggufURL)\n\n        // ---- 1. component phase ----\n        let (componentArtifact, componentResults, incumbentRel) = try forge(\n            opJSON: opJSON, ggufURL: ggufURL)\n        log.append(String(format: \"component: incumbent rel-to-FP64 %.3e; %d/%d candidates accepted\",\n                          incumbentRel,"
+  },
+  {
+    "file": "Sources/LeviathanCore/GemmaForge.swift",
+    "line": 1381,
+    "call": "let ggufDigest = try fileDigest(ggufURL)",
+    "nearestDeclaration": [
+      1358,
+      "public static func forge(graph: GemmaGraphIR, runner: Gemma4Runner,"
+    ],
+    "snippet": "                    .resourceValues(forKeys: [.fileSizeKey]).fileSize ?? -1) else {\n            throw GemmaForgeError.invalidPlan(\n                \"forge URL is not the runner's mapped GGUF file\")\n        }\n        let graphDigest = try GemmaGraph.digest(graph)\n        let ggufDigest = try fileDigest(ggufURL)\n        let engineDigest = Self.engineDigest(try runner.engineIdentity())\n        let reference = GemmaForgeCandidate(segmentBatching: false, top5Diagnostic: false)\n        // Reference gate 1: graph executor (per-kernel) must agree with\n        // the runner's independently validated forward on raw logits and\n        // greedy argmax for the workload prompt.\n        runner.reset()"
+  },
+  {
+    "file": "Sources/LeviathanCore/MoEProfile.swift",
+    "line": 572,
+    "call": "ggufSha256: try GemmaForge.fileDigest(ggufURL),",
+    "nearestDeclaration": [
+      350,
+      "func gateStep(_ lg: [Float], _ s: Int, _ worstSoFar: Double) throws -> Double {"
+    ],
+    "snippet": "        let hw = runner.hardwareProfile()\n        let report = MoEProfileReport(\n            profileSchema: MoEProfileReport.schema,\n            codegenVersion: MoEKernelEmitter.codegenVersion,\n            executableSha256: try Gemma4Runner.executableDigest(),\n            ggufSha256: try GemmaForge.fileDigest(ggufURL),\n            deviceName: hw.deviceName,\n            maxTotalThreadsPerThreadgroup: hw.maxTotalThreadsPerThreadgroup,\n            threadExecutionWidth: hw.threadExecutionWidth,\n            recommendedWorkingSetSize: hw.recommendedMaxWorkingSetSize,\n            regionGraphSha256: region.graphSha256,\n            schedule: schedule,"
+  },
+  {
+    "file": "Sources/LeviathanCore/RMSLowering.swift",
+    "line": 946,
+    "call": "ggufDigest = try GemmaForge.fileDigest(ggufURL)",
+    "nearestDeclaration": [
+      930,
+      "public static func forge(opJSON: Data, ggufURL: URL?) throws"
+    ],
+    "snippet": "                throw RMSLoweringError.invalidOp(\"op binds a tensor; --gguf is required\")\n            }\n            let f = try GGUFReader.read(ggufURL)\n            try op.validateAgainst(file: f)\n            file = f\n            ggufDigest = try GemmaForge.fileDigest(ggufURL)\n        }\n\n        let incumbent = try RMSIncumbentKernel.compile(device: device)\n        let hardware = RMSHardwareProfile(\n            deviceName: device.name,\n            maxTotalThreadsPerThreadgroup: incumbent.vl.maxTotalThreadsPerThreadgroup,"
+  },
+  {
+    "file": "Sources/LeviathanCore/RMSLowering.swift",
+    "line": 1120,
+    "call": "let ggufDigest = try GemmaForge.fileDigest(ggufURL)",
+    "nearestDeclaration": [
+      1110,
+      "func resetIncumbentConfig() throws {"
+    ],
+    "snippet": "                    \"segment batching failed to re-engage after reset\")\n            }\n        }\n        let op = try RMSOpIR.parse(opJSON)\n        try op.validateAgainst(file: runner.ggufFile)\n        let ggufDigest = try GemmaForge.fileDigest(ggufURL)\n\n        // ---- 1. component phase ----\n        let (componentArtifact, componentResults, incumbentRel) = try forge(\n            opJSON: opJSON, ggufURL: ggufURL)\n        log.append(String(format: \"component: incumbent rel-to-FP64 %.3e; %d/%d candidates accepted\",\n                          incumbentRel,"
+  },
+  {
+    "file": "Sources/LeviathanCore/Gemma4.swift",
+    "line": 3276,
+    "call": "let digest = try GemmaForge.fileDigest(exec)",
+    "nearestDeclaration": [
+      3272,
+      "public static func executableDigest() throws -> String {"
+    ],
+    "snippet": "    /// and no plan identity is produced (no placeholder digest).\n    public static func executableDigest() throws -> String {\n        guard let exec = Bundle.main.executableURL else {\n            throw Gemma4Error.metalUnavailable\n        }\n        let digest = try GemmaForge.fileDigest(exec)\n        guard digest.count == 64,\n              digest.allSatisfy({ ($0 >= \"0\" && $0 <= \"9\") || ($0 >= \"a\" && $0 <= \"f\") })\n        else {\n            throw Gemma4Error.badMetadata(\"executable digest malformed\")\n        }\n        return digest"
+  },
+  {
+    "file": "Sources/LeviathanCore/Q4LaunchLowering.swift",
+    "line": 1171,
+    "call": "ggufDigest: try GemmaForge.fileDigest(ggufURL),",
+    "nearestDeclaration": [
+      1087,
+      "func baseArm() throws -> [Q4TimingArmFixture] {"
+    ],
+    "snippet": "                                   genTokens: genTokens, timedTokens: timedTokens,\n                                   baselineWall: baselineWall, performanceSelected: true,\n                                   diagnostic: false, saveTo: url)\n        let reloaded = try Q4LaunchArtifact.load(from: url)\n        try runner.installQ4LaunchGenerated(artifact: reloaded,\n                                            ggufDigest: try GemmaForge.fileDigest(ggufURL),\n                                            region: region,\n                                            graphDigest: try GemmaGraph.digest(graph))\n        defer {\n            runner.uninstallQ4LaunchGeometry()\n            runner.uninstallMoeGeneratedLowering()\n        }"
+  },
+  {
+    "file": "Sources/LeviathanCore/Q4LaunchLowering.swift",
+    "line": 1239,
+    "call": "ggufDigest: try GemmaForge.fileDigest(ggufURL),",
+    "nearestDeclaration": [
+      1198,
+      "private static func persist(region: MoERegionIR, runner: Gemma4Runner,"
+    ],
+    "snippet": "            baselineMoeSchedule: MoESchedule(batch: 4, rowsPerGroup: 32),\n            baselineMoeBinding: moeBinding,\n            regionGraphSha256: region.graphSha256,\n            hardware: hardware,\n            toolchain: Forge.toolchainIdentifier,\n            ggufDigest: try GemmaForge.fileDigest(ggufURL),\n            executableDigest: try Gemma4Runner.executableDigest(),\n            graphDigest: graphDigest,\n            hotShapes: shapes,\n            componentResults: componentResults,\n            incumbentWorstRelToOracle: incumbentRel,\n            modelGate: gate,"
+  },
+  {
+    "file": "Sources/leviathan-tests/main.swift",
+    "line": 6555,
+    "call": "return try GemmaForge.fileDigest(url)",
+    "nearestDeclaration": [
+      6553,
+      "func digestForFile(at url: URL) -> String? {"
+    ],
+    "snippet": "        }\n    }\n\n    func digestForFile(at url: URL) -> String? {\n        do {\n            return try GemmaForge.fileDigest(url)\n        } catch {\n            failed += 1\n            print(\"FAIL: unexpected error while digesting \\(url.path): \\(error)\")\n            return nil\n        }\n    }"
+  },
+  {
+    "file": "Sources/leviathan-tests/main.swift",
+    "line": 6596,
+    "call": "_ = try GemmaForge.fileDigest(fixtureURL(\"missing.bin\"))",
+    "nearestDeclaration": [
+      6553,
+      "func digestForFile(at url: URL) -> String? {"
+    ],
+    "snippet": "        )\n    }\n\n    // A missing file must throw instead of returning a digest.\n    do {\n        _ = try GemmaForge.fileDigest(fixtureURL(\"missing.bin\"))\n        check(\"fileDigest throws for missing file\", false)\n    } catch {\n        check(\"fileDigest throws for missing file\", true)\n    }\n\n    // Patterned fixture larger than 9 MiB with a non-multiple-of-chunk length."
+  },
+  {
+    "file": "Sources/leviathan-cli/main.swift",
+    "line": 790,
+    "call": "let ggufDigest = try GemmaForge.fileDigest(fileURL)",
+    "nearestDeclaration": [
+      748,
+      "func ms(_ t: ContinuousClock.Duration) -> Double {"
+    ],
+    "snippet": "                // reads and the GGUF hash, BEFORE the engine digest and\n                // plan-identity validation. allowSelection false \u2014 this is\n                // inference / timed generation, never selection. One-shot\n                // preparatory work only (no per-token IO or hashing).\n                print(\"hashing GGUF for composite + plan identity (streaming, one pass)\u2026\")\n                let ggufDigest = try GemmaForge.fileDigest(fileURL)\n                if let comp = compositeOpts {\n                    let regionJSON = try readMoERegionBounded(comp.moeRegionPath)\n                    _ = try MoERegionIR.parse(regionJSON)\n                    let result = try GemmaCompositeForge.prepare(\n                        regionJSON: regionJSON, ggufURL: fileURL, graph: graphOpt!,\n                        runner: runner, ggufDigest: ggufDigest,"
+  },
+  {
+    "file": "Sources/leviathan-cli/main.swift",
+    "line": 1569,
+    "call": "let digest = try GemmaForge.fileDigest(ggufURL)",
+    "nearestDeclaration": [
+      1559,
+      "case \"verify\":"
+    ],
+    "snippet": "                    from: URL(fileURLWithPath: artifactPath))\n                let ggufURL = URL(fileURLWithPath: ggufPath)\n                // The op is ALSO re-validated against the actual GGUF\n                // tensor directory here \u2014 not just the artifact's own copy.\n                try artifact.op.validateAgainst(file: try GGUFReader.read(ggufURL))\n                let digest = try GemmaForge.fileDigest(ggufURL)\n                try artifact.validate(op: artifact.op,\n                                      hardware: Q4CurrentHardware.profile(),\n                                      ggufDigest: digest,\n                                      executableDigest: try Gemma4Runner.executableDigest())\n                print(\"artifact VALID: \\(artifact.schedule.kernelName) \"\n                      + \"bound to \\(artifact.op.tensor ?? \"<synthetic>\") \""
+  },
+  {
+    "file": "Sources/leviathan-cli/main.swift",
+    "line": 1739,
+    "call": "let ggufDigest = try GemmaForge.fileDigest(fileURL)",
+    "nearestDeclaration": [
+      1714,
+      "case \"launch-verify-production\":"
+    ],
+    "snippet": "                guard let graphData = try graphHandle.read(upToCount: 8 << 20),\n                      !graphData.isEmpty else {\n                    fail(\"graph file unreadable: \\(graphPath)\")\n                }\n                let graph = try GemmaGraph.parse(graphData)\n                let ggufDigest = try GemmaForge.fileDigest(fileURL)\n                let graphDigest = try GemmaGraph.digest(graph)\n                let runner = try Gemma4Runner(fileAt: fileURL)\n                try artifact.validate(region: region,\n                                      pipelineMaxThreads: try runner.q4MatvecPipelineMaxThreads(),\n                                      hardware: runner.hardwareProfile(),\n                                      graphDigest: graphDigest,"
+  },
+  {
+    "file": "Sources/leviathan-cli/main.swift",
+    "line": 1972,
+    "call": "ggufDigest: try GemmaForge.fileDigest(ggufURL),",
+    "nearestDeclaration": [
+      1952,
+      "case \"verify\":"
+    ],
+    "snippet": "                guard fresh == artifact.binding else {\n                    fail(\"moe-lower verify failed: recorded binding does not match this file/device\")\n                }\n                try artifact.validate(region: artifact.region,\n                                      hardware: MoECurrentHardware.profile(),\n                                      ggufDigest: try GemmaForge.fileDigest(ggufURL),\n                                      executableDigest: try Gemma4Runner.executableDigest())\n                let status = artifact.modelGate == nil\n                    ? \"component-only (diagnostic; not installable)\"\n                    : (artifact.modelGate!.diagnostic\n                           ? \"diagnostic smoke (not publicly installable)\"\n                           : (artifact.modelGate!.performanceSelected"
+  },
+  {
+    "file": "Sources/leviathan-cli/main.swift",
+    "line": 2120,
+    "call": "let ggufDigest = try GemmaForge.fileDigest(fileURL)",
+    "nearestDeclaration": [
+      2100,
+      "case \"verify-production\":"
+    ],
+    "snippet": "                let artifact = try MoELoweringArtifact.load(\n                    from: URL(fileURLWithPath: artifactPath))\n                let fileURL = URL(fileURLWithPath: ggufPath)\n                // Identity + full production gate policy BEFORE any heavy\n                // reference work (public install enforces productionValid).\n                let ggufDigest = try GemmaForge.fileDigest(fileURL)\n                let graphHandle = try FileHandle(\n                    forReadingFrom: URL(fileURLWithPath: graphPath))\n                defer { try? graphHandle.close() }\n                guard let graphData = try graphHandle.read(upToCount: 8 << 20),\n                      !graphData.isEmpty else {\n                    fail(\"graph file unreadable: \\(graphPath)\")"
+  },
+  {
+    "file": "Sources/leviathan-cli/main.swift",
+    "line": 2315,
+    "call": "let digest = try GemmaForge.fileDigest(ggufURL)",
+    "nearestDeclaration": [
+      2305,
+      "case \"verify\":"
+    ],
+    "snippet": "                    from: URL(fileURLWithPath: artifactPath))\n                let ggufURL = URL(fileURLWithPath: ggufPath)\n                // The op is ALSO re-validated against the actual GGUF\n                // tensor directory here \u2014 not just the artifact's own copy.\n                try artifact.op.validateAgainst(file: try GGUFReader.read(ggufURL))\n                let digest = try GemmaForge.fileDigest(ggufURL)\n                try artifact.validate(op: artifact.op,\n                                      hardware: RMSCurrentHardware.profile(),\n                                      ggufDigest: digest,\n                                      executableDigest: try Gemma4Runner.executableDigest())\n                print(\"artifact VALID: \\(artifact.schedule.kernelName) \"\n                      + \"bound to \\(artifact.op.tensor ?? \"<synthetic>\") \""
+  },
+  {
+    "file": "Sources/leviathan-cli/main.swift",
+    "line": 2483,
+    "call": "let ggufDigest = try GemmaForge.fileDigest(fileURL)",
+    "nearestDeclaration": [
+      2452,
+      "func resetIncumbentConfig() throws {"
+    ],
+    "snippet": "            let steps = refLogits.count\n            print(\"reference greedy ids (\\(steps)): \\(refIds.map(String.init).joined(separator: \" \"))\")\n\n            // Install the artifact (full identity check; fail closed \u2014\n            // an invalid artifact aborts before any generated execution).\n            let ggufDigest = try GemmaForge.fileDigest(fileURL)\n            do {\n                try runner.installQ4GeneratedKernel(artifact: artifact,\n                                                    ggufDigest: ggufDigest)\n            } catch {\n                fail(\"artifact rejected at install (incumbent stays active): \\(error)\")\n            }"
+  },
+  {
+    "file": "Sources/leviathan-cli/main.swift",
+    "line": 2695,
+    "call": "let ggufDigest = try GemmaForge.fileDigest(fileURL)",
+    "nearestDeclaration": [
+      2668,
+      "func resetIncumbentConfig() throws {"
+    ],
+    "snippet": "                }\n            } catch { fail(\"reference pass failed: \\(error)\") }\n            let steps = refLogits.count\n            print(\"reference greedy ids (\\(steps)): \\(refIds.map(String.init).joined(separator: \" \"))\")\n\n            let ggufDigest = try GemmaForge.fileDigest(fileURL)\n            do {\n                try runner.installRmsGeneratedKernel(artifact: artifact,\n                                                     ggufDigest: ggufDigest)\n            } catch {\n                fail(\"artifact rejected at install (incumbent stays active): \\(error)\")\n            }"
+  },
+  {
+    "file": "Sources/leviathan-cli/main.swift",
+    "line": 2983,
+    "call": "let ggufDigest = try GemmaForge.fileDigest(fileURL)",
+    "nearestDeclaration": [
+      2953,
+      "func strideOf(_ name: String) -> Int? {"
+    ],
+    "snippet": "            // runner exists and the GGUF hash is computed, but BEFORE the\n            // engine digest / hardware profile / Forge plan-cache identity\n            // and selection \u2014 the installed composite state is part of what\n            // the forge then measures and gates.\n            print(\"hashing GGUF for composite + plan identity (streaming, one pass)\u2026\")\n            let ggufDigest = try GemmaForge.fileDigest(fileURL)\n            if let comp = compositeOpts, let regionJSON = compositeRegion {\n                let compTokenizer = try GemmaTokenizer(gguf: preFile)\n                let result = try GemmaCompositeForge.prepare(\n                    regionJSON: regionJSON, ggufURL: fileURL, graph: graph,\n                    runner: runner, ggufDigest: ggufDigest,\n                    artifactURL: URL(fileURLWithPath: comp.compositePlanPath),"
+  },
+  {
+    "file": "Sources/leviathan-cli/main.swift",
+    "line": 3613,
+    "call": "let ggufDigest = try GemmaForge.fileDigest(fileURL)",
+    "nearestDeclaration": [
+      3592,
+      "func strideOf(_ name: String) -> Int? {"
+    ],
+    "snippet": "            let runner = try Gemma4Runner(fileAt: fileURL,\n                                          expertCacheBudgetBytes: expertBudget)\n            let hardware = runner.hardwareProfile()\n            let engine = GemmaForge.engineDigest(try runner.engineIdentity())\n            print(\"hashing GGUF for plan identity (streaming, one pass)\u2026\")\n            let ggufDigest = try GemmaForge.fileDigest(fileURL)\n            let plan = try GemmaForge.loadPlan(from: URL(fileURLWithPath: planPath))\n            try GemmaForge.validatePlanIdentity(plan, graph: graph,\n                                                ggufDigest: ggufDigest,\n                                                engineDigest: engine,\n                                                hardware: hardware,\n                                                expertCacheBudget: expertBudget)"
+  }
+]

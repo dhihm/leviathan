@@ -1,0 +1,478 @@
+{
+  "scope": "Own staged diagnosis, global telemetry cannot attribute all changes to the child",
+  "startedUtc": "2026-10-04T20:17:49.952787+00:00",
+  "phases": [
+    {
+      "phase": "process_started",
+      "beforeHold": {
+        "label": "process_started-before-hold",
+        "utc": "2026-10-04T20:17:50.480525+00:00",
+        "raw": {
+          "memory": {
+            "exit": 0,
+            "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               10195.\nPages active:                            502758.\nPages inactive:                          498756.\nPages speculative:                         1922.\nPages throttled:                              0.\nPages wired down:                        710228.\nPages purgeable:                           3912.\n\"Translation faults\":              203489376380.\nPages copy-on-write:                46126941999.\nPages zero filled:                  41844885275.\nPages reactivated:                  21500342335.\nPages purged:                         746438275.\nFile-backed pages:                       350518.\nAnonymous pages:                         652919.\nPages stored in compressor:             2809027.\nPages occupied by compressor:            316506.\nDecompressions:                     17690485208.\nCompressions:                       18531719555.\nPageins:                             3387670160.\nPageouts:                              13244169.\nSwapins:                              305237001.\nSwapouts:                             413642603.\n",
+            "stderr": ""
+          },
+          "thermal": {
+            "exit": 0,
+            "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+            "stderr": ""
+          },
+          "power": {
+            "exit": 0,
+            "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+            "stderr": ""
+          },
+          "load": {
+            "exit": 0,
+            "stdout": " 5:17  up 42 days, 11:34, 4 users, load averages: 8.71 8.49 7.72\n",
+            "stderr": ""
+          }
+        },
+        "memoryCounters": {
+          "Pageouts": 13244169,
+          "Swapins": 305237001,
+          "Swapouts": 413642603,
+          "Pages wired down": 710228,
+          "Pages occupied by compressor": 316506,
+          "Pages free": 10195,
+          "Pages active": 502758,
+          "Pages inactive": 498756,
+          "File-backed pages": 350518
+        }
+      },
+      "afterHold": {
+        "label": "process_started-after-hold",
+        "utc": "2026-10-04T20:18:05.521372+00:00",
+        "raw": {
+          "memory": {
+            "exit": 0,
+            "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               21804.\nPages active:                            498654.\nPages inactive:                          492002.\nPages speculative:                          839.\nPages throttled:                              0.\nPages wired down:                        714719.\nPages purgeable:                            444.\n\"Translation faults\":              203490278471.\nPages copy-on-write:                46127131910.\nPages zero filled:                  41845150350.\nPages reactivated:                  21500342409.\nPages purged:                         746444203.\nFile-backed pages:                       335229.\nAnonymous pages:                         656266.\nPages stored in compressor:             2799659.\nPages occupied by compressor:            312578.\nDecompressions:                     17690494525.\nCompressions:                       18531719555.\nPageins:                             3387673231.\nPageouts:                              13244251.\nSwapins:                              305237025.\nSwapouts:                             413642603.\n",
+            "stderr": ""
+          },
+          "thermal": {
+            "exit": 0,
+            "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+            "stderr": ""
+          },
+          "power": {
+            "exit": 0,
+            "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+            "stderr": ""
+          },
+          "load": {
+            "exit": 0,
+            "stdout": " 5:18  up 42 days, 11:34, 4 users, load averages: 8.33 8.42 7.70\n",
+            "stderr": ""
+          }
+        },
+        "memoryCounters": {
+          "Pageouts": 13244251,
+          "Swapins": 305237025,
+          "Swapouts": 413642603,
+          "Pages wired down": 714719,
+          "Pages occupied by compressor": 312578,
+          "Pages free": 21804,
+          "Pages active": 498654,
+          "Pages inactive": 492002,
+          "File-backed pages": 335229
+        }
+      }
+    },
+    {
+      "phase": "tokenizer_only",
+      "promptIDs": [
+        2,
+        9259
+      ],
+      "beforeHold": {
+        "label": "tokenizer_only-before-hold",
+        "utc": "2026-10-04T20:18:05.918048+00:00",
+        "raw": {
+          "memory": {
+            "exit": 0,
+            "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                9549.\nPages active:                            499790.\nPages inactive:                          497882.\nPages speculative:                          928.\nPages throttled:                              0.\nPages wired down:                        719874.\nPages purgeable:                             88.\n\"Translation faults\":              203490295418.\nPages copy-on-write:                46127132708.\nPages zero filled:                  41845161550.\nPages reactivated:                  21500342409.\nPages purged:                         746444649.\nFile-backed pages:                       336295.\nAnonymous pages:                         662305.\nPages stored in compressor:             2799007.\nPages occupied by compressor:            312469.\nDecompressions:                     17690495177.\nCompressions:                       18531719555.\nPageins:                             3387674256.\nPageouts:                              13244251.\nSwapins:                              305237025.\nSwapouts:                             413642603.\n",
+            "stderr": ""
+          },
+          "thermal": {
+            "exit": 0,
+            "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+            "stderr": ""
+          },
+          "power": {
+            "exit": 0,
+            "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+            "stderr": ""
+          },
+          "load": {
+            "exit": 0,
+            "stdout": " 5:18  up 42 days, 11:34, 4 users, load averages: 8.33 8.42 7.70\n",
+            "stderr": ""
+          }
+        },
+        "memoryCounters": {
+          "Pageouts": 13244251,
+          "Swapins": 305237025,
+          "Swapouts": 413642603,
+          "Pages wired down": 719874,
+          "Pages occupied by compressor": 312469,
+          "Pages free": 9549,
+          "Pages active": 499790,
+          "Pages inactive": 497882,
+          "File-backed pages": 336295
+        }
+      },
+      "afterHold": {
+        "label": "tokenizer_only-after-hold",
+        "utc": "2026-10-04T20:18:20.961347+00:00",
+        "raw": {
+          "memory": {
+            "exit": 0,
+            "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                              115564.\nPages active:                            448209.\nPages inactive:                          444755.\nPages speculative:                         2606.\nPages throttled:                              0.\nPages wired down:                        722967.\nPages purgeable:                           1238.\n\"Translation faults\":              203491138520.\nPages copy-on-write:                46127320247.\nPages zero filled:                  41845394025.\nPages reactivated:                  21500342413.\nPages purged:                         746447038.\nFile-backed pages:                       300671.\nAnonymous pages:                         594899.\nPages stored in compressor:             2791172.\nPages occupied by compressor:            306375.\nDecompressions:                     17690498854.\nCompressions:                       18531719555.\nPageins:                             3387680916.\nPageouts:                              13244270.\nSwapins:                              305237190.\nSwapouts:                             413642603.\n",
+            "stderr": ""
+          },
+          "thermal": {
+            "exit": 0,
+            "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+            "stderr": ""
+          },
+          "power": {
+            "exit": 0,
+            "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+            "stderr": ""
+          },
+          "load": {
+            "exit": 0,
+            "stdout": " 5:18  up 42 days, 11:35, 4 users, load averages: 8.70 8.49 7.74\n",
+            "stderr": ""
+          }
+        },
+        "memoryCounters": {
+          "Pageouts": 13244270,
+          "Swapins": 305237190,
+          "Swapouts": 413642603,
+          "Pages wired down": 722967,
+          "Pages occupied by compressor": 306375,
+          "Pages free": 115564,
+          "Pages active": 448209,
+          "Pages inactive": 444755,
+          "File-backed pages": 300671
+        }
+      }
+    },
+    {
+      "ggufDigest": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+      "phase": "stream_hash_only",
+      "beforeHold": {
+        "label": "stream_hash_only-before-hold",
+        "utc": "2026-10-04T20:18:30.784262+00:00",
+        "raw": {
+          "memory": {
+            "exit": 0,
+            "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                9057.\nPages active:                            425436.\nPages inactive:                          411509.\nPages speculative:                        10200.\nPages throttled:                              0.\nPages wired down:                        763336.\nPages purgeable:                            131.\n\"Translation faults\":              203491805394.\nPages copy-on-write:                46127445521.\nPages zero filled:                  41845509660.\nPages reactivated:                  21500645296.\nPages purged:                         746454277.\nFile-backed pages:                       524499.\nAnonymous pages:                         322646.\nPages stored in compressor:             3003189.\nPages occupied by compressor:            420950.\nDecompressions:                     17690704420.\nCompressions:                       18532163533.\nPageins:                             3388567430.\nPageouts:                              13244446.\nSwapins:                              305237541.\nSwapouts:                             413642603.\n",
+            "stderr": ""
+          },
+          "thermal": {
+            "exit": 0,
+            "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+            "stderr": ""
+          },
+          "power": {
+            "exit": 0,
+            "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+            "stderr": ""
+          },
+          "load": {
+            "exit": 0,
+            "stdout": " 5:18  up 42 days, 11:35, 4 users, load averages: 9.10 8.59 7.79\n",
+            "stderr": ""
+          }
+        },
+        "memoryCounters": {
+          "Pageouts": 13244446,
+          "Swapins": 305237541,
+          "Swapouts": 413642603,
+          "Pages wired down": 763336,
+          "Pages occupied by compressor": 420950,
+          "Pages free": 9057,
+          "Pages active": 425436,
+          "Pages inactive": 411509,
+          "File-backed pages": 524499
+        }
+      },
+      "afterHold": {
+        "label": "stream_hash_only-after-hold",
+        "utc": "2026-10-04T20:18:45.824347+00:00",
+        "raw": {
+          "memory": {
+            "exit": 0,
+            "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               18376.\nPages active:                            445423.\nPages inactive:                          435842.\nPages speculative:                         8734.\nPages throttled:                              0.\nPages wired down:                        739616.\nPages purgeable:                           1954.\n\"Translation faults\":              203492881574.\nPages copy-on-write:                46127701252.\nPages zero filled:                  41845705711.\nPages reactivated:                  21500645975.\nPages purged:                         746467234.\nFile-backed pages:                       456707.\nAnonymous pages:                         433292.\nPages stored in compressor:             2932493.\nPages occupied by compressor:            392490.\nDecompressions:                     17690801060.\nCompressions:                       18532198086.\nPageins:                             3388573082.\nPageouts:                              13244562.\nSwapins:                              305239775.\nSwapouts:                             413642603.\n",
+            "stderr": ""
+          },
+          "thermal": {
+            "exit": 0,
+            "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+            "stderr": ""
+          },
+          "power": {
+            "exit": 0,
+            "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+            "stderr": ""
+          },
+          "load": {
+            "exit": 0,
+            "stdout": " 5:18  up 42 days, 11:35, 4 users, load averages: 8.45 8.48 7.76\n",
+            "stderr": ""
+          }
+        },
+        "memoryCounters": {
+          "Pageouts": 13244562,
+          "Swapins": 305239775,
+          "Swapouts": 413642603,
+          "Pages wired down": 739616,
+          "Pages occupied by compressor": 392490,
+          "Pages free": 18376,
+          "Pages active": 445423,
+          "Pages inactive": 435842,
+          "File-backed pages": 456707
+        }
+      }
+    },
+    {
+      "hidden": 2816,
+      "maxContext": 4096,
+      "metalAllocatedBytes": 16286433280,
+      "phase": "one_resident_runner_idle",
+      "scope": "No inference, no artifacts installed, no kernel timing; one original resident runner",
+      "beforeHold": {
+        "label": "one_resident_runner_idle-before-hold",
+        "utc": "2026-10-04T20:18:46.216470+00:00",
+        "raw": {
+          "memory": {
+            "exit": 0,
+            "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                8644.\nPages active:                            456700.\nPages inactive:                          444312.\nPages speculative:                        10958.\nPages throttled:                              0.\nPages wired down:                        728137.\nPages purgeable:                           2203.\n\"Translation faults\":              203492908284.\nPages copy-on-write:                46127702742.\nPages zero filled:                  41845719290.\nPages reactivated:                  21500645975.\nPages purged:                         746467814.\nFile-backed pages:                       461181.\nAnonymous pages:                         450789.\nPages stored in compressor:             2930953.\nPages occupied by compressor:            391740.\nDecompressions:                     17690802599.\nCompressions:                       18532198086.\nPageins:                             3388575693.\nPageouts:                              13244562.\nSwapins:                              305239775.\nSwapouts:                             413642603.\n",
+            "stderr": ""
+          },
+          "thermal": {
+            "exit": 0,
+            "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+            "stderr": ""
+          },
+          "power": {
+            "exit": 0,
+            "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+            "stderr": ""
+          },
+          "load": {
+            "exit": 0,
+            "stdout": " 5:18  up 42 days, 11:35, 4 users, load averages: 8.45 8.48 7.76\n",
+            "stderr": ""
+          }
+        },
+        "memoryCounters": {
+          "Pageouts": 13244562,
+          "Swapins": 305239775,
+          "Swapouts": 413642603,
+          "Pages wired down": 728137,
+          "Pages occupied by compressor": 391740,
+          "Pages free": 8644,
+          "Pages active": 456700,
+          "Pages inactive": 444312,
+          "File-backed pages": 461181
+        }
+      },
+      "afterHold": {
+        "label": "one_resident_runner_idle-after-hold",
+        "utc": "2026-10-04T20:19:01.257768+00:00",
+        "raw": {
+          "memory": {
+            "exit": 0,
+            "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                7965.\nPages active:                            470343.\nPages inactive:                          419137.\nPages speculative:                        48008.\nPages throttled:                              0.\nPages wired down:                        713882.\nPages purgeable:                           3268.\n\"Translation faults\":              203493545019.\nPages copy-on-write:                46127828187.\nPages zero filled:                  41845924885.\nPages reactivated:                  21500671590.\nPages purged:                         746478055.\nFile-backed pages:                       472222.\nAnonymous pages:                         465266.\nPages stored in compressor:             2909528.\nPages occupied by compressor:            381044.\nDecompressions:                     17690855119.\nCompressions:                       18532236204.\nPageins:                             3388611240.\nPageouts:                              13245133.\nSwapins:                              305239827.\nSwapouts:                             413642603.\n",
+            "stderr": ""
+          },
+          "thermal": {
+            "exit": 0,
+            "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+            "stderr": ""
+          },
+          "power": {
+            "exit": 0,
+            "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+            "stderr": ""
+          },
+          "load": {
+            "exit": 0,
+            "stdout": " 5:19  up 42 days, 11:35, 4 users, load averages: 8.87 8.56 7.80\n",
+            "stderr": ""
+          }
+        },
+        "memoryCounters": {
+          "Pageouts": 13245133,
+          "Swapins": 305239827,
+          "Swapouts": 413642603,
+          "Pages wired down": 713882,
+          "Pages occupied by compressor": 381044,
+          "Pages free": 7965,
+          "Pages active": 470343,
+          "Pages inactive": 419137,
+          "File-backed pages": 472222
+        }
+      }
+    },
+    {
+      "phase": "runner_released",
+      "beforeHold": {
+        "label": "runner_released-before-hold",
+        "utc": "2026-10-04T20:19:01.300724+00:00",
+        "raw": {
+          "memory": {
+            "exit": 0,
+            "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               10352.\nPages active:                            472895.\nPages inactive:                          419448.\nPages speculative:                        47201.\nPages throttled:                              0.\nPages wired down:                        709527.\nPages purgeable:                           3431.\n\"Translation faults\":              203493547497.\nPages copy-on-write:                46127828747.\nPages zero filled:                  41845925275.\nPages reactivated:                  21500671590.\nPages purged:                         746478063.\nFile-backed pages:                       471450.\nAnonymous pages:                         468094.\nPages stored in compressor:             2909523.\nPages occupied by compressor:            381042.\nDecompressions:                     17690855124.\nCompressions:                       18532236204.\nPageins:                             3388611390.\nPageouts:                              13245133.\nSwapins:                              305239827.\nSwapouts:                             413642603.\n",
+            "stderr": ""
+          },
+          "thermal": {
+            "exit": 0,
+            "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+            "stderr": ""
+          },
+          "power": {
+            "exit": 0,
+            "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+            "stderr": ""
+          },
+          "load": {
+            "exit": 0,
+            "stdout": " 5:19  up 42 days, 11:35, 4 users, load averages: 8.87 8.56 7.80\n",
+            "stderr": ""
+          }
+        },
+        "memoryCounters": {
+          "Pageouts": 13245133,
+          "Swapins": 305239827,
+          "Swapouts": 413642603,
+          "Pages wired down": 709527,
+          "Pages occupied by compressor": 381042,
+          "Pages free": 10352,
+          "Pages active": 472895,
+          "Pages inactive": 419448,
+          "File-backed pages": 471450
+        }
+      },
+      "afterHold": {
+        "label": "runner_released-after-hold",
+        "utc": "2026-10-04T20:19:16.338825+00:00",
+        "raw": {
+          "memory": {
+            "exit": 0,
+            "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                6082.\nPages active:                            473576.\nPages inactive:                          426392.\nPages speculative:                        46186.\nPages throttled:                              0.\nPages wired down:                        711958.\nPages purgeable:                           4132.\n\"Translation faults\":              203494430689.\nPages copy-on-write:                46128069925.\nPages zero filled:                  41846086818.\nPages reactivated:                  21500696785.\nPages purged:                         746483983.\nFile-backed pages:                       463431.\nAnonymous pages:                         482723.\nPages stored in compressor:             2901263.\nPages occupied by compressor:            376246.\nDecompressions:                     17690868087.\nCompressions:                       18532241379.\nPageins:                             3388672106.\nPageouts:                              13245299.\nSwapins:                              305239955.\nSwapouts:                             413642603.\n",
+            "stderr": ""
+          },
+          "thermal": {
+            "exit": 0,
+            "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+            "stderr": ""
+          },
+          "power": {
+            "exit": 0,
+            "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+            "stderr": ""
+          },
+          "load": {
+            "exit": 0,
+            "stdout": " 5:19  up 42 days, 11:36, 4 users, load averages: 11.01 9.09 8.00\n",
+            "stderr": ""
+          }
+        },
+        "memoryCounters": {
+          "Pageouts": 13245299,
+          "Swapins": 305239955,
+          "Swapouts": 413642603,
+          "Pages wired down": 711958,
+          "Pages occupied by compressor": 376246,
+          "Pages free": 6082,
+          "Pages active": 473576,
+          "Pages inactive": 426392,
+          "File-backed pages": 463431
+        }
+      }
+    }
+  ],
+  "before": {
+    "label": "before-probe",
+    "utc": "2026-10-04T20:17:49.995810+00:00",
+    "raw": {
+      "memory": {
+        "exit": 0,
+        "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                8748.\nPages active:                            500794.\nPages inactive:                          497976.\nPages speculative:                         1839.\nPages throttled:                              0.\nPages wired down:                        714698.\nPages purgeable:                           4723.\n\"Translation faults\":              203489210796.\nPages copy-on-write:                46126889397.\nPages zero filled:                  41844862675.\nPages reactivated:                  21500342335.\nPages purged:                         746438275.\nFile-backed pages:                       350145.\nAnonymous pages:                         650464.\nPages stored in compressor:             2809094.\nPages occupied by compressor:            316522.\nDecompressions:                     17690485141.\nCompressions:                       18531719555.\nPageins:                             3387669513.\nPageouts:                              13244169.\nSwapins:                              305237001.\nSwapouts:                             413642603.\n",
+        "stderr": ""
+      },
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "load": {
+        "exit": 0,
+        "stdout": " 5:17  up 42 days, 11:34, 4 users, load averages: 8.71 8.49 7.72\n",
+        "stderr": ""
+      }
+    },
+    "memoryCounters": {
+      "Pageouts": 13244169,
+      "Swapins": 305237001,
+      "Swapouts": 413642603,
+      "Pages wired down": 714698,
+      "Pages occupied by compressor": 316522,
+      "Pages free": 8748,
+      "Pages active": 500794,
+      "Pages inactive": 497976,
+      "File-backed pages": 350145
+    }
+  },
+  "completedMarker": true,
+  "exit": 0,
+  "stderr": "",
+  "after": {
+    "label": "after-probe",
+    "utc": "2026-10-04T20:19:16.380459+00:00",
+    "raw": {
+      "memory": {
+        "exit": 0,
+        "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               14281.\nPages active:                            471923.\nPages inactive:                          425649.\nPages speculative:                        46200.\nPages throttled:                              0.\nPages wired down:                        707749.\nPages purgeable:                           4438.\n\"Translation faults\":              203494433286.\nPages copy-on-write:                46128070486.\nPages zero filled:                  41846087180.\nPages reactivated:                  21500696785.\nPages purged:                         746483983.\nFile-backed pages:                       463441.\nAnonymous pages:                         480331.\nPages stored in compressor:             2897066.\nPages occupied by compressor:            374650.\nDecompressions:                     17690868164.\nCompressions:                       18532241379.\nPageins:                             3388672114.\nPageouts:                              13245299.\nSwapins:                              305239955.\nSwapouts:                             413642603.\n",
+        "stderr": ""
+      },
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "load": {
+        "exit": 0,
+        "stdout": " 5:19  up 42 days, 11:36, 4 users, load averages: 11.01 9.09 8.00\n",
+        "stderr": ""
+      }
+    },
+    "memoryCounters": {
+      "Pageouts": 13245299,
+      "Swapins": 305239955,
+      "Swapouts": 413642603,
+      "Pages wired down": 707749,
+      "Pages occupied by compressor": 374650,
+      "Pages free": 14281,
+      "Pages active": 471923,
+      "Pages inactive": 425649,
+      "File-backed pages": 463441
+    }
+  },
+  "completedUtc": "2026-10-04T20:19:16.380492+00:00"
+}

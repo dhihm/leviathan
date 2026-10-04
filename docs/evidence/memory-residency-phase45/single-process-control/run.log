@@ -1,0 +1,114 @@
+prompt ids: 2 9259
+hashing GGUF for composite + plan identity (streaming, one pass)…
+validated region/graph/model (resident, 30 layers, pipeline max 1024)
+cache hit: existing composite g4_q4_matvec@w64 validated and installed through the public installer
+composite: enabled, installed true, cache hit true, artifact digest a82d1319a75a2575…
+plan identity validated: 50107816f506952aa3bee1389563d59cb849841c427566ee92ae2f4b844114b8 (selected GemmaForgeCandidate(segmentBatching: true, top5Diagnostic: false, matvecTiledQ4: false, matvecTiledQ6: false, rmsnormTiled: false, matvecTiledF32: false, vectorizedLoads: true, gpuCacheAppend: true, parallelAttention: true, rmsnormCooperative: true, matvecCooperativeQ6: true, rmsStatisticsReuse: true, routerGPUResidency: true, routerLaunchDivisor: 1))
+prepared execution: ON (prepared.ssa asserted equal to plan.schedule)
+selected candidate flags: batching=1 tiledQ4=0 tiledQ6=0 rmsTiled=0 f32Tiled=0 vecLoads=1 gpuCacheAppend=1 parallelAttention=1 rmsCoop=1 q6Coop=1 rmsStats=1 routerGPU=1 routerDiv=1
+identity validation prep: 9760.3 ms (graph parse + GGUF hash + plan load)
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 1/32: prefill/TTFT: 97.0 ms (2 prompt tokens) | decode: 2605.3 ms total (31 steps), median ms/token 81.89 | gpu total: 2055.7 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 2/32: prefill/TTFT: 82.1 ms (2 prompt tokens) | decode: 2619.0 ms total (31 steps), median ms/token 83.52 | gpu total: 2062.0 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 3/32: prefill/TTFT: 84.2 ms (2 prompt tokens) | decode: 2610.7 ms total (31 steps), median ms/token 83.55 | gpu total: 2066.3 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 4/32: prefill/TTFT: 84.5 ms (2 prompt tokens) | decode: 2593.7 ms total (31 steps), median ms/token 83.12 | gpu total: 2057.9 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 5/32: prefill/TTFT: 84.6 ms (2 prompt tokens) | decode: 2803.4 ms total (31 steps), median ms/token 85.33 | gpu total: 2093.9 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 6/32: prefill/TTFT: 81.1 ms (2 prompt tokens) | decode: 2627.3 ms total (31 steps), median ms/token 82.40 | gpu total: 2054.8 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 7/32: prefill/TTFT: 82.7 ms (2 prompt tokens) | decode: 2614.2 ms total (31 steps), median ms/token 81.22 | gpu total: 2036.3 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 8/32: prefill/TTFT: 119.4 ms (2 prompt tokens) | decode: 2704.7 ms total (31 steps), median ms/token 82.67 | gpu total: 2134.4 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 9/32: prefill/TTFT: 139.3 ms (2 prompt tokens) | decode: 2646.8 ms total (31 steps), median ms/token 80.93 | gpu total: 2088.1 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 10/32: prefill/TTFT: 81.1 ms (2 prompt tokens) | decode: 4552.2 ms total (31 steps), median ms/token 91.66 | gpu total: 2578.6 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 11/32: prefill/TTFT: 77.9 ms (2 prompt tokens) | decode: 3034.4 ms total (31 steps), median ms/token 82.38 | gpu total: 2230.4 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 12/32: prefill/TTFT: 77.3 ms (2 prompt tokens) | decode: 2537.2 ms total (31 steps), median ms/token 81.06 | gpu total: 2057.7 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 13/32: prefill/TTFT: 77.2 ms (2 prompt tokens) | decode: 2486.2 ms total (31 steps), median ms/token 79.84 | gpu total: 2055.7 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 14/32: prefill/TTFT: 81.0 ms (2 prompt tokens) | decode: 2431.4 ms total (31 steps), median ms/token 78.83 | gpu total: 2048.6 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 15/32: prefill/TTFT: 77.0 ms (2 prompt tokens) | decode: 2411.3 ms total (31 steps), median ms/token 77.84 | gpu total: 2050.3 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 16/32: prefill/TTFT: 74.3 ms (2 prompt tokens) | decode: 2485.8 ms total (31 steps), median ms/token 79.18 | gpu total: 2054.3 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 17/32: prefill/TTFT: 82.0 ms (2 prompt tokens) | decode: 2460.1 ms total (31 steps), median ms/token 79.12 | gpu total: 2046.8 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 18/32: prefill/TTFT: 76.6 ms (2 prompt tokens) | decode: 2488.5 ms total (31 steps), median ms/token 79.87 | gpu total: 2066.6 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 19/32: prefill/TTFT: 75.4 ms (2 prompt tokens) | decode: 2393.8 ms total (31 steps), median ms/token 76.83 | gpu total: 2016.2 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 20/32: prefill/TTFT: 77.3 ms (2 prompt tokens) | decode: 2437.6 ms total (31 steps), median ms/token 77.05 | gpu total: 2021.4 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 21/32: prefill/TTFT: 75.2 ms (2 prompt tokens) | decode: 2578.3 ms total (31 steps), median ms/token 78.43 | gpu total: 2079.9 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 22/32: prefill/TTFT: 155.0 ms (2 prompt tokens) | decode: 3679.5 ms total (31 steps), median ms/token 100.77 | gpu total: 2675.3 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 23/32: prefill/TTFT: 76.6 ms (2 prompt tokens) | decode: 2382.5 ms total (31 steps), median ms/token 76.33 | gpu total: 2014.3 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 24/32: prefill/TTFT: 77.1 ms (2 prompt tokens) | decode: 2431.3 ms total (31 steps), median ms/token 77.42 | gpu total: 2019.8 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 25/32: prefill/TTFT: 78.5 ms (2 prompt tokens) | decode: 2460.6 ms total (31 steps), median ms/token 79.61 | gpu total: 2045.6 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 26/32: prefill/TTFT: 74.1 ms (2 prompt tokens) | decode: 2532.5 ms total (31 steps), median ms/token 77.64 | gpu total: 2054.8 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 27/32: prefill/TTFT: 168.0 ms (2 prompt tokens) | decode: 2738.1 ms total (31 steps), median ms/token 82.25 | gpu total: 2155.2 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 28/32: prefill/TTFT: 88.2 ms (2 prompt tokens) | decode: 2514.6 ms total (31 steps), median ms/token 80.19 | gpu total: 2047.9 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 29/32: prefill/TTFT: 78.6 ms (2 prompt tokens) | decode: 3103.4 ms total (31 steps), median ms/token 83.37 | gpu total: 2275.9 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 30/32: prefill/TTFT: 86.3 ms (2 prompt tokens) | decode: 2734.9 ms total (31 steps), median ms/token 83.09 | gpu total: 2103.3 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 31/32: prefill/TTFT: 90.3 ms (2 prompt tokens) | decode: 2624.1 ms total (31 steps), median ms/token 81.56 | gpu total: 2077.5 ms | metal device allocated sample: 15.168 GiB
+generated ids: 3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772
+generated text:  upon-the-sands-of-time-of-the-sands-of-sands-of-the-sands-of-
+repetition 32/32: prefill/TTFT: 76.6 ms (2 prompt tokens) | decode: 2468.0 ms total (31 steps), median ms/token 79.01 | gpu total: 2024.0 ms | metal device allocated sample: 15.168 GiB
+parallel attention totals: applied 31680, fallback 0
+rms cooperative totals: applied 254496, fallback 0
+q6 cooperative totals: applied 1056, fallback 0
+rms statistics totals: computed 31680, reused 63360, fallback 0
+router residency totals: scale applied 31680, scale fallback 0, zero applied 31680, zero fallback 0, launch applied 31680, launch fallback 0
+composite moe counters: GU 63360, ACT 63360, DN 63360, merges 253440, resident fallback 0
+composite q4 launch width: applied 216480, fallback 0
+load (once): 207.1 ms (runtime Metal library + pipeline compile within it: 5.7 ms)
+GENERATION_COMPLETED
