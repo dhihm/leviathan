@@ -1,0 +1,19 @@
+Review done with tools disabled, reading only the supplied sources.
+
+**ACCEPT.** No blockers found. Each requested area checks out against the supplied code.
+
+- **Subgroup reduction.** In both emitted kernels the butterfly iterates masks L/2 down to 1, all below L, so xor stays inside the L-aligned lane group. Legality forces execution width 32, L dividing 32, and threads a multiple of 32, so `tid % L` is the SIMD lane within an aligned group. All 32 lanes reach the shuffles, and the Neumaier combine is symmetric under operand swap, so paired lanes agree. Only lane 0 writes.
+- **Barriers and tails.** The early return depends only on the threadgroup index, so it is uniform and precedes the barrier. Staging is followed by one barrier with no later threadgroup writes. Tail lanes with no blocks keep zero partials and still enter the reduction. Rows per group must divide logical rows, so no threadgroup straddles a slot. The synthetic Metal gate exercises 33 GU blocks, 16 down blocks and a 5-slot topK tail at every L and E.
+- **Q4 decode.** The ushort unpacking maps nibbles correctly: byte 2k low to x[2k], high to x[16+2k], byte 2k+1 low to x[2k+1], high to x[17+2k]. All byte offsets are even, so the ushort casts are aligned. The oracle decodes the same layout independently, rejects non-finite FP16 scales, and is cross-checked against the existing Q4 FP64 oracle at 1e-12.
+- **Oracle independence.** Gate, up, activation and down are all computed in Double from bytes and the host input. The activation uses the Double tanh formula, never the Metal helper. The isolated down screen feeds Float-rounded Double activations. The hand-computed 32x32 case is arithmetically correct, including the saturated gelu_tanh(16) and the 512 down value.
+- **Report validation.** Every report has installable, productionArtifact and winnerSelected hardcoded false and diagnosticTimingOnly true. Decode fails closed on schema, kind, numerical class, codegen version, contract and digest formats. Tamper tests cover the four flag fields.
+- **Bounded allocations.** Packed weights are capped at 64 MiB and the device buffer length. The real shape packs about 27 MB. Staged threadgroup memory counts the pipeline's static usage against the device cap. Grid size is checked against the uint range. The catalog maximum of 48 equals the combinatorial ceiling, so the bound is tight.
+- **Existing path isolation.** The v1 emitter and artifact schema are untouched and asserted by tests. The incumbent is run through its own existing compile and component APIs. The only runner change is the default-nil probe, with logits asserted bit-identical with and without it.
+- **Test coverage.** Derivation, legality rejections, emission determinism, oracle, report tampering, and a full 48-schedule Metal screen with repeat-bit and batch-invariance checks are all present.
+
+Non-blocking notes, in case you want them later:
+
+- Report decode does not re-derive `acceptedCount` or `catalogSize` from the embedded results, and `make` does not check that every result schedule appears in the derivation. Harmless for a non-installable record.
+- The standing notes bake the A/A failure and paging text into every report as constants. That matches the stated history, but a future clean run would still carry the same note.
+- The "catalog bound reached" rejection branch is unreachable because the enumeration cannot exceed 48 entries.
+- The incumbent probe-detach pattern in the qualification tool clears the closure from inside its own invocation. That is safe only if the runner reads the stored closure per call rather than holding it across the layer loop. The runner source was not supplied, so this could not be confirmed.

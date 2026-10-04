@@ -8763,6 +8763,377 @@ func runCommandTimelineGates() {
 
 runCommandTimelineGates()
 
+// MARK: - MoE SIMD lowering (correctness prototype)
+
+/// Deterministic test-local generator (independent of the core inputs).
+struct MoESIMDTestRNG {
+    var state: UInt64
+    mutating func next() -> UInt64 {
+        state = state &* 6364136223846793005 &+ 1442695040888963407
+        return state
+    }
+    mutating func unit() -> Double { Double(next() >> 11) / 9007199254740992.0 }
+}
+
+/// Synthetic Q4_0 rows with finite FP16 scales in [0.002, 0.03].
+func moesimdSyntheticBlocks(rows: Int, inDim: Int, rng: inout MoESIMDTestRNG) -> [UInt8] {
+    var out = [UInt8]()
+    out.reserveCapacity(rows * (inDim / 32) * 18)
+    for _ in 0..<(rows * (inDim / 32)) {
+        let bits = Float16(Float(0.002 + 0.028 * rng.unit())).bitPattern
+        out.append(UInt8(bits & 0xFF))
+        out.append(UInt8(bits >> 8))
+        for _ in 0..<16 { out.append(UInt8(truncatingIfNeeded: rng.next() >> 32)) }
+    }
+    return out
+}
+
+func moesimdProfile(width: Int = 32, maxThreads: Int = 1024, tgMemory: Int = 32768,
+                    staticMemory: Int = 0) -> MoESIMDHardwareProfile {
+    MoESIMDHardwareProfile(deviceName: "synthetic", threadExecutionWidth: width,
+                           maxTotalThreadsPerThreadgroup: maxThreads,
+                           maxThreadgroupMemoryLength: tgMemory,
+                           staticThreadgroupMemoryLength: staticMemory,
+                           maxBufferLength: 1 << 34, recommendedMaxWorkingSetSize: 1 << 34)
+}
+
+/// Records real-GGUF probe calls (class box: mutated from stored closures).
+final class MoESIMDProbeLog {
+    var calls = [String]()
+    var allFiniteHidden = true
+    var stages = Set<String>()
+}
+
+@MainActor
+func runMoESIMDPureGates() {
+    print("— MoE SIMD lowering correctness-prototype gates (pure)")
+    checkEqual("moesimd: v1 MoE codegen version untouched", MoEKernelEmitter.codegenVersion, "moegen-v1")
+    checkEqual("moesimd: v1 MoE artifact schema untouched", MoELoweringArtifact.schema, 3)
+    checkEqual("moesimd: prototype codegen version", MoESIMDKernelEmitter.codegenVersion, "moesimd-v1")
+
+    let fixtureDir = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent().appendingPathComponent("tools/moe_lower/fixtures")
+    do {
+        let region = try MoERegionIR.parse(try Data(contentsOf:
+            fixtureDir.appendingPathComponent("gemma4-26b-region.json")))
+        let facts = try MoESIMDShapeFacts(region: region)
+        checkEqual("moesimd: facts from the validated region",
+                   [facts.hidden, facts.inter, facts.topK], [2816, 704, 8])
+        let wide = moesimdProfile()
+        let d = try MoESIMDScheduleDeriver.derive(region: region, hardware: wide)
+        checkEqual("moesimd: 12 legal fused GU subschedules", d.guLegal.count, 12)
+        checkEqual("moesimd: 12 legal down subschedules", d.dnLegal.count, 12)
+        checkEqual("moesimd: bounded same-L catalog is 48", d.schedules.count, 48)
+        check("moesimd: catalog within its bound", d.schedules.count <= MoESIMDScheduleDeriver.maxCatalog)
+        check("moesimd: catalog entries unique", Set(d.schedules).count == d.schedules.count)
+        check("moesimd: RT derived as 128 or 256 over L", d.schedules.allSatisfy { s in
+            [128, 256].contains(s.gu.lanes * s.gu.rowsPerGroup)
+                && [128, 256].contains(s.dn.lanes * s.dn.rowsPerGroup) })
+        check("moesimd: RT divides 704 GU row pairs and 2816 down rows", d.schedules.allSatisfy {
+            704 % $0.gu.rowsPerGroup == 0 && 2816 % $0.dn.rowsPerGroup == 0 })
+        checkEqual("moesimd: L32 admits RT4 and RT8",
+                   Set(d.guLegal.filter { $0.lanes == 32 }.map { $0.rowsPerGroup }), Set([4, 8]))
+        check("moesimd: composition pairs equal L and accumulation", d.schedules.allSatisfy {
+            $0.gu.lanes == $0.dn.lanes && $0.gu.accumulation == $0.dn.accumulation
+                && $0.gu.family == .fusedGateUpAct && $0.dn.family == .down })
+        checkEqual("moesimd: E4 and E8 chunk schedules", Set(d.schedules.map { $0.batch }), Set([4, 8]))
+
+        let narrow = try MoESIMDScheduleDeriver.derive(region: region, hardware: moesimdProfile(width: 16))
+        check("moesimd: execution width 16 rejects every subschedule",
+              narrow.schedules.isEmpty && narrow.guLegal.isEmpty && narrow.dnLegal.isEmpty
+              && narrow.rejections.count == 24
+              && narrow.rejections.allSatisfy { $0.reason.contains("execution width") })
+        let tiny = try MoESIMDScheduleDeriver.derive(region: region, hardware: moesimdProfile(tgMemory: 4096))
+        check("moesimd: 4 KiB threadgroup memory rejects GU staging of hidden*4",
+              tiny.guLegal.isEmpty && tiny.rejections.contains {
+                  $0.candidate.hasPrefix("moesimd_gu") && $0.reason.contains("threadgroup memory") })
+        checkEqual("moesimd: 4 KiB keeps inter*4 down staging legal", tiny.dnLegal.count, 12)
+        check("moesimd: no composite without a legal GU", tiny.schedules.isEmpty)
+        let withStatic = try MoESIMDScheduleDeriver.derive(
+            region: region, hardware: moesimdProfile(tgMemory: 12000, staticMemory: 1000))
+        check("moesimd: static threadgroup memory counts against the cap",
+              withStatic.guLegal.isEmpty && withStatic.dnLegal.count == 12)
+        let capped = try MoESIMDScheduleDeriver.derive(region: region, hardware: moesimdProfile(maxThreads: 128))
+        check("moesimd: pipeline thread cap 128 keeps only T=128",
+              capped.guLegal.count == 6 && capped.guLegal.allSatisfy { $0.lanes * $0.rowsPerGroup == 128 })
+
+        let report = try MoESIMDComponentReport.make(
+            region: region, hardware: wide, derivation: d, results: [], incumbent: [],
+            inputs: [MoESIMDInputRecord(name: "synthetic", elementCount: 2816, provenance: "test")],
+            expertIds: Array(0..<8), modelSha256: String(repeating: "a", count: 64),
+            executableDigest: String(repeating: "b", count: 64))
+        check("moesimd report: explicitly non-installable",
+              !report.installable && !report.productionArtifact && !report.winnerSelected
+              && report.diagnosticTimingOnly)
+        checkEqual("moesimd report: numerical class", report.numericalClass, "simd-reassociated-oracle")
+        let data = try report.encoded()
+        let decoded = try MoESIMDComponentReport.decodeValidated(data)
+        check("moesimd report: Codable roundtrip", decoded == report)
+        let tampers: [(String, Any)] = [("installable", true), ("productionArtifact", true),
+                                        ("winnerSelected", true), ("numericalClass", "bit-identical")]
+        for (key, value) in tampers {
+            do {
+                var obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+                obj[key] = value
+                _ = try MoESIMDComponentReport.decodeValidated(try JSONSerialization.data(withJSONObject: obj))
+                failed += 1; print("FAIL: moesimd report: tampered \(key) accepted")
+            } catch MoESIMDError.invalidReport(_) {
+                passed += 1
+            } catch {
+                failed += 1; print("FAIL: moesimd report: tampered \(key) wrong error \(error)")
+            }
+        }
+    } catch {
+        failed += 1; print("FAIL: moesimd region derivation/report — threw \(error)")
+    }
+
+    func expectShapeRejection(_ name: String, _ body: () throws -> Void) {
+        do { try body(); failed += 1; print("FAIL: \(name) — accepted") }
+        catch MoESIMDError.invalidShape(_) { passed += 1 }
+        catch { failed += 1; print("FAIL: \(name) — wrong error \(error)") }
+    }
+    expectShapeRejection("moesimd: hidden not a Q4 block multiple") {
+        _ = try MoESIMDShapeFacts(hidden: 100, inter: 64, topK: 2) }
+    expectShapeRejection("moesimd: zero topK") { _ = try MoESIMDShapeFacts(hidden: 64, inter: 64, topK: 0) }
+    expectShapeRejection("moesimd: topK above the region bound") {
+        _ = try MoESIMDShapeFacts(hidden: 64, inter: 64, topK: 65) }
+    expectShapeRejection("moesimd: inter above the region bound") {
+        _ = try MoESIMDShapeFacts(hidden: 64, inter: 8224, topK: 2) }
+    do {
+        let oneBlock = try MoESIMDShapeFacts(hidden: 2816, inter: 32, topK: 8)
+        let why = MoESIMDLegality.reason(
+            MoESIMDSubschedule(family: .down, lanes: 8, rowsPerGroup: 16, accumulation: .plain),
+            facts: oneBlock, hardware: moesimdProfile()) ?? ""
+        check("moesimd: one down block per row cannot feed half of 8 lanes", why.contains("fewer than half"))
+        let tail = try MoESIMDShapeFacts(hidden: 1056, inter: 512, topK: 5)
+        check("moesimd: 33-block GU tail legal at L32 RT4", MoESIMDLegality.reason(
+            MoESIMDSubschedule(family: .fusedGateUpAct, lanes: 32, rowsPerGroup: 4, accumulation: .plain),
+            facts: tail, hardware: moesimdProfile()) == nil)
+        check("moesimd: lane count 4 rejected", MoESIMDLegality.reason(
+            MoESIMDSubschedule(family: .down, lanes: 4, rowsPerGroup: 32, accumulation: .plain),
+            facts: tail, hardware: moesimdProfile()) != nil)
+        check("moesimd: L*RT = 64 rejected", MoESIMDLegality.reason(
+            MoESIMDSubschedule(family: .down, lanes: 16, rowsPerGroup: 4, accumulation: .plain),
+            facts: tail, hardware: moesimdProfile()) != nil)
+        check("moesimd: batch E3 rejected", MoESIMDLegality.batchReason(3, facts: tail) != nil)
+        check("moesimd: E4 with a 5-slot tail legal", MoESIMDLegality.batchReason(4, facts: tail) == nil)
+    } catch {
+        failed += 1; print("FAIL: moesimd legality tails — threw \(error)")
+    }
+
+    do {
+        let facts = try MoESIMDShapeFacts(hidden: 32, inter: 32, topK: 1)
+        func block(_ lo: UInt8, _ hi: UInt8, _ q: UInt8) -> [UInt8] {
+            [lo, hi] + [UInt8](repeating: q, count: 16)
+        }
+        var gu = [UInt8]()
+        var dn = [UInt8]()
+        // Gate rows: d = 1.0 (FP16 0x3C00); byte 0x98 gives low nibble 8
+        // (weight 0) on x[0..15] and high nibble 9 (weight +1) on x[16..31].
+        for _ in 0..<32 { gu += block(0x00, 0x3C, 0x98) }
+        // Up rows: d = 0.125 (FP16 0x3000): dot = 2.
+        for _ in 0..<32 { gu += block(0x00, 0x30, 0x98) }
+        // Down rows: d = 0.5 (FP16 0x3800); byte 0x99 makes every weight +0.5.
+        for _ in 0..<32 { dn += block(0x00, 0x38, 0x99) }
+        let ones = [Float](repeating: 1, count: 32)
+        let ref = try MoESIMDOracle.reference(facts: facts, guBlocks: gu, dnBlocks: dn, x: ones)
+        check("moesimd oracle: hand-computed gate rows", ref.gate == [Double](repeating: 16, count: 32))
+        check("moesimd oracle: hand-computed up rows", ref.up == [Double](repeating: 2, count: 32))
+        // gelu_tanh(16) saturates to 16 in Double; act = 16 * 2.
+        check("moesimd oracle: hand-computed activations", ref.act == [Double](repeating: 32, count: 32))
+        // down = 32 activations * 32 * 0.5.
+        check("moesimd oracle: hand-computed down rows", ref.dn == [Double](repeating: 512, count: 32))
+        check("moesimd oracle: gelu_tanh(1) reference value",
+              abs(MoESIMDOracle.geluTanhUp(gate: 1, up: 1) - 0.841192) < 1e-6)
+        check("moesimd oracle: gelu_tanh saturates to zero for a large negative gate",
+              MoESIMDOracle.geluTanhUp(gate: -20, up: 3) == 0)
+        check("moesimd oracle: normalized rel uses max(1, |ref|)",
+              MoESIMDOracle.worstNormalizedRel([1001], [1000]) == 0.001
+              && MoESIMDOracle.worstNormalizedRel([0.5], [0]) == 0.5)
+        check("moesimd oracle: non-finite GPU value is infinitely wrong",
+              MoESIMDOracle.worstNormalizedRel([Float.nan], [0]) == .infinity)
+        var badScale = gu
+        badScale[1] = 0x7C   // first block scale bits 0x7C00 = +inf
+        do {
+            _ = try MoESIMDOracle.reference(facts: facts, guBlocks: badScale, dnBlocks: dn, x: ones)
+            failed += 1; print("FAIL: moesimd oracle: non-finite scale accepted")
+        } catch MoESIMDError.oracleFailed(_) { passed += 1 }
+        catch { failed += 1; print("FAIL: moesimd oracle: non-finite scale wrong error \(error)") }
+        var nanX = ones
+        nanX[3] = .nan
+        do {
+            _ = try MoESIMDOracle.reference(facts: facts, guBlocks: gu, dnBlocks: dn, x: nanX)
+            failed += 1; print("FAIL: moesimd oracle: NaN input accepted")
+        } catch MoESIMDError.oracleFailed(_) { passed += 1 }
+        catch { failed += 1; print("FAIL: moesimd oracle: NaN input wrong error \(error)") }
+
+        var rng = MoESIMDTestRNG(state: 0x5EED_0049)
+        let blocks = moesimdSyntheticBlocks(rows: 7, inDim: 64, rng: &rng)
+        let xf = (0..<64).map { _ in Float(rng.unit() * 2 - 1) }
+        let a = try MoESIMDOracle.q4MatvecFP64(blocks: blocks, byteOffset: 0, outDim: 7,
+                                              inDim: 64, x: xf.map { Double($0) })
+        let b = try Q4Oracle.matvecFP64(blocks: blocks[...], outDim: 7, inDim: 64, x: xf)
+        check("moesimd oracle: agrees with the existing Q4 FP64 oracle",
+              a.count == b.count && zip(a, b).allSatisfy { abs($0 - $1) <= 1e-12 * max(1, abs($1)) })
+        do {
+            _ = try MoESIMDOracle.q4MatvecFP64(blocks: blocks, byteOffset: 18, outDim: 7,
+                                               inDim: 64, x: xf.map { Double($0) })
+            failed += 1; print("FAIL: moesimd oracle: out-of-extent read accepted")
+        } catch MoESIMDError.oracleFailed(_) { passed += 1 }
+        catch { failed += 1; print("FAIL: moesimd oracle: extent wrong error \(error)") }
+    } catch {
+        failed += 1; print("FAIL: moesimd oracle gates — threw \(error)")
+    }
+
+    do {
+        let realFacts = try MoESIMDShapeFacts(hidden: 2816, inter: 704, topK: 8)
+        let gu = MoESIMDSubschedule(family: .fusedGateUpAct, lanes: 16, rowsPerGroup: 8, accumulation: .plain)
+        let src = try MoESIMDKernelEmitter.emit(gu, facts: realFacts)
+        check("moesimd emit: literal incumbent activation helpers embedded",
+              src.contains("[g4-activation-helpers-begin]") && src.contains("g4_gelu_up_value(gs + gc, us + uc)"))
+        check("moesimd emit: fixed xor butterfly and staging barrier",
+              src.contains("simd_shuffle_xor") && src.contains("threadgroup_barrier(mem_flags::mem_threadgroup)"))
+        check("moesimd emit: kernel name", src.contains("kernel void moesimd_gu_L16_RT8_plain("))
+        check("moesimd emit: distinct from v1 and the rejected VL variant",
+              !src.contains("moegen_") && !src.contains("g4_q4_matvec_vl"))
+        let again = try MoESIMDKernelEmitter.emit(gu, facts: realFacts)
+        checkEqual("moesimd emit: deterministic", again, src)
+        let dn = MoESIMDSubschedule(family: .down, lanes: 32, rowsPerGroup: 8, accumulation: .neumaierPrecise)
+        let dsrc = try MoESIMDKernelEmitter.emit(dn, facts: realFacts)
+        check("moesimd emit: Neumaier compensation in the precise down kernel",
+              dsrc.contains("fabs(s) >= fabs(t)") && dsrc.contains("kernel void moesimd_dn_L32_RT8_neum("))
+        check("moesimd emit: down kernel carries no activation helper", !dsrc.contains("g4_gelu_up_value"))
+        do {
+            _ = try MoESIMDKernelEmitter.emit(
+                MoESIMDSubschedule(family: .down, lanes: 64, rowsPerGroup: 4, accumulation: .plain),
+                facts: realFacts)
+            failed += 1; print("FAIL: moesimd emit: illegal lanes accepted")
+        } catch MoESIMDError.emissionFailed(_) { passed += 1 }
+        catch { failed += 1; print("FAIL: moesimd emit: illegal lanes wrong error \(error)") }
+    } catch {
+        failed += 1; print("FAIL: moesimd emission gates — threw \(error)")
+    }
+}
+
+@MainActor
+func runMoESIMDMetalGates() {
+    guard let device = MTLCreateSystemDefaultDevice() else {
+        print("SKIP: moesimd Metal component gates — Metal unavailable")
+        return
+    }
+    do {
+        let hw = try MoESIMDHardwareProfile.probe(device: device)
+        guard hw.threadExecutionWidth == 32 else {
+            print("SKIP: moesimd Metal component gates — execution width \(hw.threadExecutionWidth) != 32")
+            return
+        }
+        // 33 GU blocks (lane tails at L8/L16/L32), 16 down blocks (idle
+        // lanes at L32), topK 5 (E4 slot tail).
+        let facts = try MoESIMDShapeFacts(hidden: 1056, inter: 512, topK: 5)
+        var rng = MoESIMDTestRNG(state: 0x4D6F_4553_494D_4431)
+        let gu = moesimdSyntheticBlocks(rows: facts.topK * facts.gateUpRows, inDim: facts.hidden, rng: &rng)
+        let dn = moesimdSyntheticBlocks(rows: facts.topK * facts.hidden, inDim: facts.inter, rng: &rng)
+        let x = (0..<facts.hidden).map { _ in Float(rng.unit() * 2 - 1) }
+        let derivation = MoESIMDScheduleDeriver.derive(facts: facts, hardware: hw)
+        checkEqual("moesimd metal: synthetic tail catalog covers L8/L16/L32 x E4/E8",
+                   derivation.schedules.count, 48)
+        let reference = try MoESIMDOracle.reference(facts: facts, guBlocks: gu, dnBlocks: dn, x: x)
+        let bench = try MoESIMDComponentBench(device: device, facts: facts, guBlocks: gu, dnBlocks: dn)
+        let results = try MoESIMDQualification.screen(
+            derivation: derivation, bench: bench,
+            inputs: [MoESIMDNamedInput(name: "synthetic-uniform", values: x)],
+            references: [reference], log: { _ in })
+        checkEqual("moesimd metal: every schedule passes FP64, repeat bits and batch invariance",
+                   results.filter { $0.componentAccepted }.count, results.count)
+        for r in results where !r.componentAccepted {
+            let detail = r.inputs.compactMap { $0.failure }.joined(separator: "; ")
+            print("  moesimd metal rejection \(r.schedule.label): \(r.rejection ?? "") \(detail)")
+        }
+        check("moesimd metal: batch invariance proven for every schedule",
+              results.allSatisfy { $0.batchInvariantBits == true })
+        check("moesimd metal: repeat runs bit-identical",
+              results.allSatisfy { $0.inputs.allSatisfy { $0.repeatBitIdentical } })
+        check("moesimd metal: positive GPU intervals recorded",
+              results.allSatisfy { $0.inputs.allSatisfy { ($0.guGpuMicros ?? 0) > 0 && ($0.dnGpuMicros ?? 0) > 0 } })
+        checkEqual("moesimd metal: L8/L16/L32 exercised", Set(results.map { $0.schedule.gu.lanes }), Set([8, 16, 32]))
+
+        let k = try MoESIMDCompiledKernel.compile(
+            MoESIMDSubschedule(family: .down, lanes: 8, rowsPerGroup: 16, accumulation: .neumaierPrecise),
+            facts: facts, device: device)
+        check("moesimd metal: compiled width 32 and recorded precise options",
+              k.pipeline.threadExecutionWidth == 32 && k.compileOptions == "fastMathEnabled=false")
+        let guK = try MoESIMDCompiledKernel.compile(
+            MoESIMDSubschedule(family: .fusedGateUpAct, lanes: 8, rowsPerGroup: 16, accumulation: .plain),
+            facts: facts, device: device)
+        do {
+            _ = try bench.runComponent(gu: k, dn: k, batch: 4, x: x)
+            failed += 1; print("FAIL: moesimd metal: wrong-family kernel accepted")
+        } catch MoESIMDError.componentFailed(_) { passed += 1 }
+        catch { failed += 1; print("FAIL: moesimd metal: wrong family wrong error \(error)") }
+        var bad = x
+        bad[0] = .infinity
+        do {
+            _ = try bench.runComponent(gu: guK, dn: k, batch: 4, x: bad)
+            failed += 1; print("FAIL: moesimd metal: non-finite input accepted")
+        } catch MoESIMDError.componentFailed(_) { passed += 1 }
+        catch { failed += 1; print("FAIL: moesimd metal: non-finite input wrong error \(error)") }
+        do {
+            _ = try bench.runComponent(gu: guK, dn: k, batch: 3, x: x)
+            failed += 1; print("FAIL: moesimd metal: batch E3 accepted")
+        } catch MoESIMDError.illegalSchedule(_) { passed += 1 }
+        catch { failed += 1; print("FAIL: moesimd metal: batch E3 wrong error \(error)") }
+        let iso = try bench.runDown(k, batch: 8, act: reference.act.map { Float($0) })
+        check("moesimd metal: isolated down within the FP64 contract",
+              MoESIMDOracle.worstNormalizedRel(iso.dn, reference.dn) < 1e-4 && iso.gpuSeconds > 0)
+    } catch {
+        failed += 1; print("FAIL: moesimd Metal component gates — threw \(error)")
+    }
+}
+
+@MainActor
+func runMoESIMDRealProbeGate() {
+    let env = ProcessInfo.processInfo.environment
+    let names = ["LEVIATHAN_GEMMA4_GGUF", "LEVIATHAN_GGUF", "GEMMA4_GGUF"]
+    guard let path = names.compactMap({ env[$0] }).first,
+          FileManager.default.fileExists(atPath: path) else {
+        print("SKIP: moesimd real-GGUF MoE input probe — set LEVIATHAN_GEMMA4_GGUF")
+        return
+    }
+    do {
+        // mmap-backed resident runner; no model hashing.
+        let runner = try Gemma4Runner(fileAt: URL(fileURLWithPath: path))
+        check("moesimd probe: default nil", runner.moeInputProbe == nil)
+        let base = try runner.forward(tokenIds: [2, 9259])
+        let baseLogits = try runner.currentLogits()
+        runner.reset()
+        let log = MoESIMDProbeLog()
+        runner.moeInputProbe = { layer, position, x in
+            log.calls.append("\(layer):\(position)")
+            if x.count != 2816 || !x.allSatisfy({ $0.isFinite }) { log.allFiniteHidden = false }
+        }
+        runner.layerProbe = { stage, _, _, _ in log.stages.insert(stage) }
+        let probed = try runner.forward(tokenIds: [2, 9259])
+        let probedLogits = try runner.currentLogits()
+        runner.moeInputProbe = nil
+        runner.layerProbe = nil
+        let expected = (0..<2).flatMap { p in (0..<30).map { l in "\(l):\(p)" } }
+        checkEqual("moesimd probe: one call per layer per position, in order", log.calls, expected)
+        check("moesimd probe: finite 2816-wide vectors", log.allFiniteHidden)
+        checkEqual("moesimd probe: layerProbe three-stage contract unchanged", log.stages,
+                   Set(["attn_norm_h", "post_attn", "post_layer"]))
+        checkEqual("moesimd probe: argmax unchanged", probed.argmaxToken, base.argmaxToken)
+        check("moesimd probe: logits bit-identical with and without the probe",
+              MoESIMDBits.identical(probedLogits, baseLogits))
+    } catch {
+        failed += 1; print("FAIL: moesimd real-GGUF MoE input probe — threw \(error)")
+    }
+}
+
+runMoESIMDPureGates()
+runMoESIMDMetalGates()
+runMoESIMDRealProbeGate()
+
 // MARK: - Summary
 
 print("\(passed) passed, \(failed) failed")

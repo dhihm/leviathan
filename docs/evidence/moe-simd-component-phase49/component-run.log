@@ -1,0 +1,56 @@
+capturing the layer-0 routed-MoE input (direct reference forward, diagnostic only)
+derived 48 schedules; 0 rejections recorded
+computing one independent FP64 reference per input
+accepted E4|moesimd_gu_L8_RT16_plain|moesimd_dn_L8_RT16_plain
+accepted E4|moesimd_gu_L8_RT16_plain|moesimd_dn_L8_RT32_plain
+accepted E4|moesimd_gu_L8_RT32_plain|moesimd_dn_L8_RT16_plain
+accepted E4|moesimd_gu_L8_RT32_plain|moesimd_dn_L8_RT32_plain
+accepted E4|moesimd_gu_L16_RT8_plain|moesimd_dn_L16_RT8_plain
+accepted E4|moesimd_gu_L16_RT8_plain|moesimd_dn_L16_RT16_plain
+accepted E4|moesimd_gu_L16_RT16_plain|moesimd_dn_L16_RT8_plain
+accepted E4|moesimd_gu_L16_RT16_plain|moesimd_dn_L16_RT16_plain
+accepted E4|moesimd_gu_L32_RT4_plain|moesimd_dn_L32_RT4_plain
+accepted E4|moesimd_gu_L32_RT4_plain|moesimd_dn_L32_RT8_plain
+accepted E4|moesimd_gu_L32_RT8_plain|moesimd_dn_L32_RT4_plain
+accepted E4|moesimd_gu_L32_RT8_plain|moesimd_dn_L32_RT8_plain
+accepted E4|moesimd_gu_L8_RT16_neum|moesimd_dn_L8_RT16_neum
+accepted E4|moesimd_gu_L8_RT16_neum|moesimd_dn_L8_RT32_neum
+accepted E4|moesimd_gu_L8_RT32_neum|moesimd_dn_L8_RT16_neum
+accepted E4|moesimd_gu_L8_RT32_neum|moesimd_dn_L8_RT32_neum
+accepted E4|moesimd_gu_L16_RT8_neum|moesimd_dn_L16_RT8_neum
+accepted E4|moesimd_gu_L16_RT8_neum|moesimd_dn_L16_RT16_neum
+accepted E4|moesimd_gu_L16_RT16_neum|moesimd_dn_L16_RT8_neum
+accepted E4|moesimd_gu_L16_RT16_neum|moesimd_dn_L16_RT16_neum
+accepted E4|moesimd_gu_L32_RT4_neum|moesimd_dn_L32_RT4_neum
+accepted E4|moesimd_gu_L32_RT4_neum|moesimd_dn_L32_RT8_neum
+accepted E4|moesimd_gu_L32_RT8_neum|moesimd_dn_L32_RT4_neum
+accepted E4|moesimd_gu_L32_RT8_neum|moesimd_dn_L32_RT8_neum
+accepted E8|moesimd_gu_L8_RT16_plain|moesimd_dn_L8_RT16_plain
+accepted E8|moesimd_gu_L8_RT16_plain|moesimd_dn_L8_RT32_plain
+accepted E8|moesimd_gu_L8_RT32_plain|moesimd_dn_L8_RT16_plain
+accepted E8|moesimd_gu_L8_RT32_plain|moesimd_dn_L8_RT32_plain
+accepted E8|moesimd_gu_L16_RT8_plain|moesimd_dn_L16_RT8_plain
+accepted E8|moesimd_gu_L16_RT8_plain|moesimd_dn_L16_RT16_plain
+accepted E8|moesimd_gu_L16_RT16_plain|moesimd_dn_L16_RT8_plain
+accepted E8|moesimd_gu_L16_RT16_plain|moesimd_dn_L16_RT16_plain
+accepted E8|moesimd_gu_L32_RT4_plain|moesimd_dn_L32_RT4_plain
+accepted E8|moesimd_gu_L32_RT4_plain|moesimd_dn_L32_RT8_plain
+accepted E8|moesimd_gu_L32_RT8_plain|moesimd_dn_L32_RT4_plain
+accepted E8|moesimd_gu_L32_RT8_plain|moesimd_dn_L32_RT8_plain
+accepted E8|moesimd_gu_L8_RT16_neum|moesimd_dn_L8_RT16_neum
+accepted E8|moesimd_gu_L8_RT16_neum|moesimd_dn_L8_RT32_neum
+accepted E8|moesimd_gu_L8_RT32_neum|moesimd_dn_L8_RT16_neum
+accepted E8|moesimd_gu_L8_RT32_neum|moesimd_dn_L8_RT32_neum
+accepted E8|moesimd_gu_L16_RT8_neum|moesimd_dn_L16_RT8_neum
+accepted E8|moesimd_gu_L16_RT8_neum|moesimd_dn_L16_RT16_neum
+accepted E8|moesimd_gu_L16_RT16_neum|moesimd_dn_L16_RT8_neum
+accepted E8|moesimd_gu_L16_RT16_neum|moesimd_dn_L16_RT16_neum
+accepted E8|moesimd_gu_L32_RT4_neum|moesimd_dn_L32_RT4_neum
+accepted E8|moesimd_gu_L32_RT4_neum|moesimd_dn_L32_RT8_neum
+accepted E8|moesimd_gu_L32_RT8_neum|moesimd_dn_L32_RT4_neum
+accepted E8|moesimd_gu_L32_RT8_neum|moesimd_dn_L32_RT8_neum
+incumbent v1 moegen_gu_E4_R32/moegen_act_E4/moegen_dn_E4_R32 [seeded-uniform]: within the full FP64 contract 
+incumbent v1 moegen_gu_E4_R32/moegen_act_E4/moegen_dn_E4_R32 [signed-alternating]: within the full FP64 contract 
+incumbent v1 moegen_gu_E4_R32/moegen_act_E4/moegen_dn_E4_R32 [one-hot]: within the full FP64 contract 
+incumbent v1 moegen_gu_E4_R32/moegen_act_E4/moegen_dn_E4_R32 [captured-layer0-pre_ffw_norm_2]: within the full FP64 contract 
+wrote NON-INSTALLABLE component report /tmp/leviathan-forge2-tooling/phase49-gpu-lowering-review/component-report.json: 48/48 schedules component-accepted; diagnostic GPU intervals only, no winner selected

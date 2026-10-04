@@ -1,0 +1,12 @@
+[
+  {
+    "path": "Sources/LeviathanCore/MoELowering.swift",
+    "byteIdenticalToBase": true,
+    "sha256": "9e0d65da79a718acd57e7177ab77bfd4ff4fafe2123c4af354df21e0b56c9677"
+  },
+  {
+    "path": "Sources/LeviathanCore/Q4Lowering.swift",
+    "byteIdenticalToBase": true,
+    "sha256": "f7da8045fa95e666e0dff832d791494527443a77117468ba4ddd86abdfd555c7"
+  }
+]

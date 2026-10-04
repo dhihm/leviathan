@@ -1,0 +1,3238 @@
+{
+  "acceptedCount" : 48,
+  "catalogSize" : 48,
+  "codegenVersion" : "moesimd-v1",
+  "derivationRejections" : [
+
+  ],
+  "diagnosticTimingOnly" : true,
+  "dnTensor" : "blk.0.ffn_down_exps.weight",
+  "executableDigest" : "5adee2b0ec6d6bce397aba34c577c8daf40ce503e7a0ca2568818720059c2620",
+  "expertIds" : [
+    0,
+    127,
+    5,
+    63,
+    42,
+    100,
+    17,
+    121
+  ],
+  "facts" : {
+    "hidden" : 2816,
+    "inter" : 704,
+    "topK" : 8
+  },
+  "guTensor" : "blk.0.ffn_gate_up_exps.weight",
+  "hardware" : {
+    "deviceName" : "Apple M1 Max",
+    "maxBufferLength" : 20100448256,
+    "maxThreadgroupMemoryLength" : 32768,
+    "maxTotalThreadsPerThreadgroup" : 1024,
+    "recommendedMaxWorkingSetSize" : 26800603136,
+    "staticThreadgroupMemoryLength" : 0,
+    "threadExecutionWidth" : 32
+  },
+  "incumbent" : [
+    {
+      "actWorstRel" : 1.0334971877190569e-06,
+      "dnWorstRel" : 9.865801718911271e-07,
+      "gateWorstRel" : 8.353876232614836e-07,
+      "input" : "seeded-uniform",
+      "schedule" : "v1 moegen_gu_E4_R32\/moegen_act_E4\/moegen_dn_E4_R32",
+      "upWorstRel" : 8.13830612588983e-07,
+      "withinContract" : true
+    },
+    {
+      "actWorstRel" : 6.032169013736599e-07,
+      "dnWorstRel" : 3.431408971410477e-07,
+      "gateWorstRel" : 6.792653795902293e-07,
+      "input" : "signed-alternating",
+      "schedule" : "v1 moegen_gu_E4_R32\/moegen_act_E4\/moegen_dn_E4_R32",
+      "upWorstRel" : 7.09582309355028e-07,
+      "withinContract" : true
+    },
+    {
+      "actWorstRel" : 1.0468367351353786e-10,
+      "dnWorstRel" : 1.6446402885395006e-09,
+      "gateWorstRel" : 0,
+      "input" : "one-hot",
+      "schedule" : "v1 moegen_gu_E4_R32\/moegen_act_E4\/moegen_dn_E4_R32",
+      "upWorstRel" : 0,
+      "withinContract" : true
+    },
+    {
+      "actWorstRel" : 6.876635918473539e-07,
+      "dnWorstRel" : 3.6037558016692013e-07,
+      "gateWorstRel" : 7.169884608280279e-07,
+      "input" : "captured-layer0-pre_ffw_norm_2",
+      "schedule" : "v1 moegen_gu_E4_R32\/moegen_act_E4\/moegen_dn_E4_R32",
+      "upWorstRel" : 8.462718799062685e-07,
+      "withinContract" : true
+    }
+  ],
+  "inputs" : [
+    {
+      "elementCount" : 2816,
+      "name" : "seeded-uniform",
+      "provenance" : "MoEComponentInputs.activation default seed"
+    },
+    {
+      "elementCount" : 2816,
+      "name" : "signed-alternating",
+      "provenance" : "(+\/-)(0.25 + 0.5 * (i mod 7) \/ 7), sign alternating by index"
+    },
+    {
+      "elementCount" : 2816,
+      "name" : "one-hot",
+      "provenance" : "1 at index 1337, else 0"
+    },
+    {
+      "elementCount" : 2816,
+      "name" : "captured-layer0-pre_ffw_norm_2",
+      "provenance" : "moeInputProbe layer 0 position 1 of raw-Hello [2, 9259], direct reference forward; values not exported"
+    }
+  ],
+  "installable" : false,
+  "kind" : "moe-simd-component-qualification",
+  "modelFileVerification" : "cached-explicit-refresh-v1",
+  "modelSha256" : "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+  "notes" : [
+    "Correctness prototype only: NOT a production artifact; installable=false; no runner integration.",
+    "Numerical class simd-reassociated-oracle: per-row dots are reassociated across lanes; gated only against the independent full FP64 oracle at the unchanged normalized 1e-4 contract; no bit identity with v1 is claimed.",
+    "GPU intervals are diagnostic only: the A\/A reproducibility gate failed and global paging was active; no paired comparison, no winner, no activation.",
+    "Model SHA-256 is the cached historical record (explicit-refresh policy); it was not re-verified in this run.",
+    "Catalog bounded by the same-L GU\/DN composition rule; E affects dispatch only (verified by bitwise batch invariance).",
+    "Direct-dispatch diagnostic precondition recorded: generic g4_q4_matvec exceeded routed MoE GU+DN+ACT under a different synchronization; this package stays MoE-scoped."
+  ],
+  "numericalClass" : "simd-reassociated-oracle",
+  "oracleContract" : 0.0001,
+  "productionArtifact" : false,
+  "regionDigest" : "92aea27bd31a29ddbe6c8c109c5d82a4f10b479154ca327c1704574db899b538",
+  "regionGraphSha256" : "87d3c6141e3c49b6a1b37223f947491700338b3fd5f491388ad6e2f7ff32c53b",
+  "reportSchema" : 1,
+  "results" : [
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "66ddd2149a1c8ac9bf2b598b94bd3c1ede66ff5933eeb414560136dd09e60276",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "47dabcda062078f64931cb1e38f3051b54b572c329f00be5f4d8453b2dd2ea22",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.047829377766931e-07,
+          "dnGpuMicros" : 238.87492716312408,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.3257233583429127e-07,
+          "guGpuMicros" : 327.2085450589657,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 4.0304082726816404e-07,
+          "dnGpuMicros" : 165.25015234947205,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.2265432586543454e-07,
+          "guGpuMicros" : 308.95834788680077,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 162.45804727077484,
+          "dnIsolatedWorstRel" : 3.728310117231959e-10,
+          "dnWorstRel" : 3.670098391861387e-10,
+          "guGpuMicros" : 300.4167228937149,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7946485875164342e-07,
+          "dnGpuMicros" : 165.24968668818474,
+          "dnIsolatedWorstRel" : 1.0755378487825595e-07,
+          "dnWorstRel" : 1.790681117368215e-07,
+          "guGpuMicros" : 306.25006183981895,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "fe70aa371dc8c1771aae5de9b95777ef3d2ee096a02125fe43d3367a52eaf4a0",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "47dabcda062078f64931cb1e38f3051b54b572c329f00be5f4d8453b2dd2ea22",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.047829377766931e-07,
+          "dnGpuMicros" : 1077.1667584776878,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.3257233583429127e-07,
+          "guGpuMicros" : 318.1248903274536,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 4.0304082726816404e-07,
+          "dnGpuMicros" : 147.95828610658646,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.2265432586543454e-07,
+          "guGpuMicros" : 300.75013637542725,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 151.37484297156334,
+          "dnIsolatedWorstRel" : 3.728310117231959e-10,
+          "dnWorstRel" : 3.670098391861387e-10,
+          "guGpuMicros" : 305.9585578739643,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7946485875164342e-07,
+          "dnGpuMicros" : 154.04168516397476,
+          "dnIsolatedWorstRel" : 1.0755378487825595e-07,
+          "dnWorstRel" : 1.790681117368215e-07,
+          "guGpuMicros" : 311.6666339337826,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "66ddd2149a1c8ac9bf2b598b94bd3c1ede66ff5933eeb414560136dd09e60276",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "62919565aeb940a4b4c60ce19ba6a4281a225821050172ebab123e3cf8d2c199",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.047829377766931e-07,
+          "dnGpuMicros" : 170.37475481629372,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.3257233583429127e-07,
+          "guGpuMicros" : 247.7499656379223,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 4.0304082726816404e-07,
+          "dnGpuMicros" : 165.33304005861282,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.2265432586543454e-07,
+          "guGpuMicros" : 379.2503848671913,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 159.416813403368,
+          "dnIsolatedWorstRel" : 3.728310117231959e-10,
+          "dnWorstRel" : 3.670098391861387e-10,
+          "guGpuMicros" : 240.62488228082657,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7946485875164342e-07,
+          "dnGpuMicros" : 167.6245592534542,
+          "dnIsolatedWorstRel" : 1.0755378487825595e-07,
+          "dnWorstRel" : 1.790681117368215e-07,
+          "guGpuMicros" : 244.3753182888031,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "fe70aa371dc8c1771aae5de9b95777ef3d2ee096a02125fe43d3367a52eaf4a0",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "62919565aeb940a4b4c60ce19ba6a4281a225821050172ebab123e3cf8d2c199",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.047829377766931e-07,
+          "dnGpuMicros" : 153.66682782769203,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.3257233583429127e-07,
+          "guGpuMicros" : 246.12480774521828,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 4.0304082726816404e-07,
+          "dnGpuMicros" : 151.20813623070717,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.2265432586543454e-07,
+          "guGpuMicros" : 241.74991995096207,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 150.62512829899788,
+          "dnIsolatedWorstRel" : 3.728310117231959e-10,
+          "dnWorstRel" : 3.670098391861387e-10,
+          "guGpuMicros" : 286.20846569538116,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7946485875164342e-07,
+          "dnGpuMicros" : 156.91667795181274,
+          "dnIsolatedWorstRel" : 1.0755378487825595e-07,
+          "dnWorstRel" : 1.790681117368215e-07,
+          "guGpuMicros" : 245.08312344551086,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "1b075041ecabcd4e75ce8e48cbb0ca77543f173ad46d73298ea80943faff0326",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "dd291d337af48efcf0f33e4449c0f243ed9b0e28afbe8921e43d9632f92af912",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.7382552864340113e-07,
+          "dnGpuMicros" : 324.70840960741043,
+          "dnIsolatedWorstRel" : 2.11719789811049e-07,
+          "dnWorstRel" : 1.7956321340939496e-07,
+          "guGpuMicros" : 1140.4999531805515,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7470297442034877e-07,
+          "dnGpuMicros" : 231.20874539017677,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 1.7190595158478317e-07,
+          "guGpuMicros" : 583.8749930262566,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 235.66652089357376,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.6210456508256605e-10,
+          "guGpuMicros" : 1461.333129554987,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.280629316922654e-07,
+          "dnGpuMicros" : 1158.1247672438622,
+          "dnIsolatedWorstRel" : 1.0590214047174028e-07,
+          "dnWorstRel" : 1.2492371748734643e-07,
+          "guGpuMicros" : 369.2503087222576,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "893346aa7cd80a55394ef6bd06c94eceb326bdfb09902917e2ba08115230a844",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "dd291d337af48efcf0f33e4449c0f243ed9b0e28afbe8921e43d9632f92af912",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.7382552864340113e-07,
+          "dnGpuMicros" : 220.74999287724495,
+          "dnIsolatedWorstRel" : 2.11719789811049e-07,
+          "dnWorstRel" : 1.7956321340939496e-07,
+          "guGpuMicros" : 1629.8331320285797,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7470297442034877e-07,
+          "dnGpuMicros" : 217.45823323726654,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 1.7190595158478317e-07,
+          "guGpuMicros" : 378.2501444220543,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 460.04168689250946,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.6210456508256605e-10,
+          "guGpuMicros" : 375.3751516342163,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.280629316922654e-07,
+          "dnGpuMicros" : 221.74976766109467,
+          "dnIsolatedWorstRel" : 1.0590214047174028e-07,
+          "dnWorstRel" : 1.2492371748734643e-07,
+          "guGpuMicros" : 1128.5413056612015,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "1b075041ecabcd4e75ce8e48cbb0ca77543f173ad46d73298ea80943faff0326",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "28c05313e5648288e212049f343858581a456c6dd808787d931ff3eee93a5ba3",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.7382552864340113e-07,
+          "dnGpuMicros" : 114.41670358181,
+          "dnIsolatedWorstRel" : 2.11719789811049e-07,
+          "dnWorstRel" : 1.7956321340939496e-07,
+          "guGpuMicros" : 130.4582692682743,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7470297442034877e-07,
+          "dnGpuMicros" : 79.83297109603882,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 1.7190595158478317e-07,
+          "guGpuMicros" : 91.50011464953423,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 155.62539920210838,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.6210456508256605e-10,
+          "guGpuMicros" : 93.49966421723366,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.280629316922654e-07,
+          "dnGpuMicros" : 230.24994879961014,
+          "dnIsolatedWorstRel" : 1.0590214047174028e-07,
+          "dnWorstRel" : 1.2492371748734643e-07,
+          "guGpuMicros" : 274.54178780317307,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "893346aa7cd80a55394ef6bd06c94eceb326bdfb09902917e2ba08115230a844",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "28c05313e5648288e212049f343858581a456c6dd808787d931ff3eee93a5ba3",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.7382552864340113e-07,
+          "dnGpuMicros" : 352.83342003822327,
+          "dnIsolatedWorstRel" : 2.11719789811049e-07,
+          "dnWorstRel" : 1.7956321340939496e-07,
+          "guGpuMicros" : 278.7085250020027,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7470297442034877e-07,
+          "dnGpuMicros" : 222.7500081062317,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 1.7190595158478317e-07,
+          "guGpuMicros" : 272.37506583333015,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 221.99982777237892,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.6210456508256605e-10,
+          "guGpuMicros" : 411.33351624011993,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.280629316922654e-07,
+          "dnGpuMicros" : 1127.874944359064,
+          "dnIsolatedWorstRel" : 1.0590214047174028e-07,
+          "dnWorstRel" : 1.2492371748734643e-07,
+          "guGpuMicros" : 276.1250361800194,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "158ee5bfc9c9a61a2ad6aa6792d9b4b337378ec4b202f7f46fb898bbf4285553",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "2ddeb6350303109072b25410e21d399b011dfd9cbda9bb24eb39e0bed11d97bf",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.883308365981719e-07,
+          "dnGpuMicros" : 334.70848575234413,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.11719789811049e-07,
+          "guGpuMicros" : 568.8751116394997,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.838315377173828e-07,
+          "dnGpuMicros" : 488.33340406417847,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.858389812029635e-07,
+          "guGpuMicros" : 522.2084000706673,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 414.9582237005234,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.3508568489382107e-10,
+          "guGpuMicros" : 1348.8749973475933,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.44161021178968e-07,
+          "dnGpuMicros" : 322.1249207854271,
+          "dnIsolatedWorstRel" : 1.2939403701543607e-07,
+          "dnWorstRel" : 1.402636816831248e-07,
+          "guGpuMicros" : 511.5000531077385,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "7bd5631e56af6bb09d4689c7b6363797a51f3b4068c288fe5e55251550daf39d",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "2ddeb6350303109072b25410e21d399b011dfd9cbda9bb24eb39e0bed11d97bf",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.883308365981719e-07,
+          "dnGpuMicros" : 303.50033193826675,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.11719789811049e-07,
+          "guGpuMicros" : 507.24996253848076,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.838315377173828e-07,
+          "dnGpuMicros" : 304.2500466108322,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.858389812029635e-07,
+          "guGpuMicros" : 637.6667879521847,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 299.54174533486366,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.3508568489382107e-10,
+          "guGpuMicros" : 747.1251301467419,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.44161021178968e-07,
+          "dnGpuMicros" : 1059.083268046379,
+          "dnIsolatedWorstRel" : 1.2939403701543607e-07,
+          "dnWorstRel" : 1.402636816831248e-07,
+          "guGpuMicros" : 514.5003087818623,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "158ee5bfc9c9a61a2ad6aa6792d9b4b337378ec4b202f7f46fb898bbf4285553",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "35fc4842b1680a08c8c705afa2e6ca7ecf302bae05ccb8ba26c43c7ff23a0f86",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.883308365981719e-07,
+          "dnGpuMicros" : 323.95822927355766,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.11719789811049e-07,
+          "guGpuMicros" : 379.58333268761635,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.838315377173828e-07,
+          "dnGpuMicros" : 321.66624441742897,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.858389812029635e-07,
+          "guGpuMicros" : 383.37521255016327,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 624.2082454264164,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.3508568489382107e-10,
+          "guGpuMicros" : 385.12516766786575,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.44161021178968e-07,
+          "dnGpuMicros" : 324.3749961256981,
+          "dnIsolatedWorstRel" : 1.2939403701543607e-07,
+          "dnWorstRel" : 1.402636816831248e-07,
+          "guGpuMicros" : 379.49997931718826,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "7bd5631e56af6bb09d4689c7b6363797a51f3b4068c288fe5e55251550daf39d",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "35fc4842b1680a08c8c705afa2e6ca7ecf302bae05ccb8ba26c43c7ff23a0f86",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.883308365981719e-07,
+          "dnGpuMicros" : 302.87494882941246,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.11719789811049e-07,
+          "guGpuMicros" : 1594.875007867813,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.838315377173828e-07,
+          "dnGpuMicros" : 301.87517404556274,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.858389812029635e-07,
+          "guGpuMicros" : 441.83339923620224,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 299.7498959302902,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.3508568489382107e-10,
+          "guGpuMicros" : 380.3749568760395,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.44161021178968e-07,
+          "dnGpuMicros" : 302.87494882941246,
+          "dnIsolatedWorstRel" : 1.2939403701543607e-07,
+          "dnWorstRel" : 1.402636816831248e-07,
+          "guGpuMicros" : 398.54180067777634,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "c3f82eedbe21a0ac4c45cb6da7c4f21d95558fc401780856e3750bcad80c6859",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "50e7e8838d692e25d06a81e2af857084cbf3946dc829b33957cbd21b29169632",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 230.24994879961014,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 442.33351945877075,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 227.87507623434067,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 436.125323176384,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 225.62500089406967,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 434.9164664745331,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 227.79172286391258,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 436.16676703095436,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "bd4743fbd6c9faf529286a3441e2dc2a9a9704cf4885e43fcc7b36accd49806e",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "50e7e8838d692e25d06a81e2af857084cbf3946dc829b33957cbd21b29169632",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 367.1250306069851,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 437.83336877822876,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 217.25008264183998,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 431.625172495842,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 219.04194727540016,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 435.75000017881393,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 218.2498574256897,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 438.6249929666519,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "c3f82eedbe21a0ac4c45cb6da7c4f21d95558fc401780856e3750bcad80c6859",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "70fbef3fbb770190de8d044621350fa19f343261f061d4b2e20a61e830cf4282",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 228.87485101819038,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 419.7913222014904,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 225.29205307364464,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 413.37497532367706,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 225.58309137821198,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 411.66646406054497,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 1228.3334508538246,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 425.3750666975975,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "bd4743fbd6c9faf529286a3441e2dc2a9a9704cf4885e43fcc7b36accd49806e",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "70fbef3fbb770190de8d044621350fa19f343261f061d4b2e20a61e830cf4282",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 219.50015798211098,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 412.91629895567894,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 220.20842880010605,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 410.8748398721218,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 225.20823404192924,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 412.6252606511116,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 218.16696971654892,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 413.1249152123928,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "d649eaff7b15ef1ccd1f47c6e4299e4e4f11744431e87831193ac2665662a746",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "00563091f771c39a00db444b6073b189a21289f7d9d1bab99c6169a314c9a76f",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 320.20825892686844,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 504.3749697506428,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 319.70860436558723,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 496.9998262822628,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 320.08346170186996,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 494.50015649199486,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 319.7500482201576,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 493.7499761581421,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "e820c889a024c3f2b0eff70f7041770b35f85bcfdb74dadd28f86207d9e93952",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "00563091f771c39a00db444b6073b189a21289f7d9d1bab99c6169a314c9a76f",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 332.87517726421356,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 530.7914689183235,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 305.4998815059662,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 1698.3752138912678,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 307.0002421736717,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 493.8333295285702,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 306.5420314669609,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 493.666622787714,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "d649eaff7b15ef1ccd1f47c6e4299e4e4f11744431e87831193ac2665662a746",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "98b9ac6fd703a6224f8f6a5c7d2548b3d0b429d397e61d5b82c815d3c8d52db4",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 256.79171085357666,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 378.95841524004936,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 194.416381418705,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 279.8335626721382,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 307.0831298828125,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 283.2501195371151,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 319.9586644768715,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 529.7502502799034,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "e820c889a024c3f2b0eff70f7041770b35f85bcfdb74dadd28f86207d9e93952",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "98b9ac6fd703a6224f8f6a5c7d2548b3d0b429d397e61d5b82c815d3c8d52db4",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 310.9583631157875,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 456.75039291381836,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 306.4996562898159,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 461.29152178764343,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 305.4998815059662,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 461.3748751580715,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 310.25009229779243,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 461.3748751580715,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "8713845ddd083355664f824e2c57a06541f8508587f5c5402b5579334db3ced7",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "9a0a220d7382f1f19d9900651fb3bd3e0e38a1381ebe46f333950965e90cc864",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 329.9582749605179,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 480.2080802619457,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 332.0416435599327,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 478.1247116625309,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 333.291944116354,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 481.74988478422165,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 413.41688483953476,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 530.4999649524689,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "ab2d8647a75be3d11701971bdf66e63d92abb7cea9a92117c907f1a3ed675504",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "9a0a220d7382f1f19d9900651fb3bd3e0e38a1381ebe46f333950965e90cc864",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 394.62465792894363,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 745.4585283994675,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 850.0837720930576,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 312.70831823349,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 201.24996080994606,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 304.50010672211647,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 201.24996080994606,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 300.8749336004257,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "8713845ddd083355664f824e2c57a06541f8508587f5c5402b5579334db3ced7",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "719cbdb9d4df65251be080ee6a6cb75ccbb25871f393e8a67dfe78f7aea01788",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 257.125124335289,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 338.00024539232254,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 329.50006425380707,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 327.2499889135361,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 252.6668831706047,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 452.1249793469906,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 293.6250530183315,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 337.29197457432747,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "ab2d8647a75be3d11701971bdf66e63d92abb7cea9a92117c907f1a3ed675504",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "719cbdb9d4df65251be080ee6a6cb75ccbb25871f393e8a67dfe78f7aea01788",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 397.7501764893532,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 557.1665242314339,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 393.1247629225254,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 543.2916805148125,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 393.1252285838127,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 533.7917245924473,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 502.20824778079987,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 555.6666292250156,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 4,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "66ddd2149a1c8ac9bf2b598b94bd3c1ede66ff5933eeb414560136dd09e60276",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "47dabcda062078f64931cb1e38f3051b54b572c329f00be5f4d8453b2dd2ea22",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.047829377766931e-07,
+          "dnGpuMicros" : 144.8746770620346,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.3257233583429127e-07,
+          "guGpuMicros" : 295.9580160677433,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 4.0304082726816404e-07,
+          "dnGpuMicros" : 142.33309775590897,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.2265432586543454e-07,
+          "guGpuMicros" : 259.2504024505615,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 146.6250978410244,
+          "dnIsolatedWorstRel" : 3.728310117231959e-10,
+          "dnWorstRel" : 3.670098391861387e-10,
+          "guGpuMicros" : 263.9587037265301,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7946485875164342e-07,
+          "dnGpuMicros" : 144.49981972575188,
+          "dnIsolatedWorstRel" : 1.0755378487825595e-07,
+          "dnWorstRel" : 1.790681117368215e-07,
+          "guGpuMicros" : 259.70814749598503,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "fe70aa371dc8c1771aae5de9b95777ef3d2ee096a02125fe43d3367a52eaf4a0",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "47dabcda062078f64931cb1e38f3051b54b572c329f00be5f4d8453b2dd2ea22",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.047829377766931e-07,
+          "dnGpuMicros" : 309.3751147389412,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.3257233583429127e-07,
+          "guGpuMicros" : 261.0832452774048,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 4.0304082726816404e-07,
+          "dnGpuMicros" : 139.08324763178825,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.2265432586543454e-07,
+          "guGpuMicros" : 259.4999969005585,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 227.91652008891106,
+          "dnIsolatedWorstRel" : 3.728310117231959e-10,
+          "dnWorstRel" : 3.670098391861387e-10,
+          "guGpuMicros" : 264.208298176527,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7946485875164342e-07,
+          "dnGpuMicros" : 1274.7501023113728,
+          "dnIsolatedWorstRel" : 1.0755378487825595e-07,
+          "dnWorstRel" : 1.790681117368215e-07,
+          "guGpuMicros" : 286.0003150999546,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "66ddd2149a1c8ac9bf2b598b94bd3c1ede66ff5933eeb414560136dd09e60276",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "62919565aeb940a4b4c60ce19ba6a4281a225821050172ebab123e3cf8d2c199",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.047829377766931e-07,
+          "dnGpuMicros" : 144.70843598246574,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.3257233583429127e-07,
+          "guGpuMicros" : 237.29121312499046,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 4.0304082726816404e-07,
+          "dnGpuMicros" : 140.5416987836361,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.2265432586543454e-07,
+          "guGpuMicros" : 234.75009948015213,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 143.12518760561943,
+          "dnIsolatedWorstRel" : 3.728310117231959e-10,
+          "dnWorstRel" : 3.670098391861387e-10,
+          "guGpuMicros" : 232.7081747353077,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7946485875164342e-07,
+          "dnGpuMicros" : 141.0837285220623,
+          "dnIsolatedWorstRel" : 1.0755378487825595e-07,
+          "dnWorstRel" : 1.790681117368215e-07,
+          "guGpuMicros" : 233.2916483283043,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "fe70aa371dc8c1771aae5de9b95777ef3d2ee096a02125fe43d3367a52eaf4a0",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "62919565aeb940a4b4c60ce19ba6a4281a225821050172ebab123e3cf8d2c199",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.047829377766931e-07,
+          "dnGpuMicros" : 140.16684144735336,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.3257233583429127e-07,
+          "guGpuMicros" : 235.4583702981472,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 4.0304082726816404e-07,
+          "dnGpuMicros" : 138.3330672979355,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.2265432586543454e-07,
+          "guGpuMicros" : 701.8749602138996,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 217.00002253055573,
+          "dnIsolatedWorstRel" : 3.728310117231959e-10,
+          "dnWorstRel" : 3.670098391861387e-10,
+          "guGpuMicros" : 571.9996988773346,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7946485875164342e-07,
+          "dnGpuMicros" : 220.0002782046795,
+          "dnIsolatedWorstRel" : 1.0755378487825595e-07,
+          "dnWorstRel" : 1.790681117368215e-07,
+          "guGpuMicros" : 239.74990472197533,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "1b075041ecabcd4e75ce8e48cbb0ca77543f173ad46d73298ea80943faff0326",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "dd291d337af48efcf0f33e4449c0f243ed9b0e28afbe8921e43d9632f92af912",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.7382552864340113e-07,
+          "dnGpuMicros" : 1275.0416062772274,
+          "dnIsolatedWorstRel" : 2.11719789811049e-07,
+          "dnWorstRel" : 1.7956321340939496e-07,
+          "guGpuMicros" : 391.83348417282104,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7470297442034877e-07,
+          "dnGpuMicros" : 210.0002020597458,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 1.7190595158478317e-07,
+          "guGpuMicros" : 339.2086364328861,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 211.5834504365921,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.6210456508256605e-10,
+          "guGpuMicros" : 333.41674134135246,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.280629316922654e-07,
+          "dnGpuMicros" : 209.2914655804634,
+          "dnIsolatedWorstRel" : 1.0590214047174028e-07,
+          "dnWorstRel" : 1.2492371748734643e-07,
+          "guGpuMicros" : 1092.2919027507305,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "893346aa7cd80a55394ef6bd06c94eceb326bdfb09902917e2ba08115230a844",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "dd291d337af48efcf0f33e4449c0f243ed9b0e28afbe8921e43d9632f92af912",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.7382552864340113e-07,
+          "dnGpuMicros" : 202.1249383687973,
+          "dnIsolatedWorstRel" : 2.11719789811049e-07,
+          "dnWorstRel" : 1.7956321340939496e-07,
+          "guGpuMicros" : 328.8332372903824,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7470297442034877e-07,
+          "dnGpuMicros" : 199.75006580352783,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 1.7190595158478317e-07,
+          "guGpuMicros" : 489.7085018455982,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 198.49976524710655,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.6210456508256605e-10,
+          "guGpuMicros" : 330.3750418126583,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.280629316922654e-07,
+          "dnGpuMicros" : 198.99988546967506,
+          "dnIsolatedWorstRel" : 1.0590214047174028e-07,
+          "dnWorstRel" : 1.2492371748734643e-07,
+          "guGpuMicros" : 323.41666519641876,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "1b075041ecabcd4e75ce8e48cbb0ca77543f173ad46d73298ea80943faff0326",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "28c05313e5648288e212049f343858581a456c6dd808787d931ff3eee93a5ba3",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.7382552864340113e-07,
+          "dnGpuMicros" : 208.91660824418068,
+          "dnIsolatedWorstRel" : 2.11719789811049e-07,
+          "dnWorstRel" : 1.7956321340939496e-07,
+          "guGpuMicros" : 249.374657869339,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7470297442034877e-07,
+          "dnGpuMicros" : 208.37504416704178,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 1.7190595158478317e-07,
+          "guGpuMicros" : 361.0835410654545,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 210.0002020597458,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.6210456508256605e-10,
+          "guGpuMicros" : 327.87490636110306,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.280629316922654e-07,
+          "dnGpuMicros" : 209.12522450089455,
+          "dnIsolatedWorstRel" : 1.0590214047174028e-07,
+          "dnWorstRel" : 1.2492371748734643e-07,
+          "guGpuMicros" : 327.83346250653267,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "893346aa7cd80a55394ef6bd06c94eceb326bdfb09902917e2ba08115230a844",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "28c05313e5648288e212049f343858581a456c6dd808787d931ff3eee93a5ba3",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.7382552864340113e-07,
+          "dnGpuMicros" : 1213.208306580782,
+          "dnIsolatedWorstRel" : 2.11719789811049e-07,
+          "dnWorstRel" : 1.7956321340939496e-07,
+          "guGpuMicros" : 497.79191613197327,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.7470297442034877e-07,
+          "dnGpuMicros" : 201.95823162794113,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 1.7190595158478317e-07,
+          "guGpuMicros" : 249.62518364191055,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 201.29140466451645,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.6210456508256605e-10,
+          "guGpuMicros" : 248.8335594534874,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.280629316922654e-07,
+          "dnGpuMicros" : 200.12492313981056,
+          "dnIsolatedWorstRel" : 1.0590214047174028e-07,
+          "dnWorstRel" : 1.2492371748734643e-07,
+          "guGpuMicros" : 252.00005620718002,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "158ee5bfc9c9a61a2ad6aa6792d9b4b337378ec4b202f7f46fb898bbf4285553",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "2ddeb6350303109072b25410e21d399b011dfd9cbda9bb24eb39e0bed11d97bf",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.883308365981719e-07,
+          "dnGpuMicros" : 475.12492164969444,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.11719789811049e-07,
+          "guGpuMicros" : 452.7079872786999,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.838315377173828e-07,
+          "dnGpuMicros" : 304.54155057668686,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.858389812029635e-07,
+          "guGpuMicros" : 451.0832950472832,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 303.49986627697945,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.3508568489382107e-10,
+          "guGpuMicros" : 452.7503624558449,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.44161021178968e-07,
+          "dnGpuMicros" : 244.25005540251732,
+          "dnIsolatedWorstRel" : 1.2939403701543607e-07,
+          "dnWorstRel" : 1.402636816831248e-07,
+          "guGpuMicros" : 461.83355152606964,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "7bd5631e56af6bb09d4689c7b6363797a51f3b4068c288fe5e55251550daf39d",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "2ddeb6350303109072b25410e21d399b011dfd9cbda9bb24eb39e0bed11d97bf",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.883308365981719e-07,
+          "dnGpuMicros" : 230.3747460246086,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.11719789811049e-07,
+          "guGpuMicros" : 364.2914816737175,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.838315377173828e-07,
+          "dnGpuMicros" : 284.04174372553825,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.858389812029635e-07,
+          "guGpuMicros" : 633.7501108646393,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 285.0000746548176,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.3508568489382107e-10,
+          "guGpuMicros" : 813.5000243782997,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.44161021178968e-07,
+          "dnGpuMicros" : 284.12509709596634,
+          "dnIsolatedWorstRel" : 1.2939403701543607e-07,
+          "dnWorstRel" : 1.402636816831248e-07,
+          "guGpuMicros" : 450.62461867928505,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "158ee5bfc9c9a61a2ad6aa6792d9b4b337378ec4b202f7f46fb898bbf4285553",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "35fc4842b1680a08c8c705afa2e6ca7ecf302bae05ccb8ba26c43c7ff23a0f86",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.883308365981719e-07,
+          "dnGpuMicros" : 244.79161947965622,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.11719789811049e-07,
+          "guGpuMicros" : 274.3331715464592,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.838315377173828e-07,
+          "dnGpuMicros" : 304.2914904654026,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.858389812029635e-07,
+          "guGpuMicros" : 344.49994564056396,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 379.4166259467602,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.3508568489382107e-10,
+          "guGpuMicros" : 345.75024619698524,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.44161021178968e-07,
+          "dnGpuMicros" : 916.7920798063278,
+          "dnIsolatedWorstRel" : 1.2939403701543607e-07,
+          "dnWorstRel" : 1.402636816831248e-07,
+          "guGpuMicros" : 344.00029107928276,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "default",
+      "dnSourceSha256" : "7bd5631e56af6bb09d4689c7b6363797a51f3b4068c288fe5e55251550daf39d",
+      "guCompileOptions" : "default",
+      "guSourceSha256" : "35fc4842b1680a08c8c705afa2e6ca7ecf302bae05ccb8ba26c43c7ff23a0f86",
+      "inputs" : [
+        {
+          "actWorstRel" : 3.883308365981719e-07,
+          "dnGpuMicros" : 284.08318758010864,
+          "dnIsolatedWorstRel" : 1.5211514503565837e-07,
+          "dnWorstRel" : 2.11719789811049e-07,
+          "guGpuMicros" : 345.5416299402714,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.838315377173828e-07,
+          "dnGpuMicros" : 444.62503865361214,
+          "dnIsolatedWorstRel" : 1.8264969126047248e-07,
+          "dnWorstRel" : 2.858389812029635e-07,
+          "guGpuMicros" : 345.9998406469822,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.0468367351353786e-10,
+          "dnGpuMicros" : 284.9581651389599,
+          "dnIsolatedWorstRel" : 3.3508568489382107e-10,
+          "dnWorstRel" : 3.3508568489382107e-10,
+          "guGpuMicros" : 345.08295357227325,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 2.44161021178968e-07,
+          "dnGpuMicros" : 289.12536799907684,
+          "dnIsolatedWorstRel" : 1.2939403701543607e-07,
+          "dnWorstRel" : 1.402636816831248e-07,
+          "guGpuMicros" : 347.87505865097046,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "plain",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "plain",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "c3f82eedbe21a0ac4c45cb6da7c4f21d95558fc401780856e3750bcad80c6859",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "50e7e8838d692e25d06a81e2af857084cbf3946dc829b33957cbd21b29169632",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 213.2086083292961,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 391.6667774319649,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 772.0417343080044,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 702.4165242910385,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 358.37525501847267,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 384.374987334013,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 210.95853298902512,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 388.6246122419834,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "bd4743fbd6c9faf529286a3441e2dc2a9a9704cf4885e43fcc7b36accd49806e",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "50e7e8838d692e25d06a81e2af857084cbf3946dc829b33957cbd21b29169632",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 206.25023171305656,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 1135.083381086588,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 204.04160022735596,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 388.7079656124115,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 206.87514916062355,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 390.3331235051155,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 206.37502893805504,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 383.99966433644295,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "c3f82eedbe21a0ac4c45cb6da7c4f21d95558fc401780856e3750bcad80c6859",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "70fbef3fbb770190de8d044621350fa19f343261f061d4b2e20a61e830cf4282",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 212.45842799544334,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 375.12509152293205,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 214.12502974271774,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 376.87504664063454,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 212.24981173872948,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 376.4997236430645,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 211.95830777287483,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 376.666896045208,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "bd4743fbd6c9faf529286a3441e2dc2a9a9704cf4885e43fcc7b36accd49806e",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "70fbef3fbb770190de8d044621350fa19f343261f061d4b2e20a61e830cf4282",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 205.91681823134422,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 375.58330222964287,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 206.24976605176926,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 376.6249865293503,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 204.9165777862072,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 376.12486630678177,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 279.12529185414314,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 376.041978597641,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 8,
+          "rowsPerGroup" : 32
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "d649eaff7b15ef1ccd1f47c6e4299e4e4f11744431e87831193ac2665662a746",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "00563091f771c39a00db444b6073b189a21289f7d9d1bab99c6169a314c9a76f",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 302.83350497484207,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 431.8747669458389,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 301.7084673047066,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 427.0416684448719,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 565.1246756315231,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 577.4586461484432,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 301.5832044184208,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 427.2083751857281,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "e820c889a024c3f2b0eff70f7041770b35f85bcfdb74dadd28f86207d9e93952",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "00563091f771c39a00db444b6073b189a21289f7d9d1bab99c6169a314c9a76f",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 293.2082861661911,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 430.2915185689926,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 294.2080609500408,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 516.208354383707,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 334.9580802023411,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 1684.1250471770763,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 438.8750530779362,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 430.5001348257065,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "d649eaff7b15ef1ccd1f47c6e4299e4e4f11744431e87831193ac2665662a746",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "98b9ac6fd703a6224f8f6a5c7d2548b3d0b429d397e61d5b82c815d3c8d52db4",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 303.99998649954796,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 402.41656824946404,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 304.3333999812603,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 403.8750194013119,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 303.8747236132622,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 405.5416211485863,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 1442.3751272261143,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 485.8751781284809,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "e820c889a024c3f2b0eff70f7041770b35f85bcfdb74dadd28f86207d9e93952",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "98b9ac6fd703a6224f8f6a5c7d2548b3d0b429d397e61d5b82c815d3c8d52db4",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 540.9163422882557,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 539.2502062022686,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 297.99994081258774,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 402.1250642836094,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 292.91631653904915,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 406.79192170500755,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 294.2499704658985,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 402.95813232660294,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 16,
+          "rowsPerGroup" : 16
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "8713845ddd083355664f824e2c57a06541f8508587f5c5402b5579334db3ced7",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "9a0a220d7382f1f19d9900651fb3bd3e0e38a1381ebe46f333950965e90cc864",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 398.41653779149055,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 562.4997429549694,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 871.8748576939106,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 717.0001044869423,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 397.7501764893532,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 559.3751557171345,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 396.74993604421616,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 557.3751404881477,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "ab2d8647a75be3d11701971bdf66e63d92abb7cea9a92117c907f1a3ed675504",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "9a0a220d7382f1f19d9900651fb3bd3e0e38a1381ebe46f333950965e90cc864",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 1817.7083693444729,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 555.8747798204422,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 381.75005465745926,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 559.9996075034142,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 376.5001893043518,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 560.7497878372669,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 381.6247917711735,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 555.4999224841595,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "8713845ddd083355664f824e2c57a06541f8508587f5c5402b5579334db3ced7",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "719cbdb9d4df65251be080ee6a6cb75ccbb25871f393e8a67dfe78f7aea01788",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 396.9580866396427,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 503.7086084485054,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 396.87519893050194,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 547.2498014569283,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 404.8333503305912,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 507.500022649765,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 396.75040170550346,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 503.49999219179153,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 4
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        }
+      }
+    },
+    {
+      "batchInvariantBits" : true,
+      "componentAccepted" : true,
+      "dnCompileOptions" : "fastMathEnabled=false",
+      "dnSourceSha256" : "ab2d8647a75be3d11701971bdf66e63d92abb7cea9a92117c907f1a3ed675504",
+      "guCompileOptions" : "fastMathEnabled=false",
+      "guSourceSha256" : "719cbdb9d4df65251be080ee6a6cb75ccbb25871f393e8a67dfe78f7aea01788",
+      "inputs" : [
+        {
+          "actWorstRel" : 1.5559311450363822e-07,
+          "dnGpuMicros" : 454.1249945759773,
+          "dnIsolatedWorstRel" : 1.1284908943793979e-07,
+          "dnWorstRel" : 1.2234902679875148e-07,
+          "guGpuMicros" : 587.0833992958069,
+          "input" : "seeded-uniform",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3185185043784742e-07,
+          "dnGpuMicros" : 1628.7919133901596,
+          "dnIsolatedWorstRel" : 6.668734461813257e-08,
+          "dnWorstRel" : 9.427082004740507e-08,
+          "guGpuMicros" : 505.5000074207783,
+          "input" : "signed-alternating",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 8.237151824345978e-11,
+          "dnGpuMicros" : 548.6253648996353,
+          "dnIsolatedWorstRel" : 2.1800486069145641e-10,
+          "dnWorstRel" : 2.9065160868368967e-10,
+          "guGpuMicros" : 507.500022649765,
+          "input" : "one-hot",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        },
+        {
+          "actWorstRel" : 1.3011862509290932e-07,
+          "dnGpuMicros" : 382.500234991312,
+          "dnIsolatedWorstRel" : 6.196993471993406e-08,
+          "dnWorstRel" : 1.2939403701543607e-07,
+          "guGpuMicros" : 499.9167285859585,
+          "input" : "captured-layer0-pre_ffw_norm_2",
+          "passed" : true,
+          "repeatBitIdentical" : true
+        }
+      ],
+      "schedule" : {
+        "batch" : 8,
+        "dn" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "down",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        },
+        "gu" : {
+          "accumulation" : "neumaierPrecise",
+          "family" : "fusedGateUpAct",
+          "lanes" : 32,
+          "rowsPerGroup" : 8
+        }
+      }
+    }
+  ],
+  "toolchain" : "swift(Apple Swift version 6.2.1 (swiftlang-6.2.1.4.8 clang-1700.4.4.1)) os(Version 26.2 (Build 25C56)) schema(1) msl(6a37cbf848e04e2f4d8a95e92cb24a720e666970d5761f9a1fa0964ec1a5b681)",
+  "winnerSelected" : false
+}

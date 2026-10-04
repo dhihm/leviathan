@@ -904,6 +904,20 @@ public final class Gemma4Runner {
     public var layerProbe: ((_ stage: String, _ layer: Int, _ position: Int,
                              _ x: [Float]) throws -> Void)?
 
+    /// Opt-in routed-MoE INPUT probe (OFF by default: nil). DIAGNOSTIC
+    /// ONLY, served by the direct reference forward (forwardLayer) and
+    /// nowhere else: when set, it receives (layer, position, CPU copy of
+    /// bufH) right after the actual pre_ffw_norm_2 RMSNorm and before the
+    /// routed expert loop — the exact activation every routed GU matvec
+    /// consumes. It never gates, mutates, or alters any computation, and it
+    /// is separate from `layerProbe`, whose three-stage contract is
+    /// unchanged. With nil the forward adds no readback; when set, the
+    /// readback flushes any open deferred segment, so a probe-active run
+    /// must never be used for timing. The compiled SSA executor does not
+    /// invoke it.
+    public var moeInputProbe: ((_ layer: Int, _ position: Int,
+                                _ x: [Float]) throws -> Void)?
+
     /// Bounded opt-in axis selection for the teacher-forced layerwise
     /// error diagnosis: sets EXACTLY the flags the forge executor sets
     /// per candidate (executeToken), but persists them across plain
@@ -3798,6 +3812,11 @@ public final class Gemma4Runner {
         // Routed experts on the residual stream normed by pre_ffw_norm_2.
         try rmsnorm(x: bufX, y: bufH, n: hidden, vectors: 1,
                     weightTensor: prefix + "pre_ffw_norm_2.weight")
+        // Default-off routed-MoE input probe (diagnostic only; see
+        // moeInputProbe). nil adds no readback.
+        if let probe = moeInputProbe {
+            try probe(layer, position, try read(bufH, hidden))
+        }
         guard let gateUp = ref[prefix + "ffn_gate_up_exps.weight"],
               let down = ref[prefix + "ffn_down_exps.weight"] else {
             throw Gemma4Error.badTensorGeometry("missing expert weights layer \(layer)")
