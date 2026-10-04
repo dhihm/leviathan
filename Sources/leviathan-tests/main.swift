@@ -5033,6 +5033,101 @@ do {
     failed += 1; print("FAIL: moe region tests — threw \(error)")
 }
 
+// MARK: - GemmaForge.fileDigest
+
+do {
+    let fileManager = FileManager.default
+    let temporaryRoot = NSTemporaryDirectory()
+        .appending("gemmaforge-filedigest-\(UUID().uuidString)")
+    try fileManager.createDirectory(atPath: temporaryRoot, withIntermediateDirectories: true)
+    defer { try? fileManager.removeItem(atPath: temporaryRoot) }
+
+    func fixturePath(_ name: String) -> String {
+        temporaryRoot + "/" + name
+    }
+
+    func fixtureURL(_ name: String) -> URL {
+        URL(fileURLWithPath: fixturePath(name))
+    }
+
+    func writeFixture(_ data: Data, _ name: String) -> URL? {
+        do {
+            let url = fixtureURL(name)
+            try data.write(to: url)
+            return url
+        } catch {
+            failed += 1
+            print("FAIL: unexpected error while writing fixture \(name): \(error)")
+            return nil
+        }
+    }
+
+    func digestForFile(at url: URL) -> String? {
+        do {
+            return try GemmaForge.fileDigest(url)
+        } catch {
+            failed += 1
+            print("FAIL: unexpected error while digesting \(url.path): \(error)")
+            return nil
+        }
+    }
+
+    // Known digest: empty input.
+    if let url = writeFixture(Data("".utf8), "empty.bin"),
+       let digest = digestForFile(at: url) {
+        checkEqual(
+            "fileDigest of empty file matches known SHA256",
+            digest,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        )
+    }
+
+    // Known digest: \"abc\" input.
+    if let url = writeFixture(Data("abc".utf8), "abc.bin"),
+       let digest = digestForFile(at: url) {
+        checkEqual(
+            "fileDigest of abc file matches known SHA256",
+            digest,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        )
+    }
+
+    // Repeated calls on the same file must produce the same digest.
+    if let url = writeFixture(Data("determinism".utf8), "repeat.bin"),
+       let first = digestForFile(at: url),
+       let second = digestForFile(at: url) {
+        checkEqual(
+            "fileDigest repeated calls are deterministic",
+            second,
+            first
+        )
+    }
+
+    // A missing file must throw instead of returning a digest.
+    do {
+        _ = try GemmaForge.fileDigest(fixtureURL("missing.bin"))
+        check("fileDigest throws for missing file", false)
+    } catch {
+        check("fileDigest throws for missing file", true)
+    }
+
+    // Patterned fixture larger than 9 MiB with a non-multiple-of-chunk length.
+    let patternLength = 9 * 1024 * 1024 + 12345
+    let patternFixture = Data((0..<patternLength).map { UInt8($0 % 256) })
+    let expectedPatternDigest = SHA256.hex(SHA256.hash(Array(patternFixture)))
+    if let url = writeFixture(patternFixture, "pattern.bin"),
+       let digest = digestForFile(at: url) {
+        checkEqual(
+            "fileDigest of 9 MiB plus 12345 patterned file matches LeviathanCore SHA256",
+            digest,
+            expectedPatternDigest
+        )
+    }
+} catch {
+    failed += 1
+    print("FAIL: unexpected setup error for GemmaForge.fileDigest tests: \(error)")
+}
+
 // MARK: - Summary
 
 print("\(passed) passed, \(failed) failed")

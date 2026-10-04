@@ -270,16 +270,22 @@ public enum GemmaForge {
     }
 
     /// Streaming SHA-256 of a large file (the 14.4 GB GGUF), read in
-    /// bounded chunks.
+    /// bounded chunks. Each chunk is hashed inside its own autorelease
+    /// pool so Foundation's autoreleased read buffers are released every
+    /// iteration and memory stays bounded regardless of file size.
     public static func fileDigest(_ url: URL) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var hasher = CryptoKit.SHA256()
         let chunk = 1 << 23
-        while true {
-            let data = try handle.read(upToCount: chunk)
-            guard let data, !data.isEmpty else { break }
-            hasher.update(data: data)
+        var done = false
+        while !done {
+            done = try autoreleasepool {
+                let data = try handle.read(upToCount: chunk)
+                guard let data, !data.isEmpty else { return true }
+                hasher.update(data: data)
+                return false
+            }
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }

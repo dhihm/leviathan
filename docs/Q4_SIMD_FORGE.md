@@ -41,6 +41,16 @@ swiftc -O -I .build/release/Modules \
 
 The standalone report refuses to overwrite an existing output. The full-model command performs component screening, full numerical/greedy replay, paired timing, selection, artifact reload and verified execution. A successful component report does not bypass any model gate.
 
-Full-model qualification is pending at the time of this initial local integration record; no full-model SIMD gain is claimed. The goal of closing the Ollama gap remains open.
+## Full-model resource investigation
+
+The initial three-fixture resident qualification was stopped after system free memory reached 6 percent; the cache-mode follow-up reached its 20-minute bound without an artifact. Neither attempt proves a numerical failure or a decode gain. Their raw evidence is preserved locally.
+
+An independent bounded probe reproduced an actual resource defect in `GemmaForge.fileDigest`: three full reads of an original 128 MiB zero fixture retained physical footprints of 136,299,712, 270,943,808 and 405,489,472 bytes. A caller-level pool stopped cumulative growth but still retained approximately one fixture's worth of memory. The 8 MiB read size alone did not bound Foundation temporary lifetimes in this command-line process.
+
+The externally authored fix drains an autorelease pool after each chunk is hashed. The same unpooled-caller probe now retains 10,208,320, 10,273,856 and 10,273,856 bytes, with the identical independently verified SHA-256. Three complete reads of the existing 14,439,363,584-byte GGUF produced its unchanged digest `3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d`; measured peak physical footprint was 13,583,680 bytes and combined wall time was 26.48 seconds. This validates bounded hashing memory, not inference throughput. [Apple's autorelease pool documentation](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/MemoryMgmt/Articles/mmAutoreleasePools.html) describes controlling temporary lifetimes in command-line loops.
+
+All content bytes, identity checks, errors and file closure remain part of validation. Five new digest checks cover known empty/abc hashes, repeated determinism, missing-file errors and a patterned nonmultiple chunk boundary against an independent implementation. The complete Swift suite passes 815 checks with zero failures. Exact external-author patch replay was verified for the runtime fix and tests.
+
+A fresh resident, raw-Hello, 32-step qualification is running with the unchanged full-vocabulary logit, greedy-token, dispatch, paired-timing and persistence gates. This narrower one-fixture experiment does not establish cross-language quality. Full-model SIMD qualification remains pending; no end-to-end gain is claimed. The goal of closing the Ollama gap remains open. [Bounded hashing evidence](evidence/q4-simd-forge/hash-memory.json) records the independent measurements.
 
 [Component round evidence](evidence/q4-simd-forge/component-rounds.json) and [fresh Ollama counter evidence](evidence/q4-simd-forge/ollama-current.json) contain no weights, binaries, provider credentials or external-author conversation identifiers.
