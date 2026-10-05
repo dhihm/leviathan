@@ -1,0 +1,75 @@
+{
+  "verdict": "ACCEPT WITH TWO REQUIRED PROTOCOL PATCHES. The fixed protocol is implemented as declared: same binary and runner for both arms, v1 E4R32 install, Q4 width 32, declared modern candidate, exactly 6 warmups and 42 timed runs in the declared ABBA order, timers around exactly one executeGraph or executeGraphContinue call, no retry, reseed, trimming or exclusion, spread 5 percent and gain 2 percent fixed. Performance-only runs only after validating a qualification report produced by this executable's own digest and by the hashed --qualified-executable, against the cached model SHA, fresh prerequisite receipts, 4170 checked and exact frames, 4170 identical replay frames, the 16 refusal names, and pinned 1349/37 OFF and 1379/7 ON totals; realE4GateComplete comes only from that receipt and gainQualified is recomputed from the raw runs. installable and productionPerformanceClaim stay false and nothing promotes a default. Two CLI paths print NOT_ENDED for a terminal but unrestored runner, which misuses the token that the supervisor reads as in-flight; patched below. Everything else is build verification, not a source change. No math, guards, counts, thresholds, seeds or receipt contracts are altered.",
+  "findings": [
+    {
+      "area": "same-binary qualification binding",
+      "result": "PASS",
+      "detail": "validateQualification requires the hashed qualified executable to equal this executable's digest, the report's executableDigest to equal it, the report's model SHA to equal the cached record, the embedded prerequisite receipt to equal the freshly validated one, the qualified selector source to equal this build's emitted source, finalize() recomputation to yield qualificationPassed and realE4GateComplete, 4170 expected, checked and exact frames, a COMPLETED terminal replay with 4170 identical frames and 0 mismatches, all 16 refusal names passed, restored runner, bound identity, and per-fixture pinned totals, device counters, CPU selections and frame-exact tokens. A report from the earlier standalone gate tool carries a different executable digest and is refused, so no old report can be retagged. The comparison between Gemma4Runner.executableDigest() and GemmaForge.fileDigest(ownBinary) must be the same SHA-256 of the same file; if they differ the tool exits 2 before READY (fail-closed, verify once)."
+    },
+    {
+      "area": "run checks and counters",
+      "result": "PASS",
+      "detail": "Every run, warmups included, must produce the 32 frozen IDs with 31 previous-actual-argmax continuations, full-vocabulary finite outputs, exact derived counters, OFF totals equal to the qualified OFF totals or ON totals equal to OFF + 30 kernels and OFF - 30 command buffers per forward, pinned 1349/37 or 1379/7 per continuation, device counters 30 CPU selections per forward (OFF) or 0 CPU, 30 GPU selections, 30 record chains and every token accepted (ON), the qualified selector source in ON, an intact install and a quiescent runner. ON runs use captureSnapshots false so no CPU FP64 recompute or replay sits inside a timer; the per-token flag verification does and is declared."
+    },
+    {
+      "area": "statistics",
+      "result": "PASS",
+      "detail": "Run TPOT is the median of 31 continuation walls; arm TPOT the median of 7 runs; spread (max - min) / median per arm; gain (OFF - ON) / OFF; status priority runCheckFailed, unstable, noGain, criteriaMet, with fixture order fixed. Boundary cases verified by arithmetic: spread exactly 0.05 stable, 0.06 unstable, gain exactly 0.02 meets, 0.01 does not, slower is noGain; a failed warmup, a missing run, a reordered run or runs of another fixture all fail the fixture. Command-buffer intervals are recorded but never compared or used."
+    },
+    {
+      "area": "protocol flaw",
+      "result": "BLOCKER, fixed by patches 1 and 2",
+      "detail": "runQualification and runPerformance print NOT_ENDED whenever END is withheld, including the terminal case where the runner is quiescent but not restored pristine. NOT_ENDED is the token that tells the supervisor GPU work may still be in flight; a terminal-but-unrestored run must withhold END without claiming non-termination. The patches print NOT_ENDED only when the run is not terminal (replay not terminal or runner not quiescent) and keep the exit codes unchanged."
+    },
+    {
+      "area": "build verification (no source change)",
+      "result": "VERIFY",
+      "detail": "Names used from the phase-53 gate and not visible here: RouterOverlapModelGate.candidateFlags, median, gain(baseline:candidate:) accepting optionals, runTPOT, micros, now, totalsRelation, installFailures, bindingFailures, preconditions, notRun; RouterOverlapGateIdentity Equatable (the performance run compares the live identity with the qualified one; any run-specific field would abort every performance run, fail-closed); RouterOverlapGateQualifiedArm.totals (the performance code reads qualified OFF totals from the fixture record); GemmaPreparedExecution.prepareRouterDeviceRouting qualifier as resolved in the gate; RouterOverlapGateTotals Codable keys used by the pure fixtures."
+    },
+    {
+      "area": "pure tests",
+      "result": "PASS, 62 checks",
+      "detail": "Counts: protocol 10, outcomes 14, status 11, counters 9, options 7, qualification 7, contract 4. Expected final line: passed 62 failed 0. Default-valued non-optional properties make an empty JSON object undecodable, so the junk-report refusal holds; the tampered report with passed labels but no fixtures, identity, refusals or replay is refused by recomputation."
+    },
+    {
+      "area": "privacy and bounds",
+      "result": "PASS",
+      "detail": "Reports carry digests, counters, wall times, IDs, booleans and strings only; no scales, coefficient bits or weights; model SHA from the cache record; 16 MiB exclusive report never trimmed; GO before device and mapping; receipts validated before READY."
+    }
+  ],
+  "requiredPatches": [
+    {
+      "file": "tools/router_device_routing_benchmark/main.swift",
+      "old": "    guard terminal, report.restoredPristine else {\n        say(RouterDeviceRoutingPerformance.notEndedToken)\n        complain(\"runner not quiescent, replay not terminal or runner not restored; END withheld\")\n        writeReport(encoded, to: reportURL)\n        return terminal ? 1 : 5\n    }\n",
+      "new": "    guard terminal, report.restoredPristine else {\n        if !terminal { say(RouterDeviceRoutingPerformance.notEndedToken) }\n        complain(\"runner not quiescent, replay not terminal or runner not restored; END withheld\")\n        writeReport(encoded, to: reportURL)\n        return terminal ? 1 : 5\n    }\n"
+    },
+    {
+      "file": "tools/router_device_routing_benchmark/main.swift",
+      "old": "    guard quiescent, report.restoredPristine else {\n        say(RouterDeviceRoutingPerformance.notEndedToken)\n        complain(\"runner not quiescent or not restored; END withheld\")\n        writeReport(encoded, to: reportURL)\n        return quiescent ? 1 : 5\n    }\n",
+      "new": "    guard quiescent, report.restoredPristine else {\n        if !quiescent { say(RouterDeviceRoutingPerformance.notEndedToken) }\n        complain(\"runner not quiescent or not restored; END withheld\")\n        writeReport(encoded, to: reportURL)\n        return quiescent ? 1 : 5\n    }\n"
+    }
+  ],
+  "probeCompilePatches": [
+    {
+      "file": "main.swift",
+      "old": "    var cpu: MTLTimestamp = 0\n    var gpu: MTLTimestamp = 0\n    device.sampleTimestamps(&cpu, gpuTimestamp: &gpu)\n    return TimestampPair(cpuRaw: UInt64(cpu), gpuRaw: UInt64(gpu))\n",
+      "new": "    let (cpu, gpu) = device.sampleTimestamps()\n    return TimestampPair(cpuRaw: UInt64(cpu), gpuRaw: UInt64(gpu))\n"
+    },
+    {
+      "file": "main.swift",
+      "old": "        let attachment = pass.sampleBufferAttachments[0]\n        attachment.sampleBuffer = sampleBuffer\n        attachment.startOfEncoderSampleIndex = 2 * e\n        attachment.endOfEncoderSampleIndex = 2 * e + 1\n        guard let enc = cb.makeComputeCommandEncoder(descriptor: pass) else {\n",
+      "new": "        guard let attachment = pass.sampleBufferAttachments[0] else {\n            b.status = \"aborted\"\n            b.error = \"compute pass sample attachment 0 unavailable (not committed)\"\n            say(endToken)\n            let w = writeReport(b.report(), to: reportPath)\n            return w == 0 ? 1 : w\n        }\n        attachment.sampleBuffer = sampleBuffer\n        attachment.startOfEncoderSampleIndex = 2 * e\n        attachment.endOfEncoderSampleIndex = 2 * e + 1\n        guard let enc = cb.makeComputeCommandEncoder(descriptor: pass) else {\n"
+    },
+    {
+      "file": "main.swift",
+      "old": "    if completed, let data = sampleBuffer.resolveCounterRange(NSRange(location: 0, length: sampleCount)) {\n",
+      "new": "    if completed, let data = sampleBuffer.resolveCounterRange(0..<sampleCount) {\n"
+    }
+  ],
+  "limitations": [
+    "Text-only review; nothing was compiled or executed. Identifiers outside the supplied files are listed for build verification and fail loudly if wrong.",
+    "The performance result, if reached, is a relative internal prototype criterion under the machine's normal concurrency; it is not GPU busy time, not a production claim and not an installation decision, and external resource eligibility remains the supervisor's receipt.",
+    "The probe patches address only the three reported diagnostics; tuple labels of sampleTimestamps are avoided by positional destructuring, and no timestamp semantics or unit conversion is introduced.",
+    "A decoded-then-re-encoded performance report may lose gainQualified through Double round-trip inequality; this is conservative and not a tool path."
+  ]
+}

@@ -1,0 +1,8 @@
+[0/1] Planning build
+Building for production...
+[0/23] Write sources
+[1/23] Write swift-version--1AB21518FC5DEDBE.txt
+[3/4] Compiling router_device_routing_benchmark main.swift
+[3/5] Write Objects.LinkFileList
+[4/5] Linking router-device-routing-benchmark
+Build complete! (2.16s)

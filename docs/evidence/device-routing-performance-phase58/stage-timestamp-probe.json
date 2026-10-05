@@ -1,0 +1,76 @@
+{
+  "actualTimestampSamplingPerformed" : true,
+  "checks" : {
+    "commandBufferCompleted" : true,
+    "encodersOrdered" : true,
+    "guardsIntact" : true,
+    "noErrorValues" : true,
+    "noZeroSamples" : true,
+    "output1BitIdentical" : true,
+    "output2BitIdentical" : true,
+    "pairsMonotonic" : true,
+    "resolvedSizeExact" : true
+  },
+  "commandBufferIntervalSeconds" : 0.00029900018125772476,
+  "commandBufferStatus" : "4",
+  "commandBuffersCreated" : 1,
+  "deviceName" : "Apple M1 Max",
+  "dispatches" : 2,
+  "elementCount" : 4096,
+  "encoderIntervalsNotBusy" : true,
+  "encoders" : [
+    {
+      "encoder" : 0,
+      "endIndex" : 1,
+      "endRaw" : 3723659335082583,
+      "intervalRawTicks" : 14125,
+      "startIndex" : 0,
+      "startRaw" : 3723659335068458
+    },
+    {
+      "encoder" : 1,
+      "endIndex" : 3,
+      "endRaw" : 3723659335367458,
+      "intervalRawTicks" : 9875,
+      "startIndex" : 2,
+      "startRaw" : 3723659335357583
+    }
+  ],
+  "expectedResolvedBytes" : 32,
+  "gainQualified" : false,
+  "hardwareQueryOnly" : false,
+  "installable" : false,
+  "kind" : "stage-timestamp-probe-v1",
+  "notes" : [
+    "One own command buffer with two serial single-dispatch compute encoders of an original x + 1 kernel on guarded buffers.",
+    "Encoder intervals are start\/end stage samples in raw ticks: not busy, idle or recoverable time.",
+    "commandBufferIntervalSeconds is gpuEndTime minus gpuStartTime: a command-buffer interval, not busy time.",
+    "stageSamplesWithinDeviceGpuWindow is informational only and is not a pass criterion.",
+    "Not a performance, gain or installability result; no model or weight data involved."
+  ],
+  "productionPerformanceClaim" : false,
+  "resolvedBytes" : 32,
+  "sampleBufferCreated" : true,
+  "sampleCount" : 4,
+  "sampleTimestampsAfterCompletion" : {
+    "cpuRaw" : 3723659335447625,
+    "gpuRaw" : 3723659335447625
+  },
+  "sampleTimestampsBeforeCommit" : {
+    "cpuRaw" : 3723659334265166,
+    "gpuRaw" : 3723659334265166
+  },
+  "samplesRaw" : [
+    3723659335068458,
+    3723659335082583,
+    3723659335357583,
+    3723659335367458
+  ],
+  "schema" : 1,
+  "stageSamplesWithinDeviceGpuWindow" : true,
+  "status" : "sampledChecksPassed",
+  "supportsAtDispatchBoundary" : false,
+  "supportsAtStageBoundary" : true,
+  "timestampCounterSetFound" : true,
+  "timestampUnits" : "raw ticks as resolved; the installed SDK declarations state no unit; nothing converted"
+}

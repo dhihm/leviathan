@@ -80,6 +80,16 @@ let package = Package(
             path: "tools/router_device_routing_gate_pure_tests"
         ),
         .executableTarget(
+            name: "router-device-routing-benchmark",
+            dependencies: ["LeviathanCore"],
+            path: "tools/router_device_routing_benchmark"
+        ),
+        .executableTarget(
+            name: "router-device-routing-benchmark-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/router_device_routing_benchmark_pure_tests"
+        ),
+        .executableTarget(
             name: "leviathan-forge-helper",
             dependencies: ["LeviathanCore"],
             path: "Sources/leviathan-forge-helper"

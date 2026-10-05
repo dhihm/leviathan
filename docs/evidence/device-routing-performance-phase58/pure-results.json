@@ -1,0 +1,45 @@
+[
+  {
+    "name": "router-device-routing-benchmark-pure-tests",
+    "exit": 0,
+    "elapsedSeconds": 0.6153306248597801,
+    "tail": [
+      "router-device-routing-benchmark-pure-tests passed 62 failed 0"
+    ]
+  },
+  {
+    "name": "router-device-routing-pure-tests",
+    "exit": 0,
+    "elapsedSeconds": 0.4913460835814476,
+    "tail": [
+      "router-device-routing-pure-tests passed 42 failed 0"
+    ]
+  },
+  {
+    "name": "router-device-routing-gate-pure-tests",
+    "exit": 0,
+    "elapsedSeconds": 0.48386408295482397,
+    "tail": [
+      "router-device-routing-gate-pure-tests passed 33 failed 0"
+    ]
+  },
+  {
+    "name": "router-selection-pure-tests",
+    "exit": 0,
+    "elapsedSeconds": 0.5468955831602216,
+    "tail": [
+      "error sample: coefficients 5208 max relative 1.2596530774726912e-14 log2 -46.1739668743213 budget/4 5.684341886080802e-14 provesUniversalBound false",
+      "round-boundary score bits 0xbe88c178",
+      "near-tie: CPU FP64 order starts with expert 0, Float d order starts with expert 1 (exp collapse observed)",
+      "router-selection-pure-tests passed 126 failed 0"
+    ]
+  },
+  {
+    "name": "router-route-replay-pure-tests",
+    "exit": 0,
+    "elapsedSeconds": 0.45813566632568836,
+    "tail": [
+      "router-route-replay-pure-tests passed 64 failed 0"
+    ]
+  }
+]
