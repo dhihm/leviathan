@@ -704,6 +704,9 @@ public final class Gemma4Runner {
     /// withRouterDeviceRoutingScope entry and inactive outside the scope. The SSA executor consults it only
     /// for a device-routing preparation.
     internal var deviceRoutingState: RouterDeviceRoutingState? = nil
+    /// Default-off phase-59 kernel stage attribution state (KernelStageAttribution.swift): nil unless a
+    /// withKernelStageSampling scope is running; every runner hook only checks this optional.
+    internal var kernelStageProfiler: KernelStageProfilerState? = nil
     /// Incumbent CPU router_topk selections performed by the SSA executor: one integer increment per
     /// selection (no clock, no syscall), so device routing can prove zero CPU selections in scope.
     internal var routerCPUSelectionCount = 0
@@ -2546,6 +2549,9 @@ public final class Gemma4Runner {
         }
         let flushedInterval = (cmd.gpuEndTime - cmd.gpuStartTime) * 1e6
         gpuMicrosTotal += flushedInterval
+        if let profiler = kernelStageProfiler, profiler.active {
+            kernelStageSegmentCompleted(profiler, cmd: cmd)
+        }
         if breakdownInstrumentation { brFlushIntervalMicros += flushedInterval }
         expertCache?.noteSegmentFlushed()
     }
@@ -2556,6 +2562,9 @@ public final class Gemma4Runner {
     /// commit kernels from a failed partial run. The thrown error is the
     /// caller's to preserve.
     internal func discardOpenSegment() {
+        if let profiler = kernelStageProfiler, profiler.active {
+            kernelStageNoteDiscard(profiler)
+        }
         openEnc?.endEncoding()
         openEnc = nil
         openCmd = nil
@@ -2586,6 +2595,15 @@ public final class Gemma4Runner {
             return
         }
         try flushOpenSegment()
+        if let profiler = kernelStageProfiler, profiler.active {
+            // Stage sampling (diagnostic scope only): the same new command buffer, opened with its first
+            // sampled serial encoder instead of a plain one.
+            guard let cmd = queue.makeCommandBuffer() else { throw Gemma4Error.metalUnavailable }
+            let enc = try kernelStageOpenSegmentEncoder(profiler, cmd: cmd)
+            openCmd = cmd
+            openEnc = enc
+            return
+        }
         guard let cmd = queue.makeCommandBuffer(),
               let enc = cmd.makeComputeCommandEncoder() else {
             throw Gemma4Error.metalUnavailable
@@ -2642,6 +2660,9 @@ public final class Gemma4Runner {
         // Overflow-safe ceil(grid/width): grid is already bounded by
         // UInt32.max and width >= 1, so this cannot overflow.
         let groups = (grid - 1) / width + 1
+        if let profiler = kernelStageProfiler, profiler.active {
+            try kernelStagePrepareDispatch(profiler, kernel: name)
+        }
         if let deferredEnc = openEnc {
             let ctDeferred = commandTimelineEnabled
             let ctEncodeT0 = ctDeferred ? Gemma4CommandTimeline.hostSeconds() : 0
@@ -2748,6 +2769,9 @@ public final class Gemma4Runner {
         }
         let width = threads
         if openEnc == nil, autoSegment { try beginSegment() }
+        if let profiler = kernelStageProfiler, profiler.active {
+            try kernelStagePrepareDispatch(profiler, kernel: name)
+        }
         if let deferredEnc = openEnc {
             let ctDeferred = commandTimelineEnabled
             let ctEncodeT0 = ctDeferred ? Gemma4CommandTimeline.hostSeconds() : 0

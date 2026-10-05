@@ -1,0 +1,30 @@
+[
+  {
+    "name": "kernel-stage-attribution-pure-tests",
+    "exit": 0,
+    "tail": [
+      "kernel-stage-attribution-pure-tests passed 44 failed 0"
+    ]
+  },
+  {
+    "name": "router-device-routing-pure-tests",
+    "exit": 0,
+    "tail": [
+      "router-device-routing-pure-tests passed 42 failed 0"
+    ]
+  },
+  {
+    "name": "router-device-routing-gate-pure-tests",
+    "exit": 0,
+    "tail": [
+      "router-device-routing-gate-pure-tests passed 33 failed 0"
+    ]
+  },
+  {
+    "name": "router-device-routing-benchmark-pure-tests",
+    "exit": 0,
+    "tail": [
+      "router-device-routing-benchmark-pure-tests passed 62 failed 0"
+    ]
+  }
+]

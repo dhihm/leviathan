@@ -1,0 +1,6 @@
+{
+  "exit": 1,
+  "stdout": "BENCHMARK_READY\n",
+  "stderr": "kernel-stage-attribution: expected exactly GO on stdin; nothing loaded, no device created\n",
+  "reportExists": false
+}

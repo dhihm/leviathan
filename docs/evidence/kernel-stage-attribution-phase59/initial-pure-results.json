@@ -1,0 +1,72 @@
+[
+  {
+    "name": "kernel-stage-attribution-pure-tests",
+    "exit": 0,
+    "elapsedSeconds": 0.5028116670437157,
+    "tail": [
+      "kernel-stage-attribution-pure-tests passed 44 failed 0"
+    ]
+  },
+  {
+    "name": "router-device-routing-pure-tests",
+    "exit": 0,
+    "elapsedSeconds": 0.4905310831964016,
+    "tail": [
+      "router-device-routing-pure-tests passed 42 failed 0"
+    ]
+  },
+  {
+    "name": "router-device-routing-gate-pure-tests",
+    "exit": 0,
+    "elapsedSeconds": 0.4814656670205295,
+    "tail": [
+      "router-device-routing-gate-pure-tests passed 33 failed 0"
+    ]
+  },
+  {
+    "name": "router-device-routing-benchmark-pure-tests",
+    "exit": 0,
+    "elapsedSeconds": 0.4690754162147641,
+    "tail": [
+      "router-device-routing-benchmark-pure-tests passed 62 failed 0"
+    ]
+  },
+  {
+    "name": "router-selection-pure-tests",
+    "exit": 0,
+    "elapsedSeconds": 0.4943470829166472,
+    "tail": [
+      "round-boundary score bits 0xbe88c178",
+      "near-tie: CPU FP64 order starts with expert 0, Float d order starts with expert 1 (exp collapse observed)",
+      "router-selection-pure-tests passed 126 failed 0"
+    ]
+  },
+  {
+    "name": "router-route-replay-pure-tests",
+    "exit": 0,
+    "elapsedSeconds": 0.46048029232770205,
+    "tail": [
+      "router-route-replay-pure-tests passed 64 failed 0"
+    ]
+  },
+  {
+    "name": "owned-process-diagnostics-pure-tests",
+    "exit": 0,
+    "elapsedSeconds": 0.4919001250527799,
+    "tail": [
+      "PASS overlap scope: the clean control snapshot qualifies at entry and per token",
+      "PASS overlap scope: breakdown instrumentation is still refused at entry and per token",
+      "owned-process-diagnostics-pure-tests: 66 passed, 0 failed"
+    ]
+  },
+  {
+    "name": "router-overlap-model-gate-pure-tests",
+    "exit": 0,
+    "elapsedSeconds": 0.6027903747744858,
+    "tail": [
+      "PASS coverage: a report written before the field existed still decodes, with nil coverage",
+      "PASS coverage: re-encoding that old report omits the key and keeps gainQualified false",
+      "router-overlap-model-gate-pure-tests: 177 passed, 0 failed"
+    ]
+  }
+]

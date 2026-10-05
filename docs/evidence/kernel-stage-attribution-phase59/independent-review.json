@@ -1,0 +1,94 @@
+{
+  "verdict": "ACCEPT WITH REQUIRED PATCHES. The default path is unchanged: every runner hook is one optional check when inactive and the dispatch arguments, order, segment opening, commits and waits are untouched. While sampling, the design is sound: one serial sampled encoder per dispatch inside the runner's own command buffers, capacity 2 x 1349 = 2698 within the 4096 bound, resolve only after every sampled command buffer completed, two byte-identical resolves, counter-error, zero, end-before-start, overflow and staleness checks, one-dispatch-per-encoder and encoder-equals-kernel cross-checks against the runner's own counters, pinned 1349/37, 32 frozen IDs, full-finite, per-element 1e-4 against a fresh reference and plain-versus-sampled Float bit identity. Three flaws need fixing before the run: the CLI prints NOT_ENDED for a terminal but unrestored runner, the refusal probes do not verify which guard refused, and device-scope entry from inside an active sampling scope is not refused at entry. Nothing invented is proven: raw ticks, no units, no busy time, no gain, no install.",
+  "findings": [
+    {
+      "area": "inactive hooks and dispatch integrity",
+      "result": "PASS",
+      "detail": "beginSegment, dispatch, dispatchPipeline, flushOpenSegment and discardOpenSegment each add one optional check when no scope is active; no allocation, clock, reorder or extra wait. Active: the hook runs after the lazy beginSegment and before any encoding, and the deferred branch re-reads openEnc, so a replaced sampled encoder receives the same pipeline, bindings, width and group count. dispatchExplicit routes through dispatchPipeline, so generated MoE GU/ACT/DN, par64, cooperative RMS/Q6, statistics, residency and selector kernels are all covered. If kernelStageEncoder throws after endEncoding, openEnc is nil with openCmd set; flushOpenSegment then returns early, but the error aborts the run and both the executor failure path and kernelStageExit discard the buffer, so nothing is committed from that state."
+    },
+    {
+      "area": "capacity, lifetime, resolve",
+      "result": "PASS with one honest-failure note",
+      "detail": "Capacity is exactly two samples per pinned kernel, so any sampled encoder that receives no dispatch (for example a segment opened and flushed by a readback with no kernel between) consumes two samples and makes the token overflow or report an encoder without a dispatch; the run then fails closed and is reported, which is correct. The buffer is reused across tokens only after completion, two identical resolves and the staleness check against the previous token's last end tick. A 2698-sample buffer the device refuses is reported as unsupported with the Metal error and exit 2; the probe proved only 4 samples."
+    },
+    {
+      "area": "truthful attribution of refusals",
+      "result": "BLOCKER, fixed by patch 2",
+      "detail": "The probe helper records any thrown error as a refusal. Probe 7 executes a continuation at position 0 with a non-batching candidate; if the executor refuses it for another reason before the first dispatch, the probe would pass without the sampling hook ever firing. The patch requires the recorded error to contain the sampling refusal text, so every probe attributes its refusal to the sampling guard or fails honestly. Probes 1 and 2 still pass if the outer scope wraps the inner error only when the wrapper preserves the description; otherwise they fail honestly rather than pass falsely."
+    },
+    {
+      "area": "device-scope entry from inside a sampling scope",
+      "result": "BLOCKER, fixed by patch 3",
+      "detail": "The author is correct that only the dispatch hook forbids work: device-scope entry itself does no GPU dispatch (table proof, scale compare, selector compile, buffer allocation), and the first dispatch inside is refused before encoding, poisoning the sample buffer. That is safe but attributes the failure to sampling rather than to the entry. The additive check in routerDeviceRoutingEntryFailures refuses entry while a sampling scope is active; it never triggers in phase-57 or phase-58 runs and weakens nothing. The existing instrumentationOff predicate must be the one accepted by phase 57 with the v1 E4R32 install present, otherwise entry would wrongly refuse the required install."
+    },
+    {
+      "area": "protocol tokens",
+      "result": "BLOCKER, fixed by patch 1",
+      "detail": "main.swift prints NOT_ENDED whenever END is withheld, including the terminal case where the runner is quiescent but not restored pristine. NOT_ENDED must mean non-terminal only; the patch keeps exit codes unchanged."
+    },
+    {
+      "area": "report bound",
+      "result": "PASS",
+      "detail": "Per sampled continuation the report carries 1349 kernel indices, 1349 tick intervals, 37 encoder counts and 37 intervals, about 15 to 20 KB of JSON; 93 continuations are about 1.5 to 2 MB plus per-label statistics and three logit comparisons, well under 16 MiB. The writer refuses anything larger and never trims."
+    },
+    {
+      "area": "pure tests",
+      "result": "PASS, 44 checks",
+      "detail": "Counts: tables 8, cross-check 3, analyze 9, aggregate 5, options 6, constants 7, contract 2, status 4. Expected final line: passed 44 failed 0. Arithmetic verified: intervals [10, 5] sum 15 span 20, overlap counted not hidden, shares 4/6 and 2/6, all seventeen families reachable, twelve counter keys distinct."
+    },
+    {
+      "area": "build verification (no source change)",
+      "result": "VERIFY",
+      "detail": "Names outside the supplied files: routerOverlapPendingCount (the visible runner uses routerOverlapState?.ledger.hasPending; conditional patch below), RouterOverlapGateCounters(values:) with a non-optional Int subscript and minus(_:), RouterOverlapGateGreedy with settable s0/s1/s2/totals/ids/outputs/allFinite/error, RouterOverlapModelGate.fullFinite/now/micros/runTPOT/median/totalsRelation/event/phaseCounts/preconditions/qualify, Step fields kernels/buffers/gpuMicros/logits/argmax, OwnProcessInfo.snapshot(label:metalAllocatedBytes:)/delta and its snapshot types, and the counter key names q4Generic, moeGu, moeAct, moeDn, parallelAttentionApplied, rmsCooperativeApplied, rmsStatsComputed, rmsStatsReused, q6CooperativeApplied, routerScaleApplied, residentZeroApplied, routerLaunchApplied. A missing counter key fails the cross-check closed, never passes."
+    },
+    {
+      "area": "classification",
+      "result": "no impossible requirement",
+      "detail": "Stage-boundary sampling with one encoder per dispatch, repeated-resolve identity, strict OFF math identity and the pinned counts are all achievable with the proven APIs. The only structurally sensitive point is the exact-capacity sample buffer, which fails honestly rather than silently."
+    }
+  ],
+  "requiredPatches": [
+    {
+      "file": "tools/kernel_stage_attribution/main.swift",
+      "old": "    guard quiescent, report.restoredPristine else {\n        say(KernelStageAttribution.notEndedToken)\n        complain(\"runner not quiescent, not restored or a sampling scope is active; END withheld\")\n        writeReport(report, to: reportURL)\n        return quiescent ? 1 : 5\n    }\n",
+      "new": "    guard quiescent, report.restoredPristine else {\n        if !quiescent { say(KernelStageAttribution.notEndedToken) }\n        complain(\"runner not quiescent, not restored or a sampling scope is active; END withheld\")\n        writeReport(report, to: reportURL)\n        return quiescent ? 1 : 5\n    }\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/KernelStageAttribution.swift",
+      "old": "        func probe(_ name: String, inside: Bool, _ action: () throws -> Void) {\n",
+      "new": "        func probe(_ name: String, inside: Bool, expect: String = \"stage sampling refused\",\n                   _ action: () throws -> Void) {\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/KernelStageAttribution.swift",
+      "old": "            tests.append(RouterOverlapGateRefusalTest(\n                name: name, insideScope: inside, refused: refused, error: message, noGpuWork: noGpu,\n                stateIntact: intact, passed: refused && noGpu && intact))\n",
+      "new": "            let attributed = message?.contains(expect) ?? false\n            tests.append(RouterOverlapGateRefusalTest(\n                name: name, insideScope: inside, refused: refused, error: message, noGpuWork: noGpu,\n                stateIntact: intact, passed: refused && attributed && noGpu && intact))\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/RouterDeviceRouting.swift",
+      "old": "        if routeCaptureActive { f.append(\"route capture active\") }\n        if !RouterOverlapModelGate.instrumentationOff(self) {\n            f.append(\"probe/trace/breakdown/timeline/diagnostic/generated kernel/open work/expert cache present\")\n        }\n        if !RouterOverlapModelGate.axisFlagsClean(self) { f.append(\"runner axis flags are not at their defaults\") }\n",
+      "new": "        if routeCaptureActive { f.append(\"route capture active\") }\n        if kernelStageProfiler != nil { f.append(\"kernel stage sampling scope active\") }\n        if !RouterOverlapModelGate.instrumentationOff(self) {\n            f.append(\"probe/trace/breakdown/timeline/diagnostic/generated kernel/open work/expert cache present\")\n        }\n        if !RouterOverlapModelGate.axisFlagsClean(self) { f.append(\"runner axis flags are not at their defaults\") }\n"
+    }
+  ],
+  "conditionalCompilePatches": [
+    {
+      "condition": "apply only if the compiler reports that Gemma4Runner has no member routerOverlapPendingCount",
+      "file": "Sources/LeviathanCore/KernelStageAttribution.swift",
+      "old": "        guard !routerOverlapScopeActive, routerOverlapPendingCount == 0, !routerDeviceRoutingActive,\n              !routeCaptureActive else {\n",
+      "new": "        guard !routerOverlapScopeActive, !(routerOverlapState?.ledger.hasPending ?? false), !routerDeviceRoutingActive,\n              !routeCaptureActive else {\n"
+    },
+    {
+      "condition": "apply only if the compiler reports that Gemma4Runner has no member routerOverlapPendingCount",
+      "file": "Sources/LeviathanCore/KernelStageAttribution.swift",
+      "old": "        if routerOverlapScopeActive || routerOverlapPendingCount != 0 {\n",
+      "new": "        if routerOverlapScopeActive || (routerOverlapState?.ledger.hasPending ?? false) {\n"
+    }
+  ],
+  "limitations": [
+    "Text-only review; nothing compiled or run. Identifiers outside the supplied files are listed as build items and fail loudly if wrong.",
+    "Sampled intervals describe the changed one-encoder-per-dispatch topology inside unchanged command buffers; they are raw ticks with no unit, not busy time, utilization, bandwidth or recoverable time, and the sampled-minus-plain wall overhead is not TPOT.",
+    "Prefill is not sampled; only the 31 continuation calls per fixture are.",
+    "The exact-capacity sample buffer fails the token on any sampled encoder without a dispatch; this is reported, never adapted.",
+    "The refusal attribution check depends on outer scopes propagating or preserving the inner error text; a wrapped error fails the probe honestly.",
+    "No performance qualification, gain, installability or production claim; the Ollama goal remains unmet."
+  ]
+}

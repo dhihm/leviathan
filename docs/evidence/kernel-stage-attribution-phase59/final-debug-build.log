@@ -1,0 +1,11 @@
+[0/1] Planning build
+Building for debugging...
+[0/4] Write sources
+[1/4] Write swift-version--1AB21518FC5DEDBE.txt
+[3/7] Compiling LeviathanCore KernelStageAttribution.swift
+[4/7] Emitting module LeviathanCore
+[5/7] Compiling LeviathanCore RouterDeviceRouting.swift
+[5/8] Write Objects.LinkFileList
+[6/8] Linking leviathan-cli
+[7/8] Applying leviathan-cli
+Build of product 'leviathan-cli' complete! (4.88s)

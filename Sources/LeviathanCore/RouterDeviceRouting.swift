@@ -468,6 +468,7 @@ extension Gemma4Runner {
         var f = [String]()
         if routerOverlapScopeActive { f.append("router overlap scope active") }
         if routeCaptureActive { f.append("route capture active") }
+        if kernelStageProfiler != nil { f.append("kernel stage sampling scope active") }
         if !RouterOverlapModelGate.instrumentationOff(self) {
             f.append("probe/trace/breakdown/timeline/diagnostic/generated kernel/open work/expert cache present")
         }

@@ -90,6 +90,16 @@ let package = Package(
             path: "tools/router_device_routing_benchmark_pure_tests"
         ),
         .executableTarget(
+            name: "kernel-stage-attribution",
+            dependencies: ["LeviathanCore"],
+            path: "tools/kernel_stage_attribution"
+        ),
+        .executableTarget(
+            name: "kernel-stage-attribution-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/kernel_stage_attribution_pure_tests"
+        ),
+        .executableTarget(
             name: "leviathan-forge-helper",
             dependencies: ["LeviathanCore"],
             path: "Sources/leviathan-forge-helper"

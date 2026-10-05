@@ -1,0 +1,180 @@
+{
+  "benchmark": {
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/kernel-stage-attribution",
+      "--gguf",
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+      "--region",
+      "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+      "--graph",
+      "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+      "--fixtures",
+      "/tmp/leviathan-forge2-tooling/phase50-simd-model-integration/model-gate-fixtures.json",
+      "--own-process-snapshots",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase59-all-three-kernel-stage-attribution-run/stage-report.json"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "child": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 49406,
+      "ppid": 49400,
+      "start_tvsec": 1791200597,
+      "start_tvusec": 935634,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 49406,
+        "ppid": 49400,
+        "start_tvsec": 1791200597,
+        "start_tvusec": 935634,
+        "uid": 501
+      },
+      "pid": 49406,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 49406,
+    "spawnedUTC": "2026-10-05T11:43:17.940186Z"
+  },
+  "cleanupResult": {
+    "lockReleaseEligible": true,
+    "lockReleaseError": null,
+    "lockReleased": true
+  },
+  "createdUTC": "2026-10-05T11:43:17.934025Z",
+  "kind": "owned_benchmark_supervisor_state",
+  "launchUUID": "92abc53b-f625-419d-8882-10aed1eeba73",
+  "markers": {
+    "endObservedUTC": "2026-10-05T11:46:53.707987Z",
+    "goSentUTC": "2026-10-05T11:43:18.118921Z",
+    "readyObservedUTC": "2026-10-05T11:43:18.078752Z"
+  },
+  "outputDir": "/tmp/leviathan-forge2-tooling/phase59-all-three-kernel-stage-attribution-run",
+  "phase": "finished",
+  "phaseHistory": [
+    {
+      "phase": "created",
+      "utc": "2026-10-05T11:43:17.934053Z"
+    },
+    {
+      "phase": "spawning_wrapper",
+      "utc": "2026-10-05T11:43:17.934765Z"
+    },
+    {
+      "phase": "wrapper_spawned",
+      "utc": "2026-10-05T11:43:17.940230Z"
+    },
+    {
+      "phase": "identity_recorded",
+      "utc": "2026-10-05T11:43:17.941825Z"
+    },
+    {
+      "phase": "start_released",
+      "utc": "2026-10-05T11:43:17.942882Z"
+    },
+    {
+      "phase": "ready_observed",
+      "utc": "2026-10-05T11:43:18.079272Z"
+    },
+    {
+      "phase": "pre_go_snapshot",
+      "utc": "2026-10-05T11:43:18.080021Z"
+    },
+    {
+      "phase": "sending_go",
+      "utc": "2026-10-05T11:43:18.117808Z"
+    },
+    {
+      "phase": "timed_window",
+      "utc": "2026-10-05T11:43:18.118949Z"
+    },
+    {
+      "phase": "window_ended",
+      "utc": "2026-10-05T11:46:53.709153Z"
+    },
+    {
+      "phase": "post_window",
+      "utc": "2026-10-05T11:46:53.806234Z"
+    },
+    {
+      "phase": "stdout_closed",
+      "utc": "2026-10-05T11:46:54.007216Z"
+    },
+    {
+      "phase": "child_exited",
+      "utc": "2026-10-05T11:46:54.007999Z"
+    },
+    {
+      "phase": "finished",
+      "utc": "2026-10-05T11:46:54.011970Z"
+    }
+  ],
+  "phaseUTC": "2026-10-05T11:46:54.011970Z",
+  "progress": {
+    "lastLine": "report /tmp/leviathan-forge2-tooling/phase59-all-three-kernel-stage-attribution-run/stage-report.json written: status profiledChecksPassed; diagnostic only, encoder intervals are raw stage ticks and not busy time, no gain or production claim",
+    "lastLineUTC": "2026-10-05T11:46:53.807426Z",
+    "lineCount": 19,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "quietReadyFile": null,
+  "quietRequestFile": null,
+  "receiptWritten": true,
+  "schemaVersion": 1,
+  "supervisor": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 49400,
+      "ppid": 49395,
+      "start_tvsec": 1791200597,
+      "start_tvusec": 831780,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 49400,
+        "ppid": 49395,
+        "start_tvsec": 1791200597,
+        "start_tvusec": 831780,
+        "uid": 501
+      },
+      "pid": 49400,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 49400,
+    "uid": 501
+  },
+  "timeoutSeconds": 1200.0,
+  "wrapperArgv": [
+    "/opt/anaconda3/bin/python3",
+    "-I",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/tools/owned_benchmark_supervisor.py",
+    "_exec-wrapper",
+    "--",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/kernel-stage-attribution",
+    "--gguf",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "--region",
+    "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+    "--graph",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "--fixtures",
+    "/tmp/leviathan-forge2-tooling/phase50-simd-model-integration/model-gate-fixtures.json",
+    "--own-process-snapshots",
+    "--report",
+    "/tmp/leviathan-forge2-tooling/phase59-all-three-kernel-stage-attribution-run/stage-report.json"
+  ]
+}
