@@ -22,6 +22,8 @@ Leviathan is a personal project building a local LLM inference engine for Mac GP
 - Correctness gates and test coverage throughout — currently 2,094 checks ([detailed progress](docs/FORGE_PROGRESS.md)).
 - [Cached model identity](docs/CACHED_MODEL_DIGEST.md): actual model SHA-256 is computed once, reused across processes, and refreshed only explicitly; cache hits do not re-read weights.
 - [Command timeline diagnosis](docs/COMMAND_TIMELINE_DIAGNOSIS.md): default-off GPU/host interval tracing passed three strict full-model fixtures; timing remains provisional under observed paging.
+- [Prepared GPU routing](docs/DEVICE_ROUTING_NUMERICAL_PHASE57.md): all three model fixtures and 4,170 actual routes passed; the default-off path removes CPU routing selections and reduces continuation command buffers from 37 to seven without changing output bits.
+- [Fixed GPU routing comparison](docs/DEVICE_ROUTING_PERFORMANCE_PHASE58.md): all 48 runs passed correctness; observed TPOT medians were 69.60–72.19 ms versus 84.29–87.56 ms for the incumbent. Failed spread gates leave the result unqualified; defaults are unchanged and no Ollama ratio is claimed.
 - Performance: closing the gap with Ollama and broader Python model coverage are in progress.
 
 [MIT](LICENSE); model weights keep their upstream terms.
