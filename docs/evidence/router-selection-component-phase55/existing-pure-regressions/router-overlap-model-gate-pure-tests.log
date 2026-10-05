@@ -1,0 +1,178 @@
+PASS fixtures: pinned names and protocol fixtures use the fixed order en-chat, kr-chat, raw-hello
+PASS fixtures: every pinned fixture has a non-empty prompt and exactly 32 frozen IDs
+PASS fixtures: canonical JSON parses to exactly the pinned fixtures
+PASS fixtures: JSON with reversed key order is returned in the fixed order
+PASS fixtures: en-chat rejects a single tampered frozen ID at each of the 32 positions
+PASS fixtures: en-chat rejects a single tampered prompt token at each of its 21 positions
+PASS fixtures: en-chat rejects two swapped frozen IDs
+PASS fixtures: en-chat rejects 31 frozen IDs
+PASS fixtures: en-chat rejects 33 frozen IDs
+PASS fixtures: en-chat rejects an empty prompt
+PASS fixtures: en-chat rejects an extra prompt token
+PASS fixtures: en-chat rejects a negative (out-of-range) frozen ID
+PASS fixtures: en-chat rejects a frozen ID equal to the vocabulary size
+PASS fixtures: en-chat rejects a negative (out-of-range) prompt token
+PASS fixtures: kr-chat rejects a single tampered frozen ID at each of the 32 positions
+PASS fixtures: kr-chat rejects a single tampered prompt token at each of its 23 positions
+PASS fixtures: kr-chat rejects two swapped frozen IDs
+PASS fixtures: kr-chat rejects 31 frozen IDs
+PASS fixtures: kr-chat rejects 33 frozen IDs
+PASS fixtures: kr-chat rejects an empty prompt
+PASS fixtures: kr-chat rejects an extra prompt token
+PASS fixtures: kr-chat rejects a negative (out-of-range) frozen ID
+PASS fixtures: kr-chat rejects a frozen ID equal to the vocabulary size
+PASS fixtures: kr-chat rejects a negative (out-of-range) prompt token
+PASS fixtures: raw-hello rejects a single tampered frozen ID at each of the 32 positions
+PASS fixtures: raw-hello rejects a single tampered prompt token at each of its 2 positions
+PASS fixtures: raw-hello rejects two swapped frozen IDs
+PASS fixtures: raw-hello rejects 31 frozen IDs
+PASS fixtures: raw-hello rejects 33 frozen IDs
+PASS fixtures: raw-hello rejects an empty prompt
+PASS fixtures: raw-hello rejects an extra prompt token
+PASS fixtures: raw-hello rejects a negative (out-of-range) frozen ID
+PASS fixtures: raw-hello rejects a frozen ID equal to the vocabulary size
+PASS fixtures: raw-hello rejects a negative (out-of-range) prompt token
+PASS fixtures: a missing fixture (raw-hello) is rejected
+PASS fixtures: an extra fourth fixture is rejected
+PASS fixtures: a renamed fixture key is rejected
+PASS fixtures: a case-changed fixture key is rejected
+PASS fixtures: kr-chat contents under the en-chat name are rejected
+PASS fixtures: an entry without frozenIds is rejected
+PASS fixtures: an entry without prompt is rejected
+PASS fixtures: a string-typed prompt is rejected
+PASS fixtures: a null prompt is rejected
+PASS fixtures: a fractional prompt token is rejected
+PASS fixtures: a top-level array is rejected
+PASS fixtures: an empty object is rejected
+PASS fixtures: empty input is rejected
+PASS fixtures: truncated JSON is rejected
+PASS fixtures: canonical JSON is below the 64 KiB bound
+PASS fixtures: canonical JSON padded to exactly 65536 bytes is accepted
+PASS fixtures: otherwise canonical JSON of 65537 bytes is rejected
+PASS fixtures (current behavior): an unknown key inside an entry is ignored and the pinned fixtures are returned
+PASS median: empty is nil
+PASS median: single value
+PASS median: odd count sorts before selecting
+PASS median: even count averages the middle pair
+PASS median (current behavior): unvalidated; infinity only shifts order
+PASS runTPOT: 31 walls 1...31 give the median 16
+PASS runTPOT: order of walls does not matter
+PASS runTPOT: 30 walls rejected
+PASS runTPOT: 32 walls rejected
+PASS runTPOT: no walls rejected
+PASS runTPOT: a NaN wall at either end is rejected
+PASS runTPOT: a +infinity wall at either end is rejected
+PASS runTPOT: a -infinity wall at either end is rejected
+PASS runTPOT: a zero wall at either end is rejected
+PASS runTPOT: a negative wall at either end is rejected
+PASS runTPOT: a huge outlier is kept (31 walls used) and only the median is reported
+PASS spread: seven equal TPOTs give zero spread
+PASS spread: (105 - 100) / 100 is exactly 0.05
+PASS spread: (max - min) / median
+PASS spread: 6 run TPOTs rejected
+PASS spread: 8 run TPOTs rejected
+PASS spread: a NaN run TPOT is rejected
+PASS spread: a +infinity run TPOT is rejected
+PASS spread: a zero run TPOT is rejected
+PASS spread: a negative run TPOT is rejected
+PASS gain: (100 - 98) / 100 is exactly 0.02
+PASS gain: a slower candidate is negative
+PASS gain: equal medians give zero
+PASS gain: a missing median gives nil
+PASS gain: a NaN median on either side gives nil
+PASS gain: a +infinity median on either side gives nil
+PASS gain: a zero median on either side gives nil
+PASS gain: a negative median on either side gives nil
+PASS protocol: blocks 0, 2, 4, 6 are AB (OFF, ON) and blocks 1, 3, 5 are BA
+PASS protocol: seven declared block orders and one warmup per arm per fixture
+PASS protocol: 5% spread, 2% gain, 32 outputs and 31 continuations are declared
+PASS outcome: 3% gain with zero spread meets the internal criteria
+PASS outcome: exactly the 7 timed runs per arm feed the statistics
+PASS outcome: warmup runs are excluded from medians and spreads
+PASS outcome: exactly 2% gain with exactly 5% baseline spread meets the criteria
+PASS outcome: gain just below 2% is noGain
+PASS outcome: a slower candidate is noGain with negative gain
+PASS outcome: baseline spread just above 5% is unstable
+PASS outcome: candidate spread above 5% alone is unstable
+PASS outcome: an outlier run is not trimmed and makes the arm unstable
+PASS outcome: unstable takes precedence over noGain
+PASS outcome: a missing candidate warmup fails the run checks
+PASS outcome: warmups in ON, OFF order fail the run checks
+PASS outcome: 6 blocks fail the run checks
+PASS outcome: 8 blocks fail the run checks
+PASS outcome: block 1 recorded in AB instead of BA order fails the run checks
+PASS outcome: a duplicated block (block 6 relabeled 5) fails the run checks
+PASS outcome: one timed run with malformed IDs fails the run checks
+PASS outcome: one timed run with a counter mismatch fails the run checks
+PASS outcome: a failed warmup is excluded from statistics but still fails the run checks
+PASS outcome: a timed run without a run TPOT fails the run checks
+PASS outcome: runCheckFailed takes precedence over unstable
+PASS outcome: runs of other fixtures are ignored per fixture
+PASS outcome: no runs fail the run checks with nil statistics
+PASS status: all three fixtures met give internal-criteria-met with eligibility pending
+PASS status: outcomes out of the fixed fixture order fail the run checks
+PASS status: a missing fixture outcome fails the run checks
+PASS status: an extra fixture outcome fails the run checks
+PASS status: no outcomes fail the run checks
+PASS status: one fixture below 2% gain gives noGain
+PASS status: unstable takes precedence over noGain
+PASS status: runCheckFailed takes precedence over unstable and noGain
+PASS status: one unstable fixture gives unstable
+PASS counters: 34 unique named keys
+PASS counters: kernels and buffers are the only relative-total keys
+PASS counters: zero holds every key at 0
+PASS counters: a missing key reads as 0
+PASS counters: minus covers exactly the named keys, drops unknown keys, treats missing as 0
+PASS counters: scaled covers exactly the named keys and drops unknown keys
+PASS counters: kernels, buffers and unknown keys never produce mismatches
+PASS counters: mismatches name each differing key in key order with the label
+PASS counters: an empty actual set matches an all-zero expectation
+PASS counters: a missing actual key is a mismatch when its expectation is nonzero
+PASS derived: a consistent 30-layer topK-8 set has no failures and 241 cooperative RMS calls
+PASS derived: statisticsReuses = 59 is reported as a failure
+PASS derived: statisticsGroups = 29 is reported as a failure
+PASS derived: q6Matvecs = 2 is reported as a failure
+PASS derived: moeChunks = 3 is reported as a failure
+PASS derived: overlapWindows = 29 is reported as a failure
+PASS derived: attentionOps = 29 is reported as a failure
+PASS derived: routerScaleOps = 29 is reported as a failure
+PASS derived: expertChains = 29 is reported as a failure
+PASS derived: q4Matvecs = 0 is reported as a failure
+PASS derived: layers = 0 is reported as a failure
+PASS derived: rmsnormOps = 90 is reported as a failure
+PASS derived: routerProjections = 29 is reported as a failure
+PASS derived: reference expects 205 + 2 * 8 * 30 generic Q4 dispatches and nothing else
+PASS derived: OFF per-forward expectations follow the v1 E4R32 and modern-axis accounting
+PASS derived: ON differs from OFF only by 30 applied windows and 60 commits/drains
+PASS derived: every fallback, failed drain, pending and total key is expected 0 in all arms
+PASS derived: phase expectations scale per forward (21 prefill, 31 continuation)
+PASS derived: an exact continuation delta has no mismatches
+PASS derived: one extra async commit is exactly one named mismatch
+PASS candidate: the declared modern candidate maps to exactly the fourteen expected flags
+PASS candidate: the declared modern candidate is legal and valid
+PASS candidate: the router overlap scope accepts the declared modern candidate
+PASS candidate: a non-modern candidate differs in flags and is rejected by the scope
+PASS incumbent: the declared candidate binds router launch divisor 1 with GPU residency, par64 and no tiled F32
+PASS incumbent: the divisor-0 variant does not match the declared fourteen-flag map
+PASS incumbent: router launch applied is exactly one per router projection (30) in OFF and ON, 0 in the reference, no fallback
+PASS incumbent: a run that never applied the router launch geometry is exactly one named mismatch
+PASS report: a fresh qualification-only report encodes gainQualified false and status aborted
+PASS report: a fresh performance report encodes gainQualified false and status aborted
+PASS report: aborted() keeps gainQualified false
+PASS report: internal criteria met on every fixture still encodes gainQualified false
+PASS report: external eligibility is encoded as PENDING with the fixed notes
+PASS report: encodeReport writes infinity as the string inf instead of throwing
+PASS report: encodeReport writes NaN as the string nan instead of throwing
+PASS report: a decoded report carrying gainQualified=true is not re-emitted as true by encodeReport
+PASS report: re-encoding a tampered report forces only gainQualified false and keeps other decoded fields
+PASS report: pretty encodeReport also never re-emits gainQualified true
+PASS coverage: exactly the reference, off and on arms are described
+PASS coverage: ON is marked incomplete and excludes the async R/S ticket command buffers
+PASS coverage: arms declare different coverage and are never compared
+PASS coverage: no arm's value is described as busy time
+PASS coverage: neither coverage nor notes claim that recorded elapsed includes event waits
+PASS coverage: the notes reference gpuElapsedCoverage and the ON exclusion
+PASS coverage: a new report carries and encodes the per-arm coverage
+PASS coverage: a report written before the field existed still decodes, with nil coverage
+PASS coverage: re-encoding that old report omits the key and keeps gainQualified false
+router-overlap-model-gate-pure-tests: 177 passed, 0 failed

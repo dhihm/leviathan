@@ -12,6 +12,8 @@ The no-GO invocation printed READY, refused EOF and exited 3 without creating a 
 
 The existing default regression suite also passed **2,056 tests, 0 failures**, after the debug CLI prerequisite build. Real-model opt-ins were disabled; this is a default-path regression result, not model qualification. The supervised run observed END and actual exit zero, and its lock was released.
 
+The existing pure diagnostic, model-gate, runtime and planner suites passed 66, 177, 170 and 333 checks respectively, with zero failures after the new component was linked.
+
 ## Representation and numerical policy
 
 The IR validates 128 experts, top 8, 128 threads per group, SIMD width 32 and bounded exponential input. The layout derives a 2,816-byte record; declared fields total 236 bytes but span 2,564 bytes because Metal coefficient bindings require 256-byte offsets. GU and DN offsets and eight individual coefficient slots are checked rather than assuming a 256-byte record.

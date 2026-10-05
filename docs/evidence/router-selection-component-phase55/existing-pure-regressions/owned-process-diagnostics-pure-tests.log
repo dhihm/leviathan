@@ -1,0 +1,67 @@
+PASS task_info: TASK_EVENTS_INFO count is the 8-word native struct size
+PASS task_info: the phys_footprint word bound lies inside the native TASK_VM_INFO struct
+PASS task_info: own-process TASK_EVENTS_INFO succeeds with every counter known
+PASS task_info: own-process TASK_VM_INFO reports positive virtual, resident and phys_footprint bytes
+PASS task_info: a snapshot without a runner device records Metal allocation as UNKNOWN, not zero
+PASS task_info: touching 32 MiB of fresh pages yields a known positive cumulative fault delta
+PASS task_info: every own-process cumulative counter delta between two snapshots is known and nonnegative
+PASS task_info: an explicitly supplied Metal sample is recorded and the elapsed interval is known
+PASS task_info: the touched buffer stayed live across the second snapshot
+PASS delta: an increasing cumulative counter gives a known delta
+PASS delta: a decreasing cumulative counter is nonMonotonic with no value (wrap or reset is never a number)
+PASS delta: a decreasing gauge gives a known negative delta
+PASS delta: an unknown side gives an unknown delta, never zero
+PASS delta: an overflowing difference is unknown
+PASS delta: a failed TASK_EVENTS_INFO side leaves every cumulative delta unknown
+PASS delta: known gauges compare while an unsampled Metal side stays unknown
+PASS delta: a snapshot pair out of uptime order has no elapsed interval
+PASS delta: counters are reported in the fixed order, cumulative first
+PASS breakdown: an all-zero record has no violations
+PASS breakdown: nested flush phases inside the flush total pass; a GPU interval above the CPU flush wall is not a violation
+PASS breakdown: nested flush phases summing above the flush total are exactly one violation
+PASS breakdown: copy time without a counted copy is a violation
+PASS breakdown: a negative interval is a violation
+PASS breakdown: a non-finite interval is a violation
+PASS breakdown: site intervals are nested containers and never checked additively against flush
+PASS breakdown: minus is field-wise and exact
+PASS breakdown: Codable round trip preserves every field
+PASS breakdown: the report schema has exactly 24 named fields
+PASS breakdown: the declared nesting forbids additive and busy-time readings
+PASS comparison: 32 identical outputs pass with zero differences
+PASS comparison: the per-element bound is stricter than the gate's vector-normalized bound
+PASS comparison: a per-element excess fails even when the vector-normalized metric passes
+PASS comparison: the worst element records its step and vocabulary index
+PASS comparison: length-mismatched, non-finite and empty outputs are invalid, never silently compared
+PASS comparison: fewer than 32 compared outputs fail
+PASS comparison: the worst element tracks the maximum across steps and small diffs pass
+PASS sites: per-forward readback expectation for 30 layers and 5 copies
+PASS sites: an exact 21-forward prefill record has no mismatches
+PASS sites: one extra readback is exactly one named mismatch
+PASS sites: binding checks are counted per executor call, not per forward
+PASS protocol: the five required options parse
+PASS protocol: a missing option is refused
+PASS protocol: a duplicated option is refused
+PASS protocol: an unknown flag is refused
+PASS protocol: an option value that is itself a flag is refused
+PASS protocol: exactly GO is accepted
+PASS protocol: EOF, empty, lowercase, padded or other lines are refused before any model or device work
+PASS protocol: a new .json path in an existing directory is accepted
+PASS protocol: existing files, missing directories and non-.json paths are refused
+PASS protocol: tokens are the existing supervisor protocol BENCHMARK_READY, GO and TIMED_WINDOW_END shared with the phase-53 gate
+PASS memory: 25 local and 5 global layers at 4096 positions derive 1760 MiB of K/V
+PASS memory: per-position and 53-position K/V bytes
+PASS memory: an overflowing derivation is nil, never wrapped
+PASS memory: invalid widths or positions are refused
+PASS memory: allocation capacity is declared distinct from physical residency
+PASS status: six passing profiled runs after a passing gate give profiledChecksPassed
+PASS status: an unrestored runner takes precedence over every other outcome
+PASS status: an abort takes precedence over profile outcomes
+PASS status: only a qualification-only pass of the phase-53 gate allows profiling
+PASS status: a missing run, a failed run or a profile failure gives profiledChecksFailed
+PASS report: a fresh report encodes gainQualified, installable and productionTPOTClaim false
+PASS report: a decoded report claiming gain, installability or production TPOT is re-emitted false
+PASS report: aborted() keeps the pre-init snapshot and the always-false contract
+PASS report: the nesting declaration and the 1e-4 contract are part of every report
+PASS overlap scope: the clean control snapshot qualifies at entry and per token
+PASS overlap scope: breakdown instrumentation is still refused at entry and per token
+owned-process-diagnostics-pure-tests: 66 passed, 0 failed
