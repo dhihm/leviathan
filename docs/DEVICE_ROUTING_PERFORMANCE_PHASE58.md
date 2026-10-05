@@ -24,7 +24,17 @@ Every fixture must improve by at least 2%, and every arm must have spread `(max 
 
 ## Measurement status
 
-The fixed performance comparison is pending a fresh acknowledgement coordinating only known parent-owned builds and benchmarks. It does not claim global machine idleness. No timing result or performance gain is claimed yet. The incumbent main and production defaults remain unchanged.
+The single fixed comparison completed after a fresh explicit parent acknowledgement coordinating only known parent-owned builds and benchmarks. Actual GO was 2026-10-05 11:09:10 UTC; END and actual benchmark exit 4 were recorded at 11:12:14 UTC. The supervisor elapsed time was 211.028026 seconds, including the pre-GO coordination wait. All six warmups and 42 timed runs passed every correctness and counter check; the runner was restored and both owned locks were released.
+
+| Fixture | OFF TPOT (ms) | ON TPOT (ms) | Observed reduction | OFF spread | ON spread |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| en-chat | 87.560 | 70.240 | 19.78% | 12.66% | 3.87% |
+| kr-chat | 84.286 | 72.194 | 14.35% | 15.89% | 6.24% |
+| raw-hello | 86.618 | 69.598 | 19.65% | 21.75% | 4.30% |
+
+The actual status is `performanceUnstable`, with `gainQualified=false`. Every observed median improved by more than 2%, but all OFF arms and the Korean ON arm exceeded the fixed 5% spread limit. These are raw relative prototype observations, not a qualified gain or an Ollama comparison. No samples were dropped or retimed; the unchanged comparison will not be repeated. The incumbent main and production defaults remain unchanged.
+
+Before GO and after END, host-wide counters increased by 225650 swap-in pages and 384564 swap-out pages (16,384-byte pages), with 5873241 compressions and 5259529 decompressions. This establishes aggregate host memory activity, not this process's page faults, model paging or the cause of the variance. No resources were polled during decode. `pmset` reported no recorded thermal or performance warnings, which does not prove no throttling. External resource eligibility and global machine idleness are not established. More kernel attribution is needed before claiming a cause or choosing the next optimization.
 
 ## Timestamp instrumentation prerequisite
 

@@ -1,0 +1,20 @@
+{
+  "actualBenchmarkExit": 4,
+  "elapsedSeconds": 211.028026,
+  "endObserved": true,
+  "all48RunChecksPassed": true,
+  "status": "performanceUnstable",
+  "gainQualified": false,
+  "hostAggregatePageDeltas": {
+    "Pageins": 2354085,
+    "Pageouts": 4059,
+    "Swapins": 225650,
+    "Swapouts": 384564,
+    "Compressions": 5873241,
+    "Decompressions": 5259529
+  },
+  "hostPageBytes": 16384,
+  "hostAttribution": "Host-wide activity, not attributable to this model or process. No live resource polling occurred during decode.",
+  "thermal": "pmset returned zero with no recorded warnings; this is not proof of no throttling.",
+  "externalResourceEligibility": "Not established: aggregate swapping/compression activity and failed fixed spread gates; no globally idle machine claim."
+}
