@@ -1,0 +1,27 @@
+{
+  "appliedRequiredPatchIndices": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "skippedRequiredPatchIndex0": "Redundant public initializer not needed: actual compiler API error already fixed by Fable through public Codable test construction, subsequent actual release build passed; keep descriptor API minimal",
+  "conditionalCompilePatchesApplied": false,
+  "reason": "No listed concurrency compiler condition occurred in actual successful build",
+  "firstGPUrunHasOccurred": false,
+  "syntheticCorpusAmendment": "Pre-measurement independent-review finite scale bounds and explicit edge placement; original seeds, shapes, oracle gates and counts retained; no GPU observation was used",
+  "files": [
+    {
+      "file": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/LeviathanCore/Q4WeightStage.swift",
+      "before": "0a91b4419c49b13c22788a4f212827647b743c46cc8ba464006ce7e1d838638f",
+      "after": "8900c8826019f8d1a849d9396628e60d3dec389a088b60febdddb35ba28d1323"
+    }
+  ]
+}

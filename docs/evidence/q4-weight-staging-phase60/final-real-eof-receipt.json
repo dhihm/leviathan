@@ -1,0 +1,6 @@
+{
+  "exit": 1,
+  "stdout": "BENCHMARK_READY\n",
+  "stderr": "q4-weight-stage-component: expected exactly GO on stdin; no device created, no GGUF mapped\n",
+  "reportExists": false
+}

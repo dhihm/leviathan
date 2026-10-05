@@ -1,0 +1,63 @@
+{
+  "status": "correctnessPassed",
+  "performanceDecision": "rejected_no_model_integration",
+  "supportedRowsBitIdentical": 4894,
+  "casesPerVariant": 18,
+  "realCases": 8,
+  "committedCommandBuffers": 148,
+  "fullModelQualified": false,
+  "gainQualified": false,
+  "installable": false,
+  "variants": [
+    {
+      "kernelName": "q4ws_matvec_R32_B22_P99",
+      "correctnessPassed": true,
+      "timingChecksPassed": true,
+      "timing": [
+        {
+          "shape": "timing-2816x1024",
+          "candidateOverControlRatioOfMedians": 2.4784120832712278,
+          "medianPairRatioCandidateFirst": 2.4827395263426917,
+          "medianPairRatioControlFirst": 2.473015750276681
+        },
+        {
+          "shape": "timing-2112x1024",
+          "candidateOverControlRatioOfMedians": 2.855301818181818,
+          "medianPairRatioCandidateFirst": 2.5652173913043477,
+          "medianPairRatioControlFirst": 2.2531645569620253
+        },
+        {
+          "shape": "timing-real-blk.0.attn_output.weight",
+          "candidateOverControlRatioOfMedians": 2.6238465235243082,
+          "medianPairRatioCandidateFirst": 2.637999711448591,
+          "medianPairRatioControlFirst": 2.5270610932475885
+        }
+      ]
+    },
+    {
+      "kernelName": "q4ws_matvec_R32_B8_P37",
+      "correctnessPassed": true,
+      "timingChecksPassed": true,
+      "timing": [
+        {
+          "shape": "timing-2816x1024",
+          "candidateOverControlRatioOfMedians": 2.6937380710659897,
+          "medianPairRatioCandidateFirst": 2.6790390625,
+          "medianPairRatioControlFirst": 2.4319556712224886
+        },
+        {
+          "shape": "timing-2112x1024",
+          "candidateOverControlRatioOfMedians": 2.5019297493275117,
+          "medianPairRatioCandidateFirst": 2.4198851435705366,
+          "medianPairRatioControlFirst": 2.6722880403713853
+        },
+        {
+          "shape": "timing-real-blk.0.attn_output.weight",
+          "candidateOverControlRatioOfMedians": 2.6168481532147743,
+          "medianPairRatioCandidateFirst": 2.6916920295970423,
+          "medianPairRatioControlFirst": 2.5453740520147607
+        }
+      ]
+    }
+  ]
+}

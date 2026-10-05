@@ -100,6 +100,16 @@ let package = Package(
             path: "tools/kernel_stage_attribution_pure_tests"
         ),
         .executableTarget(
+            name: "q4-weight-stage-component",
+            dependencies: ["LeviathanCore"],
+            path: "tools/q4_weight_stage_component"
+        ),
+        .executableTarget(
+            name: "q4-weight-stage-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/q4_weight_stage_pure_tests"
+        ),
+        .executableTarget(
             name: "leviathan-forge-helper",
             dependencies: ["LeviathanCore"],
             path: "Sources/leviathan-forge-helper"
