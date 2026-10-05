@@ -1,0 +1,201 @@
+{
+  "kind": "read-only-matched-off-coverage-residual",
+  "limitations": [
+    "Command-buffer intervals include scheduling and are not GPU busy time.",
+    "Residual combines CPU work, encoding, submission, readback, gaps and measurement overhead; it does not isolate a cause.",
+    "No new model run or source change."
+  ],
+  "rows": [
+    {
+      "fixture": "en-chat",
+      "block": 0,
+      "wallMedianMicros": 88804.209,
+      "commandBufferIntervalMedianMicros": 61869.70788985491,
+      "wallMinusIntervalMedianMicros": 27101.082540874006,
+      "residualFractionOfSummedWall": 0.34230549045682146
+    },
+    {
+      "fixture": "en-chat",
+      "block": 1,
+      "wallMedianMicros": 89818.917,
+      "commandBufferIntervalMedianMicros": 62059.83320251107,
+      "wallMinusIntervalMedianMicros": 27483.751531860587,
+      "residualFractionOfSummedWall": 0.34118659928973094
+    },
+    {
+      "fixture": "en-chat",
+      "block": 2,
+      "wallMedianMicros": 98984.583,
+      "commandBufferIntervalMedianMicros": 61299.956403672695,
+      "wallMinusIntervalMedianMicros": 36980.33252572584,
+      "residualFractionOfSummedWall": 0.3972232745709444
+    },
+    {
+      "fixture": "en-chat",
+      "block": 3,
+      "wallMedianMicros": 99008.083,
+      "commandBufferIntervalMedianMicros": 61255.12579455972,
+      "wallMinusIntervalMedianMicros": 37862.250237877844,
+      "residualFractionOfSummedWall": 0.380145213588069
+    },
+    {
+      "fixture": "en-chat",
+      "block": 4,
+      "wallMedianMicros": 97047.5,
+      "commandBufferIntervalMedianMicros": 61404.415871948004,
+      "wallMinusIntervalMedianMicros": 36702.252146452665,
+      "residualFractionOfSummedWall": 0.3762338814397917
+    },
+    {
+      "fixture": "en-chat",
+      "block": 5,
+      "wallMedianMicros": 103825.084,
+      "commandBufferIntervalMedianMicros": 62236.49997264147,
+      "wallMinusIntervalMedianMicros": 41801.50001824761,
+      "residualFractionOfSummedWall": 0.3854096409292265
+    },
+    {
+      "fixture": "en-chat",
+      "block": 6,
+      "wallMedianMicros": 102440.958,
+      "commandBufferIntervalMedianMicros": 61729.99879345298,
+      "wallMinusIntervalMedianMicros": 41513.99936324358,
+      "residualFractionOfSummedWall": 0.379052547203241
+    },
+    {
+      "fixture": "kr-chat",
+      "block": 0,
+      "wallMedianMicros": 89180.875,
+      "commandBufferIntervalMedianMicros": 61639.95899260044,
+      "wallMinusIntervalMedianMicros": 27526.33553209901,
+      "residualFractionOfSummedWall": 0.3589293345108976
+    },
+    {
+      "fixture": "kr-chat",
+      "block": 1,
+      "wallMedianMicros": 88654.584,
+      "commandBufferIntervalMedianMicros": 62128.293327987194,
+      "wallMinusIntervalMedianMicros": 26380.708816464423,
+      "residualFractionOfSummedWall": 0.3617337903797256
+    },
+    {
+      "fixture": "kr-chat",
+      "block": 2,
+      "wallMedianMicros": 100491.375,
+      "commandBufferIntervalMedianMicros": 61836.374923586845,
+      "wallMinusIntervalMedianMicros": 38730.374627436875,
+      "residualFractionOfSummedWall": 0.3965135814529297
+    },
+    {
+      "fixture": "kr-chat",
+      "block": 3,
+      "wallMedianMicros": 115683.458,
+      "commandBufferIntervalMedianMicros": 62411.66731342673,
+      "wallMinusIntervalMedianMicros": 49827.292507618666,
+      "residualFractionOfSummedWall": 0.4421921794376321
+    },
+    {
+      "fixture": "kr-chat",
+      "block": 4,
+      "wallMedianMicros": 98433.666,
+      "commandBufferIntervalMedianMicros": 61396.45725488663,
+      "wallMinusIntervalMedianMicros": 37384.000348397734,
+      "residualFractionOfSummedWall": 0.38725156685200024
+    },
+    {
+      "fixture": "kr-chat",
+      "block": 5,
+      "wallMedianMicros": 99980,
+      "commandBufferIntervalMedianMicros": 61220.8740785718,
+      "wallMinusIntervalMedianMicros": 38770.08200019598,
+      "residualFractionOfSummedWall": 0.3752572370529821
+    },
+    {
+      "fixture": "kr-chat",
+      "block": 6,
+      "wallMedianMicros": 96327.791,
+      "commandBufferIntervalMedianMicros": 61727.58433967829,
+      "wallMinusIntervalMedianMicros": 33649.333296558616,
+      "residualFractionOfSummedWall": 0.3729436047299774
+    },
+    {
+      "fixture": "raw-hello",
+      "block": 0,
+      "wallMedianMicros": 95453.625,
+      "commandBufferIntervalMedianMicros": 60565.33334776759,
+      "wallMinusIntervalMedianMicros": 35703.3766874969,
+      "residualFractionOfSummedWall": 0.37047115959440036
+    },
+    {
+      "fixture": "raw-hello",
+      "block": 1,
+      "wallMedianMicros": 97894.75,
+      "commandBufferIntervalMedianMicros": 60741.08183383942,
+      "wallMinusIntervalMedianMicros": 37074.62409115267,
+      "residualFractionOfSummedWall": 0.36877341672924135
+    },
+    {
+      "fixture": "raw-hello",
+      "block": 2,
+      "wallMedianMicros": 99106.708,
+      "commandBufferIntervalMedianMicros": 60325.79066231847,
+      "wallMinusIntervalMedianMicros": 38563.99973719883,
+      "residualFractionOfSummedWall": 0.39933103301153616
+    },
+    {
+      "fixture": "raw-hello",
+      "block": 3,
+      "wallMedianMicros": 96359.375,
+      "commandBufferIntervalMedianMicros": 60308.50065872073,
+      "wallMinusIntervalMedianMicros": 36052.37516760826,
+      "residualFractionOfSummedWall": 0.37031542951410856
+    },
+    {
+      "fixture": "raw-hello",
+      "block": 4,
+      "wallMedianMicros": 99115.417,
+      "commandBufferIntervalMedianMicros": 60438.53983283043,
+      "wallMinusIntervalMedianMicros": 39290.875080283164,
+      "residualFractionOfSummedWall": 0.3887749276203377
+    },
+    {
+      "fixture": "raw-hello",
+      "block": 5,
+      "wallMedianMicros": 99069.625,
+      "commandBufferIntervalMedianMicros": 60532.16755390167,
+      "wallMinusIntervalMedianMicros": 38652.584978916886,
+      "residualFractionOfSummedWall": 0.3766267072610754
+    },
+    {
+      "fixture": "raw-hello",
+      "block": 6,
+      "wallMedianMicros": 100962.958,
+      "commandBufferIntervalMedianMicros": 61091.124545782804,
+      "wallMinusIntervalMedianMicros": 39700.209548950195,
+      "residualFractionOfSummedWall": 0.38524079791282145
+    }
+  ],
+  "fixtures": [
+    {
+      "fixture": "en-chat",
+      "medianRunWallMicros": 98984.583,
+      "medianRunCommandBufferIntervalMicros": 61729.99879345298,
+      "medianRunResidualMicros": 36980.33252572584,
+      "medianResidualFraction": 0.379052547203241
+    },
+    {
+      "fixture": "kr-chat",
+      "medianRunWallMicros": 98433.666,
+      "medianRunCommandBufferIntervalMicros": 61727.58433967829,
+      "medianRunResidualMicros": 37384.000348397734,
+      "medianResidualFraction": 0.3752572370529821
+    },
+    {
+      "fixture": "raw-hello",
+      "medianRunWallMicros": 99069.625,
+      "medianRunCommandBufferIntervalMicros": 60532.16755390167,
+      "medianRunResidualMicros": 38563.99973719883,
+      "medianResidualFraction": 0.3766267072610754
+    }
+  ]
+}

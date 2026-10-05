@@ -1,0 +1,66 @@
+**Thesis.** The incumbent token is a strictly serialized chain: CPU encode, synchronous flush, GPU run, CPU readback, repeat, about 36 times per token. The overlap candidate could not change that chain because it kept all 30 router waits on one in-order queue. The one coherent next package is to move expert selection to the GPU so a token needs one readback, which makes pipelined asynchronous segment submission possible. The memory analysis yields footprint evidence to collect, not a proven bottleneck.
+
+## Proven mechanics from the supplied code
+
+**Per-token synchronization points in the OFF arm.** Each is a `waitUntilCompleted` with the GPU idle afterwards until the CPU encodes and commits the next segment.
+
+- Embedding: `decodeEmbedding` into bufEmbed, then `read` plus `write` into the x value in the executor's embed_row case. One flush and a CPU round trip of 2816 floats that could be a GPU-side write.
+- Router scores: `flushOpenSegment` then `read` in the router_topk case, 30 per token. The CPU FP64 softmax and top-8 then feed expert offsets through setBytes into the batched GU and DN dispatches, so the GPU cannot proceed until the CPU has chosen experts.
+- The copy op: `read` plus `write`, used for the global-layer k_eq_v staging. Five per token if the lowering emits one per global layer. I cannot confirm the count from the supplied files.
+- Final logits: one flush, unavoidable while argmax is on the CPU.
+
+Within each segment the CPU encodes every kernel before commit, and the GPU does nothing until commit. Over 1,349 kernels and roughly 36 segments, wall time is approximately the sum of encode time, GPU time and per-segment commit latency. None of these three overlap in the OFF arm. This is structural, not a measurement.
+
+**Why the overlap could not help.** All work runs on the single `queue`. Every ON segment opened through `routerOverlapBeginSegment` encodes `encodeWaitForEvent` on the last committed signal, and every ticket signals the next value in `routerOverlapCommit`. The GPU therefore executes R, then S, then the next segment in exactly the OFF order. There is no GPU-side concurrency at all. The only overlap is CPU encoding of the segment after S running concurrently with S on the GPU. The CPU still blocks on R in `routerOverlapRouterScores` through `ledger.drain`. S is the shared FFN: three Q4 matvecs over about 10 MB of weights plus three small kernels, so the hidden interval is small. The added cost per layer is one extra command buffer creation, two event encodes, a ticket handle allocation, and the per-token alias scan over about 80 buffers in `routerOverlapTokenPreflight`. The measured result is consistent with that accounting, but the code alone only proves the structure.
+
+**Weight traffic per token.** Computed from `Gemma4Config` and the GGML block sizes. Not measured.
+
+| component | bytes per token |
+|---|---:|
+| dense Q4_0 projections, 25 local plus 5 global layers | 925.6 MB |
+| router F32 projections | 43.3 MB |
+| tied LM head, Q6_K | 605.6 MB |
+| routed experts, 8 of 128 per layer | 802.9 MB |
+| total | about 2.38 GB |
+
+At the measured median of roughly 99 ms this is about 24 GB/s against unified memory bandwidth an order of magnitude higher. Bandwidth is not the floor. Launch count, serialization and page residency are the candidates.
+
+**Allocation lifetimes.** All resident mode, computed from source.
+
+- GGUF mapping: 14.44 GB, read-only, `MAP_SHARED`, page-rounded, wrapped by `makeBuffer(bytesNoCopy:)` and freed by its deallocator. Experts are 12.85 GB of it, and each token touches about 6.3 percent of them in a routing-dependent pattern.
+- Second mapping: `GGUFReader.read` maps the same file again with `Data(contentsOf:mappedIfSafe)` and the runner retains it for its lifetime in `ggufFile`. Virtual address space is doubled. Physical pages are shared through the page cache, so this is hygiene, not a proven cost.
+- K/V caches: allocated at init for the full 4096 context, 64 MiB per local layer and 32 MiB per global layer, 1,760 MiB total. The fixtures reach position 53 at most, about 1.3 percent. Whether Metal commits untouched shared pages physically is not established from source.
+- Activations and scratch: bufLogits 1 MiB, every other activation under 40 KiB, expert scratch about 158 KiB, MoE batched scratch about 158 KiB, statistics buffer 120 bytes, routerIn 11 KiB. Negligible.
+- Gate-retained logits: reference and OFF kept arrays of 33.5 MiB each during qualification only. Each timed continuation allocates and discards one 1 MiB logits array inside the timer. Negligible.
+
+**CPU work inside the timed call.** `assertBound` compares the whole graph structurally on every token. `matvecGpuMicrosByTensor` performs about 250 string-keyed dictionary updates per token. The ON arm additionally rebuilds the candidate list and scans every buffer per token. These are likely sub-millisecond each but are unmeasured and sit inside the timers.
+
+## Hypotheses and the measurements that decide them
+
+- **Hypothesis A, the serialization floor dominates.** Upper bound on the gain from removing intra-token syncs equals the GPU idle time between consecutive command buffers. The existing report already contains the OFF arm's per-continuation command-buffer elapsed sums with complete coverage. Compute wall minus that sum per run. That residual is encode plus commit latency plus CPU work, and it can be computed from the rejected report without any rerun.
+- **Hypothesis B, page residency drives the spread.** The 15 to 27 percent spreads and the system-wide page-in counters are consistent with expert pages being re-faulted, but nothing attributes them to this process. The decisive per-process measurement is the task's own `pageins` and `faults` from `task_events_info`, sampled per run inside the gate. This is self-inspection, not process enumeration.
+- **Hypothesis C, K/V commitment.** Sample `physFootprint` and `metalAllocatedSample` immediately before and after the K/V allocation loop at init. If the physical footprint jumps by about 1.7 GB, the context-4096 allocation is a real resident cost for a 53-position workload.
+- **Hypothesis D, encode cost per kernel.** The existing `breakdownInstrumentation` separates encode, flush and copy time, but the gate refuses it. A separate single-fixture correctness-only diagnostic run with it enabled would quantify encode versus GPU without new kernels. This needs parent approval as a bounded hardware run.
+
+## Ranked alternatives and the recommended package
+
+1. **GPU-resident routing enabling pipelined submission.** Removes 30 of about 36 syncs per token and is the only change that lets encode and GPU execution overlap inside a token. Recommended.
+2. **Embedding and copy readback removal.** Same mechanism, small gain, bit-exact. Fold into the package.
+3. **Footprint hygiene: bounded K/V capacity and dropping the second mapping.** Only after hypotheses B and C return evidence. Do not change allocations speculatively.
+4. **Kernel count reduction by fusion.** Real but it touches math and should wait for the residual attribution.
+
+**Package design.**
+
+- Selection kernel: one threadgroup reads the 128 F32 router scores, selects the top 8 by raw score with lower-index tie-break, and writes expert ids, per-slot byte offsets, and merge weights to a small device buffer. Raw-score ordering equals the CPU ordering whenever `exp` in FP64 maps distinct scores to distinct probabilities. Near-tie collapse in double rounding is the one divergence case. State it as a contract limitation and let the frozen-ID gate detect it.
+- Merge weights in F32 on the GPU instead of FP64 on the CPU. Bit equality to the incumbent is not achievable because Metal has no double. The contract becomes the existing normalized 1e-4 per-element reference bound plus the 32 frozen IDs. The gate must compare against the fresh direct reference, not against the incumbent arm by bit pattern.
+- No MSL change for the batched kernels or merges. The emitted GU and DN kernels take `constant const ulong* offs`, and `g4_axpy` takes `constant const float& c`. Both can be bound with `setBuffer` at an offset into the GPU-written selection buffer instead of `setBytes`. The frozen E4R32 source and its recorded SHA stay untouched, so the component bit-identity gate still applies.
+- Bounds safety: expert ids are clamped on the GPU, and offsets are computed from per-layer bases and strides validated once on the host by the existing binding. Per-token host offset checks are replaced by a once-per-install proof that every id in range yields an in-extent offset, with a pure test over all 30 layers and 128 experts.
+- Embedding writes directly into the executor's x value buffer, and the copy op becomes a GPU word copy reusing the cache_append contract. The per-token CPU finiteness check on the embedding row is lost. The final logits check remains.
+- Submission: segments are committed without waiting, in order on the one queue, and the only wait is before the logits readback. Metal executes command buffers on a queue in commit order, which the existing event discipline no longer needs. Keep an explicit end-of-token drain and the same quiescence predicate.
+- Per-forward counter expectations: router-launch applied stays 30, a new GPU-selection counter equals layers, CPU softmax count becomes 0, flushes per token become a derived constant checked exactly.
+
+**Tests.** Pure: selection equivalence against the CPU FP64 routine over random, tied, subnormal and all-equal score vectors with the tie-break rule, and the offset-range proof. Component on GPU: selection kernel versus CPU FP64 on sampled real router scores, exact ids and a weight relative-error bound. Model gate: the existing protocol unchanged, 32 outputs, 31 continuations, seven AB and BA blocks, 5 percent spread, 2 percent gain, baseline equals the frozen divisor-1 incumbent.
+
+**Measurements added to the gate.** Per-run task page-ins and faults, physical footprint at run boundaries, command-buffer count per token, and the OFF residual computed as wall minus complete command-buffer elapsed. Go or no-go rule before the kernel work: if the OFF residual from the rejected report is under 10 percent of TPOT, the package cannot clear 2 percent after its own overheads and should be dropped in favor of alternative 4.
+
+**Concrete next author task.** Write a read-only report analyzer over the rejected report JSON that emits, per OFF run, wall minus the sum of `continuationGpuElapsedMicros`, and the median residual per fixture. In the same change, add per-task page-in and fault sampling plus init-time footprint deltas to the gate records, with pure tests for the new record shapes. No kernels, no allocation changes, no model run. The residual numbers decide whether the routing package proceeds.
