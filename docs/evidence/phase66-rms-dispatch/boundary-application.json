@@ -1,0 +1,26 @@
+{
+  "authorPatches": 14,
+  "reviewPatches": 4,
+  "files": [
+    {
+      "file": "Sources/LeviathanCore/RMSCoscheduleSetup.swift",
+      "before": "7e913e661be6816e9a6bcf7d3dca7f5eb10c9e3461ec04bc47cdb79b5051aadc",
+      "after": "d5d8418446bf5b9cc97988e2d74ed2fde097943531bab5a54c06d803366ef1d9"
+    },
+    {
+      "file": "Sources/LeviathanCore/RMSCoschedule.swift",
+      "before": "30426fc2dbb3228c5b1a3f2218bdf18cf1518275aa95c527e8bb413eda390af0",
+      "after": "85ad70fdfb30f50b990b7c052294e3b586a72ad22c3e60d550c5022183d3b220"
+    },
+    {
+      "file": "tools/rms_coschedule_component/main.swift",
+      "before": "23498e1fcf7c0707fc2212a81d2d654210b041d3ece2d6d72bcc923122c52521",
+      "after": "3c9bcb997d3d8a433f82d555b39800b6696e43abf60c20c6649753f50a0ad4aa"
+    },
+    {
+      "file": "tools/rms_coschedule_pure_tests/main.swift",
+      "before": "a36ff65de8889b8ef721791a731727978c5022f9de84df99987c98238d736666",
+      "after": "f8a0a6b54bfcc1627c747104dc828f4688bd299c84ee3688eaeed0a2f46d1934"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "requiredPatches": [
+    {
+      "file": "tools/rms_coschedule_component/main.swift",
+      "old": "var setupStagesReached: [String] = []\nfunc setupEmit(_ line: String) {\n    say(line)\n    if let stage = RMSCoscheduleSetup.stageName(fromDoneLine: line) { setupStagesReached.append(stage) }\n}\nlet maybeContext: RMSCoscheduleContext?\nvar setupError: String? = nil\ndo {\n    maybeContext = try RMSCoscheduleSetup.make(gguf: URL(fileURLWithPath: options.gguf), emit: setupEmit)\n} catch {",
+      "new": "var setupStagesReached: [String] = []\nlet maybeContext: RMSCoscheduleContext?\nvar setupError: String? = nil\ndo {\n    // Non-escaping closure formed in top-level (main actor) code: it is invoked synchronously by make() on the same\n    // actor, so it may mutate the main-actor-isolated stage collector under strict Swift 6 checking.\n    maybeContext = try RMSCoscheduleSetup.make(gguf: URL(fileURLWithPath: options.gguf)) { line in\n        say(line)\n        if let stage = RMSCoscheduleSetup.stageName(fromDoneLine: line) { setupStagesReached.append(stage) }\n    }\n} catch {",
+      "reason": "Actual Swift 6 error at main.swift:43: a nonisolated global function cannot mutate the main-actor-isolated top-level var. Replacing the global function with a non-escaping closure literal at the call site keeps the closure inside the main actor's isolation (it runs synchronously inside make, which the main actor calls), so no @MainActor annotation, nonisolated(unsafe), shared mutable state or checking suppression is needed. Emitted lines, stage collection, setup-only report and all protocol behaviour are unchanged."
+    }
+  ],
+  "validationRequirements": [
+    "Static analysis only; nothing was compiled here. Rebuild the frozen package copy and the worktree: the CLI target must compile with strict Swift 6 concurrency checking unchanged and no new warnings in this file.",
+    "If the compiler instead reports that the closure 'loses global actor' or must be Sendable, that would indicate the installed toolchain treats the parameter as escaping or Sendable; in that case the only acceptable follow-up is to re-verify that RMSCoscheduleSetup.make declares emit as a plain non-escaping (String) -> Void, which the pasted signature confirms. Do not add nonisolated(unsafe) or disable checking.",
+    "Behaviour must be identical to the previous intent: every 'setup stage done:' line still appends its stage name to the collector in order; --setup-only writes the setup report, prints the summary and END, exits 0 only when setupCompleted; normal mode calls run exactly as before.",
+    "rms-coschedule-pure-tests are untouched by this patch and must still report 60 passed, 0 failed."
+  ]
+}

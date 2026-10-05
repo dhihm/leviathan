@@ -1,0 +1,38 @@
+[
+  {
+    "name": "pure",
+    "exit": 0,
+    "timedOut": false,
+    "elapsedSeconds": 1.139242374803871,
+    "stdout": "rms-coschedule-pure-tests passed 71 failed 0\n",
+    "stderr": "",
+    "ownership": "live owned Popen; SIGTERM and grace only; no SIGKILL"
+  },
+  {
+    "name": "eof",
+    "exit": 1,
+    "timedOut": false,
+    "elapsedSeconds": 0.5351487919688225,
+    "stdout": "BENCHMARK_READY\n",
+    "stderr": "GO not received; nothing started\n",
+    "ownership": "live owned Popen; SIGTERM and grace only; no SIGKILL"
+  },
+  {
+    "name": "existing-report",
+    "exit": 1,
+    "timedOut": false,
+    "elapsedSeconds": 0.012443291954696178,
+    "stdout": "",
+    "stderr": "report path must be new: /tmp/leviathan-forge2-tooling/phase66-rms-boundary-validation/eof-reserved-report.json\n",
+    "ownership": "live owned Popen; SIGTERM and grace only; no SIGKILL"
+  },
+  {
+    "name": "non-go",
+    "exit": 1,
+    "timedOut": false,
+    "elapsedSeconds": 0.02284687478095293,
+    "stdout": "BENCHMARK_READY\n",
+    "stderr": "GO not received; nothing started\n",
+    "ownership": "live owned Popen; SIGTERM and grace only; no SIGKILL"
+  }
+]

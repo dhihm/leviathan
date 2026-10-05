@@ -1,0 +1,57 @@
+{
+  "verdict": "PASS_WITH_REQUIRED_PATCHES",
+  "scope": "Static review only of the frozen RMSCoschedule.swift, RMSCoscheduleSetup.swift, component main.swift and pure tests as pasted. No build, test, worktree or tool claims are made.",
+  "findings": [
+    "Setup-only path never calls RMSCoschedule.run, RMSCoschedule.encode, RMSCoschedule.submit or any makeCommandBuffer/commit; RMSCoscheduleSetup.make contains no encoder or command buffer; zero command buffers are encoded or committed in --setup-only.",
+    "No FP64, bit-identity, guard, timing or evidence gate runs in --setup-only; the setup report hard-codes correctnessEvaluated/timingEvaluated/integrationEvidenceThresholdMet false and commandBuffersCommitted 0 under private(set), re-forced by withDiagnosticContract at encode.",
+    "All five claims (fullModelQualified, gainQualified, installable, productionPerformanceClaim, busyTimeClaim) are private(set) false in both report types and re-forced by withDiagnosticContract inside encodeReport/encodeSetupReport, so they are false at every serialization.",
+    "END is printed only after RMSCoscheduleSetup.make has returned or thrown (terminal CPU setup); a hung setup never prints END; in --setup-only no NOT_ENDED path exists because nothing is committed.",
+    "Compile/pipeline failure is captured as Result.failure, reported as compileError in the setup report and forces setupCompleted false; make emits a failed line but still emits context-ready, so stagesReached can end in context-ready while missing library-compile/pipeline-create. The current last-element check relies on the separate compileError guard; exact complete-stage equality (patched below) closes that dependency.",
+    "Report path is opened O_WRONLY|O_CREAT|O_EXCL 0o600 before READY; EOF or any non-GO line exits 1 via fail() before any GGUF read or Metal device creation. An empty exclusive report file remains on pre-GO failure; not a correctness defect but noted for validation.",
+    "modelSha256 is passed through from the option and validated as lowercase hex64; nothing hashes the model. Gemma4Runner.executableDigest hashes only the executable.",
+    "Untimed arm markers emit 'terminal ' + String(s.terminal); on the 10 s timeout submit returns terminal false, report.terminal becomes false, main prints NOT_ENDED and exits 5; no terminal claim on timeout.",
+    "All run-path emits are CPU-side at stage boundaries outside encoders; no emit occurs between makeComputeCommandEncoder and endEncoding; nothing is emitted per warm/timed arm.",
+    "Normal path kernel ABI, FP64 oracle, 1e-4 contract, bit identity, 256-byte canary, 2 warmup + 6 timed pairs, 0.85 evidence rule, status precedence and exit codes are present as described; no change to them is proposed.",
+    "Cosmetic only, no patch: the ternary in armFailure assignment yields the same string on both branches.",
+    "setupEmit in main.swift indexes split(...)[0]; unreachable crash for an empty done-line remainder from make, but the parse is untestable in main.swift; patched into a pure function below.",
+    "RMSCoscheduleContext has no public initializer, so a setupCompleted-true case cannot be constructed in the pure tests; the patched pure stagesComplete function is the testable surface."
+  ],
+  "requiredPatches": [
+    {
+      "file": "Sources/LeviathanCore/RMSCoscheduleSetup.swift",
+      "old": "    public static let stages = [\"gguf-map-parse\", \"config\", \"tensor-contract\", \"norm-packing\",\n                                \"metal-device-queue\", \"weight-buffer\", \"library-compile\", \"pipeline-create\",\n                                \"context-ready\"]\n",
+      "new": "    public static let stages = [\"gguf-map-parse\", \"config\", \"tensor-contract\", \"norm-packing\",\n                                \"metal-device-queue\", \"weight-buffer\", \"library-compile\", \"pipeline-create\",\n                                \"context-ready\"]\n\n    /// True only when the reached boundary list is exactly the complete ordered stage list: no missing, extra,\n    /// duplicated or reordered boundary. Pure; used by the setup-only diagnostic.\n    public static func stagesComplete(_ reached: [String]) -> Bool { reached == stages }\n\n    /// Stage name of a done line (the norm-packing done line carries a parenthesized suffix); nil for any other line.\n    public static func stageName(fromDoneLine line: String) -> String? {\n        guard line.hasPrefix(donePrefix) else { return nil }\n        let rest = line.dropFirst(donePrefix.count)\n        guard let first = rest.split(separator: \" \", maxSplits: 1, omittingEmptySubsequences: true).first,\n              !first.isEmpty else { return nil }\n        return String(first)\n    }\n",
+      "reason": "Make the complete-ordered-stage check and the done-line parse pure, public and testable; exact equality rejects missing, duplicated, reordered or extra stages instead of only inspecting the last element."
+    },
+    {
+      "file": "Sources/LeviathanCore/RMSCoschedule.swift",
+      "old": "        r.setupCompleted = context != nil && setupError == nil && r.compileError == nil\n            && stagesReached.last == RMSCoscheduleSetup.stages.last\n",
+      "new": "        r.setupCompleted = context != nil && setupError == nil && r.compileError == nil\n            && RMSCoscheduleSetup.stagesComplete(stagesReached)\n",
+      "reason": "setupCompleted must require every ordered setup boundary, not just the final context-ready line, which make emits even after a pipeline failure."
+    },
+    {
+      "file": "tools/rms_coschedule_component/main.swift",
+      "old": "func setupEmit(_ line: String) {\n    say(line)\n    if line.hasPrefix(RMSCoscheduleSetup.donePrefix) {\n        let rest = String(line.dropFirst(RMSCoscheduleSetup.donePrefix.count))\n        setupStagesReached.append(String(rest.split(separator: \" \", maxSplits: 1)[0]))\n    }\n}\n",
+      "new": "func setupEmit(_ line: String) {\n    say(line)\n    if let stage = RMSCoscheduleSetup.stageName(fromDoneLine: line) { setupStagesReached.append(stage) }\n}\n",
+      "reason": "Use the tested pure parser; removes the unguarded [0] index and keeps the CLI stage list derivation identical to what the pure tests cover."
+    },
+    {
+      "file": "tools/rms_coschedule_pure_tests/main.swift",
+      "old": "t.check(\"setup stage list ends at context-ready\", RMSCoscheduleSetup.stages.last == \"context-ready\"\n        && RMSCoscheduleSetup.stages.count == 9)\n",
+      "new": "t.check(\"setup stage list ends at context-ready\", RMSCoscheduleSetup.stages.last == \"context-ready\"\n        && RMSCoscheduleSetup.stages.count == 9)\nlet allStages = RMSCoscheduleSetup.stages\nt.check(\"stagesComplete accepts the exact ordered list\", RMSCoscheduleSetup.stagesComplete(allStages))\nt.check(\"stagesComplete rejects last-only\", !RMSCoscheduleSetup.stagesComplete([\"context-ready\"]))\nt.check(\"stagesComplete rejects missing compile stage\",\n        !RMSCoscheduleSetup.stagesComplete(allStages.filter { $0 != \"library-compile\" }))\nt.check(\"stagesComplete rejects missing pipeline stage\",\n        !RMSCoscheduleSetup.stagesComplete(allStages.filter { $0 != \"pipeline-create\" }))\nt.check(\"stagesComplete rejects reorder\", !RMSCoscheduleSetup.stagesComplete(Array(allStages.reversed())))\nt.check(\"stagesComplete rejects duplicate\", !RMSCoscheduleSetup.stagesComplete(allStages + [\"context-ready\"]))\nt.check(\"stagesComplete rejects extra\", !RMSCoscheduleSetup.stagesComplete(allStages + [\"run\"]))\nt.check(\"stagesComplete rejects empty\", !RMSCoscheduleSetup.stagesComplete([]))\nlet doneP = RMSCoscheduleSetup.donePrefix\nt.check(\"stage name parsed from done lines only\",\n        RMSCoscheduleSetup.stageName(fromDoneLine: doneP + \"norm-packing (3 small norm tensors, 12345 bytes)\")\n            == \"norm-packing\"\n            && RMSCoscheduleSetup.stageName(fromDoneLine: doneP + \"context-ready\") == \"context-ready\"\n            && RMSCoscheduleSetup.stageName(fromDoneLine: RMSCoscheduleSetup.beginPrefix + \"config\") == nil\n            && RMSCoscheduleSetup.stageName(fromDoneLine: RMSCoscheduleSetup.failedPrefix + \"weight-buffer\") == nil\n            && RMSCoscheduleSetup.stageName(fromDoneLine: doneP) == nil\n            && RMSCoscheduleSetup.stageName(fromDoneLine: doneP + \" \") == nil)\nlet fullNoContext = RMSCoschedule.setupDiagnostic(context: nil, setupError: nil, stagesReached: allStages,\n                                                  modelSha256: sha, executableDigest: sha)\nt.check(\"complete stages without context is not completed\",\n        !fullNoContext.setupCompleted && fullNoContext.stagesReached == allStages && fullNoContext.compileError == nil)\nlet lastOnlyWithError = RMSCoschedule.setupDiagnostic(context: nil, setupError: nil,\n                                                      stagesReached: [\"context-ready\"], modelSha256: sha,\n                                                      executableDigest: sha)\nt.check(\"last-only stages is not completed\", !lastOnlyWithError.setupCompleted)\n",
+      "reason": "Meaningful tests for exact complete-stage equality and the done-line parser; the setupCompleted-true path cannot be constructed in pure tests because RMSCoscheduleContext has no public initializer, so the pure predicate is the tested surface."
+    }
+  ],
+  "blockers": [],
+  "validationRequirements": [
+    "Build LeviathanCore and both tools after applying the four patches; the Setup file patch must land before the RMSCoschedule.swift and main.swift patches compile.",
+    "Run tools/rms_coschedule_pure_tests and require 0 failures; the new stagesComplete, stageName and setupDiagnostic checks must all pass.",
+    "Static grep: in the --setup-only branch of main.swift and in RMSCoscheduleSetup.swift confirm no makeCommandBuffer, makeComputeCommandEncoder, commit, waitUntilCompleted or RMSCoschedule.run call.",
+    "Live --setup-only run with a real GGUF after sending exactly GO: expect 9 'setup stage done:' lines in the frozen order, the summary line 'stages reached 9 of 9', END, exit 0, and a report whose stagesReached equals the full ordered list, setupCompleted true, compileError null, commandBuffersCommitted 0 and all claim/evaluation flags false. Must finish without the 600 s SIGTERM; if it does not, locate the hang from the last begin line and draw no numeric or performance conclusion.",
+    "Pre-GO EOF run (close stdin after READY): expect exit 1, no setup stage lines, no END, no Metal device or GGUF access; note that an empty exclusive 0o600 report file remains and decide whether the harness treats that as acceptable.",
+    "Existing report path run: expect 'report path must be new' and exit 1 before READY.",
+    "Run with a non-GO line (e.g. 'go' or 'GO '): expect exit 1 before setup.",
+    "Confirm the written setup report is under 16 MiB and parses as JSON with kind rms-independent-coschedule-setup-diagnostic-v1 and modelSha256 equal to the supplied cached value verbatim.",
+    "Confirm no change to the normal run path semantics: diff after patch touches only setupDiagnostic's completion predicate, the Setup helpers, setupEmit and tests."
+  ]
+}

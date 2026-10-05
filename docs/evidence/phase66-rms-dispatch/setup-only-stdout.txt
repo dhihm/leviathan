@@ -1,0 +1,2 @@
+BENCHMARK_READY
+setup stage begin: gguf-map-parse

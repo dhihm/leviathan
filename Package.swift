@@ -130,6 +130,16 @@ let package = Package(
             path: "tools/q4_register_loop_pure_tests"
         ),
         .executableTarget(
+            name: "rms-coschedule-component",
+            dependencies: ["LeviathanCore"],
+            path: "tools/rms_coschedule_component"
+        ),
+        .executableTarget(
+            name: "rms-coschedule-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/rms_coschedule_pure_tests"
+        ),
+        .executableTarget(
             name: "q4-first-divergence-diagnostic",
             dependencies: ["LeviathanCore"],
             path: "tools/q4_first_divergence_diagnostic"

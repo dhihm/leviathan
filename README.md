@@ -32,3 +32,5 @@ Leviathan is a personal project building a local LLM inference engine for Mac GP
 - Performance: closing the gap with Ollama and broader Python model coverage are in progress.
 
 [MIT](LICENSE); model weights keep their upstream terms.
+
+- [Independent RMS dispatch diagnostics and model file I/O blocker](docs/RMS_DISPATCH_DIAGNOSTICS_PHASE66.md): native build, 71 pure checks and 2,056 existing regression checks pass; model-specific measurements remain blocked on an unreadable dataless model file. No speedup or pass promotion is claimed.

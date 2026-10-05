@@ -1,0 +1,13 @@
+{
+  "path": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+  "bytes": 14439363584,
+  "flags": 1073741920,
+  "sfDatalessMask": 1073741824,
+  "dataless": true,
+  "allocatedBlocks": 0,
+  "exactCachedDigestBlobFoundInCheckedOllamaAndHFLocations": false,
+  "explicitDownloadCommandStarted": false,
+  "underlyingFileProviderHydrationStatus": "unknown",
+  "modelRehashed": false,
+  "modelWeightContentExported": false
+}

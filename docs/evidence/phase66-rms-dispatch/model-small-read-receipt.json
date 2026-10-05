@@ -1,0 +1,11 @@
+{
+  "exit": -15,
+  "timedOut": true,
+  "elapsedSeconds": 20.010278541129082,
+  "completedUtc": "2026-10-05T17:12:05.484819+00:00",
+  "readLimitBytes": 4096,
+  "fullMappingAttempted": false,
+  "hashComputed": false,
+  "contentExported": false,
+  "ownership": "live owned Popen; SIGTERM+grace only; no SIGKILL"
+}

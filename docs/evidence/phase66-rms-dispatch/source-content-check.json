@@ -1,0 +1,9 @@
+{
+  "utc": "2026-10-05T16:26:38.010077+00:00",
+  "file": "Sources/LeviathanCore/RouterOverlapRuntime.swift",
+  "previousFrozenSHA256": "5f138b3dfaf917f6c756cf2af5e3e36897cfd1969ff1888be98fef09828bc83f",
+  "currentSHA256": "5f138b3dfaf917f6c756cf2af5e3e36897cfd1969ff1888be98fef09828bc83f",
+  "contentUnchanged": true,
+  "buildExit": 1,
+  "diagnostic": "modified during the build; no GPU or numerical conclusion"
+}

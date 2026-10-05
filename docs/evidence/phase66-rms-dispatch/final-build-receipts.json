@@ -1,0 +1,40 @@
+[
+  {
+    "argv": [
+      "/usr/bin/swift",
+      "build",
+      "-c",
+      "release",
+      "--product",
+      "rms-coschedule-component",
+      "-j",
+      "1",
+      "--scratch-path",
+      "/tmp/leviathan-forge2-tooling/phase66-rms-frozen-package-build/scratch"
+    ],
+    "exit": 0,
+    "timedOut": false,
+    "elapsedSeconds": 2.8364690830931067,
+    "completedUtc": "2026-10-05T16:40:13.622990+00:00",
+    "ownership": "live owned Popen handle only; no stored PID signals; no SIGKILL"
+  },
+  {
+    "argv": [
+      "/usr/bin/swift",
+      "build",
+      "-c",
+      "release",
+      "--product",
+      "rms-coschedule-pure-tests",
+      "-j",
+      "1",
+      "--scratch-path",
+      "/tmp/leviathan-forge2-tooling/phase66-rms-frozen-package-build/scratch"
+    ],
+    "exit": 0,
+    "timedOut": false,
+    "elapsedSeconds": 3.1638197917491198,
+    "completedUtc": "2026-10-05T16:40:16.787845+00:00",
+    "ownership": "live owned Popen handle only; no stored PID signals; no SIGKILL"
+  }
+]

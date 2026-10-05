@@ -1,0 +1,103 @@
+{
+  "abortReason": null,
+  "benchmark": {
+    "argv": [
+      "/tmp/leviathan-forge2-tooling/phase66-rms-native-run-orchestration/rms-coschedule-component-frozen",
+      "--gguf",
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase66-rms-native-run-orchestration/component-report.json",
+      "--model-sha256",
+      "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "childPid": 14020,
+  "childStatus": "exited",
+  "cleanupAction": "sigterm",
+  "elapsedSeconds": 600.006678,
+  "endMarkerObserved": false,
+  "error": null,
+  "exitCode": null,
+  "exitEvidenceSource": "supervisor_popen_wait_status",
+  "exitSignal": 15,
+  "goSent": true,
+  "interruptedBy": null,
+  "kind": "owned_benchmark_supervisor_receipt",
+  "launchUUID": "9e50b9e2-facb-4f10-94ba-da2146bb87a1",
+  "lockPath": "/tmp/leviathan-forge2-tooling/phase66-rms-concurrent-component-run/supervisor.lock",
+  "lockReleaseEligible": true,
+  "markers": {
+    "endObservedUTC": null,
+    "goSentUTC": "2026-10-05T15:54:40.327768Z",
+    "readyObservedUTC": "2026-10-05T15:54:40.306154Z"
+  },
+  "notes": [],
+  "progress": {
+    "lastLine": "BENCHMARK_READY",
+    "lastLineUTC": "2026-10-05T15:54:40.306154Z",
+    "lineCount": 1,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "readyObserved": true,
+  "receiptUTC": "2026-10-05T16:04:39.774040Z",
+  "resources": {
+    "postWindow": {
+      "commands": {
+        "pmset_therm": {
+          "argv": [
+            "/usr/bin/pmset",
+            "-g",
+            "therm"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+        },
+        "vm_stat": {
+          "argv": [
+            "/usr/bin/vm_stat"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                5124.\nPages active:                            379645.\nPages inactive:                          311932.\nPages speculative:                        67084.\nPages throttled:                              0.\nPages wired down:                        777819.\nPages purgeable:                           1008.\n\"Translation faults\":              207185752743.\nPages copy-on-write:                46988792782.\nPages zero filled:                  42572369914.\nPages reactivated:                  21785986959.\nPages purged:                         763401026.\nFile-backed pages:                       264509.\nAnonymous pages:                         494152.\nPages stored in compressor:             3446662.\nPages occupied by compressor:            498838.\nDecompressions:                     18038405202.\nCompressions:                       18925475021.\nPageins:                             3607654008.\nPageouts:                              14045769.\nSwapins:                              328714806.\nSwapouts:                             448529052.\n"
+        }
+      },
+      "label": "post_exit",
+      "utc": "2026-10-05T16:04:39.756147Z"
+    },
+    "postWindowSkippedReason": null,
+    "preGo": {
+      "commands": {
+        "pmset_therm": {
+          "argv": [
+            "/usr/bin/pmset",
+            "-g",
+            "therm"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+        },
+        "vm_stat": {
+          "argv": [
+            "/usr/bin/vm_stat"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                3952.\nPages active:                            367988.\nPages inactive:                          327414.\nPages speculative:                        39719.\nPages throttled:                              0.\nPages wired down:                        792521.\nPages purgeable:                              0.\n\"Translation faults\":              207153590689.\nPages copy-on-write:                46981339350.\nPages zero filled:                  42565015075.\nPages reactivated:                  21783839192.\nPages purged:                         763150487.\nFile-backed pages:                       242925.\nAnonymous pages:                         492196.\nPages stored in compressor:             3479029.\nPages occupied by compressor:            508896.\nDecompressions:                     18036517855.\nCompressions:                       18923432099.\nPageins:                             3605717511.\nPageouts:                              14003981.\nSwapins:                              328705697.\nSwapouts:                             448529052.\n"
+        }
+      },
+      "label": "pre_go",
+      "utc": "2026-10-05T15:54:40.307663Z"
+    }
+  },
+  "result": "timeout",
+  "schemaVersion": 1,
+  "signalsReceived": [],
+  "startReleased": true,
+  "supervisorPid": 14019,
+  "timedOut": true,
+  "windowElapsedSeconds": null
+}
