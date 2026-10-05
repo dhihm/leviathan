@@ -40,6 +40,16 @@ let package = Package(
             path: "tools/owned_process_diagnostics_pure_tests"
         ),
         .executableTarget(
+            name: "router-selection-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/router_selection_pure_tests"
+        ),
+        .executableTarget(
+            name: "router-selection-component",
+            dependencies: ["LeviathanCore"],
+            path: "tools/router_selection_component"
+        ),
+        .executableTarget(
             name: "leviathan-forge-helper",
             dependencies: ["LeviathanCore"],
             path: "Sources/leviathan-forge-helper"

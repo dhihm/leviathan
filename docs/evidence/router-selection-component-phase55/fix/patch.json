@@ -1,0 +1,40 @@
+{
+  "findings": [
+    {
+      "severity": "test-defect",
+      "file": "tools/router_selection_pure_tests/main.swift",
+      "symbol": "checkLayout (\"declared fields exceed 256 B and fit the stride\")",
+      "reason": "The predicate sums field lengths, which for the gemma4 layout is exactly 236 bytes (ids 32 + flags 4 + magic 4 + layer 4 + raw 32 + GU offsets 64 + DN offsets 64 + eight 4-byte coefficient slots), so declared > 256 is false. The layout itself is correct: what exceeds 256 B is the declared span (the last coefficient slot ends at 2564 of the 2816-byte stride), which is the property that justifies the derived stride over an assumed 256 B record. The assertion is corrected to check the span and to pin the exact byte sum; no Core change."
+    },
+    {
+      "severity": "test-defect",
+      "file": "tools/router_selection_pure_tests/main.swift",
+      "symbol": "checkSelection (\"fixed refusal set\")",
+      "reason": "refusalCases constructs 15 cases: three non-finite, three tiny or subnormal, three range, one near-tie, one round-boundary, three scale-domain and one scale-product underflow. The 16th declared refusal (offsetDomainLayer, layer index 30) exists only in the GPU component because it is a device-side layer-bounds refusal that the host mirror cannot express; the pure test asserted 16 by copying the GPU count. The GPU tool's report derives ordinary and refusal counts from the case list and its pass predicate uses those derived values, so it needs no change. The pure assertion is corrected to 15 with no case removed or added."
+    },
+    {
+      "severity": "info",
+      "file": "tools/router_selection_pure_tests/main.swift",
+      "symbol": "checkSelection (ordinary families)",
+      "reason": "All 651 ordinary cases are unflagged and bit-exact against the independent copy of the router_topk math, the sampled double-float quotient error is 1.26e-14 (about 2^-46.2) under the budget/4 bound of 5.68e-14 as a fixed sample, and the near-tie case shows the FP64 exp collapse that the gap flag exists to decline. Both failures are assertion arithmetic, not numerical or policy issues; no tolerance, seed, case set or refusal declaration changes."
+    }
+  ],
+  "patches": [
+    {
+      "file": "tools/router_selection_pure_tests/main.swift",
+      "old": "    let declared = l.fieldRanges.reduce(0) { $0 + $1.length }\n    h.check(declared > 256 && declared <= l.recordStride, \"declared fields exceed 256 B and fit the stride\")\n",
+      "new": "    let declared = l.fieldRanges.reduce(0) { $0 + $1.length }\n    let declaredSpan = l.fieldRanges.map { $0.offset + $0.length }.max() ?? 0\n    h.check(declared == 236 && declaredSpan == 2564 && declaredSpan > 256 && declaredSpan <= l.recordStride,\n            \"declared fields total 236 B, span 2564 B exceeds 256 B and fits the stride\")\n"
+    },
+    {
+      "file": "tools/router_selection_pure_tests/main.swift",
+      "old": "    h.check(refusals.count == 16, \"fixed refusal set\")\n",
+      "new": "    h.check(refusals.count == 15, \"fixed refusal set (15 host-constructible classes; the GPU-only offsetDomain layer refusal is the 16th in the component tool)\")\n"
+    }
+  ],
+  "limitations": [
+    "Patches change only two test predicates to match the actual arithmetic; no Core source, GPU tool, numerical budget, seed, case list or refusal declaration is modified.",
+    "Expected result after the patches is 126 passed, 0 failed, by replacing the two failing assertions with corrected ones; this is inferred from the log, not observed.",
+    "My earlier review stated 16 pure refusals; the correct host-constructible count is 15 and the GPU component's 16 includes the offsetDomain layer case.",
+    "The GPU component has still not been run; its 187 ordinary and 16 declared-refusal counts are derived from the case list at runtime and are unaffected by these test fixes."
+  ]
+}

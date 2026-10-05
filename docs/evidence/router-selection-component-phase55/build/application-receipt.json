@@ -1,0 +1,21 @@
+{
+  "canonicalExternalAuthor": "claude-opus-5-5",
+  "mechanicalExactOnly": true,
+  "files": [
+    {
+      "path": "Package.swift",
+      "beforeSHA256": "a72501ad0cb9da93e6939c952bb4ca29b888e6c3773c2bdbe6f13face0d9e112",
+      "afterSHA256": "e13825b57cc13236c33fe0b15b9a943187c5af23ea6a2f23882847e08e9a93fe"
+    },
+    {
+      "path": "tools/router_selection_pure_tests/main.swift",
+      "beforeSHA256": null,
+      "afterSHA256": "87453d745488ef9a8f1d62ff6744b66c43c6a82217e92a6b5d13402ee53a11b6"
+    },
+    {
+      "path": "tools/router_selection_component/main.swift",
+      "beforeSHA256": null,
+      "afterSHA256": "e84fe431d686547b04e846f3488ee6a0c29ac2503c020a43f6e9e95ee82a5e91"
+    }
+  ]
+}

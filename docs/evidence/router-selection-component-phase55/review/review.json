@@ -1,0 +1,68 @@
+{
+  "verdict": "ACCEPT",
+  "findings": [
+    {
+      "severity": "info",
+      "file": "tools/router_selection_component/main.swift",
+      "symbol": "evaluateCase / evaluateAll / pass",
+      "reason": "The GPU record is compared directly against the exact CPU FP64 reference (ids, Float32 quotient bits, Float32 coefficient bits), not against the host mirror. The mirror only adds a PREFLIGHT problem when it disagrees with the CPU reference or fails to refuse a declared class. Ordinary cases require zero flags; any flag on an ordinary case is UNEXPECTED_FLAGS and fails the run, so mirror-predicted flags cannot excuse a GPU refusal. Declared refusals require the declared bit, no unexplained bit, ids 0, zero raw and coefficient bits, and are counted separately as REFUSED_AS_DECLARED. pass requires no problem category, 187 exact matches of 187, 16 refusals of 16, canaries intact and the compiled source digest equal to the pre-GO emission. No adaptive exclusion exists."
+    },
+    {
+      "severity": "info",
+      "file": "tools/router_selection_pure_tests/main.swift",
+      "symbol": "existingRouterTopK / checkSelection",
+      "reason": "An independent verbatim copy of the GemmaForge router_topk math (Float subtract before Double, FP64 softmax, lower-index tie-break, Float rounding, Float scale multiply) is the oracle; cpuReference is checked bit-identical to it on every ordinary case, and the mirror must match ids, quotient bits and coefficient bits exactly while unflagged. The sampled quotient error against budget/4 is labeled a fixed-seed sample, not a universal bound. Note the ordinary set is 651 cases by the test's own arithmetic (5 + 256 + 96 + 96 + 64 + 128 + 2 + 4), not 647 as stated in the request; the test is self-consistent."
+    },
+    {
+      "severity": "medium",
+      "file": "tools/router_selection_pure_tests/main.swift and tools/router_selection_component/main.swift",
+      "symbol": "ordinaryCases / makeCases (round-boundary declines on fixed seeds)",
+      "reason": "A round-boundary flag fires when the quotient lies within a relative 2^-42 of a Float32 rounding midpoint, about 2^-17 per coefficient. Over 651 x 8 pure coefficients that is roughly a 4 percent chance that the fixed seed contains one legitimately declined ordinary case, about 1 percent for the 187 x 8 GPU coefficients. The harness correctly treats that as a failure to be examined, not a pass. If it occurs, the required handling is to record the exact score and coefficient bits as an observed decline in the report and move that single case to the declared set by its bits, never to change seeds or widen the budget. Not blocking."
+    },
+    {
+      "severity": "info",
+      "file": "tools/router_selection_component/main.swift and pure tests",
+      "symbol": "findRoundBoundaryScore",
+      "reason": "The search is linear: one Double exp and two midpoint tests per step, not 128 exps, with an expected hit around one million steps and a hard bound of 2^25 steps (a few seconds worst case). It runs before BENCHMARK_READY and will not approach the supervisor's 60-second bound. If a future IR changes the tolerance, a precomputed fixed-bits fixture would be preferable to a longer search, but no change is needed now."
+    },
+    {
+      "severity": "info",
+      "file": "Sources/LeviathanCore/RouterSelectionKernel.swift",
+      "symbol": "RouterSelectionGPUComponent.run (commit discipline)",
+      "reason": "Every throwing operation (validation, staging, allocations, encoder creation) precedes cb.commit(); after commit the code only waits on the semaphore, inspects status, reads back and decodes, with no throwing calls. The CLI's claim that a thrown error means nothing was committed holds. NOT_ENDED leaves the command buffer in flight with buffers retained by Metal, is reported non-terminal with exit 5 and prints NOT_ENDED rather than TIMED_WINDOW_END; ERROR and COMPLETED are terminal and print the end token after the report write."
+    },
+    {
+      "severity": "info",
+      "file": "Sources/LeviathanCore/RouterSelectionKernel.swift",
+      "symbol": "emitted leviathan_router_select / rangeSweep and rangeEdge families",
+      "reason": "Boundary math at d = -80 is sound: k = -115, m in [0.707, 1.415], t >= 1, fp in [0.0625, 1.415), fq >= 2^-119 normal, and with scales of magnitude in [0.25, 15.25] the coefficient stays normal, so the rangeEdge and rangeSweep ordinary cases are genuine bit comparisons against CPU values near 1e-35. The declared underflowSubnormalCoefficient refusal shows the CPU coefficient is a nonzero subnormal at d = -100, justifying the refusal rather than a flush. The all-128 range check still over-refuses when any non-selected expert is below -80 (declared as rangeUnselected); this remains a usability concern for real-model flag rates, as previously noted."
+    },
+    {
+      "severity": "info",
+      "file": "tools/router_selection_component/main.swift",
+      "symbol": "protocol and report policy",
+      "reason": "Tokens come from RouterOverlapModelGate (BENCHMARK_READY, GO, TIMED_WINDOW_END). Before READY only argument parsing, exclusive report path check, CPU case generation, CPU references, mirror, source emission and digests run; no MTLDevice, no model cache, mmap or weights. EOF or any line other than exact GO exits 3 with no device created. The report is written exclusively, bounded at 1 MiB without trimming, stores all floats as bit patterns or digests so no non-finite JSON can occur, and forces gainQualified, installable, productionPerformanceClaim, realE4GateComplete and refusalsProveCoverage false as plain encoded fields, which are statements, not a permission mechanism. The synthetic tagged producer/consumer proves offset plumbing (7680 proven offsets, 203 consumed records with per-slot tags, canaries, padding) and is explicitly not an E4 real-weights validation."
+    },
+    {
+      "severity": "minor",
+      "file": "tools/router_selection_component/main.swift",
+      "symbol": "executableDigest",
+      "reason": "On failure it returns the string 'unavailable' instead of a hex digest. Harmless for a diagnostic report but a consumer expecting 64 hex characters should tolerate it. Not blocking."
+    },
+    {
+      "severity": "info",
+      "file": "tools/router_selection_pure_tests/main.swift",
+      "symbol": "runAll / imports",
+      "reason": "No Metal device is created: the pure tests never reference RouterSelectionGPUComponent or MTLCreateSystemDefaultDevice, and the Core file's GPU class is unreferenced by any runtime, gate, kernel or default path. Build readiness by inspection: local functions are declared before use, memberwise initializers match declaration order, let-with-default is excluded from ErrorSample's memberwise init as used, hex float literals and OptionSet array literals are valid, and the Package patch anchors the two new targets after the existing owned-process test target."
+    }
+  ],
+  "requiredFixes": [],
+  "patches": [],
+  "limitations": [
+    "Read-only review; nothing was built or run. The part 1 Core build is reported passing after the SHA256 fix; the new targets are assessed for compile validity by inspection only.",
+    "The 2^-42 certificate budget and the 2^-40 near-tie gap are estimates. Unflagged agreement is proven only on the fixed-seed synthetic sets by direct bit comparison; no global FP64 equivalence theorem is claimed, and libm monotonicity or 1-ulp accuracy is not assumed.",
+    "Flag rates on real router activations are not measured here; the all-128 range check may produce declines on real data, which would be reported as refusals, never masked.",
+    "Metal fp-contraction under mathMode .safe is not established from documentation; it can only affect mirror-versus-GPU agreement (reported as PREFLIGHT or UNEXPECTED_FLAGS), not the direct GPU-versus-CPU comparison.",
+    "The component is synthetic-only: offsets, payload tags and scales are generated; it opens no model file and is not the E4 real-weights gate."
+  ]
+}
