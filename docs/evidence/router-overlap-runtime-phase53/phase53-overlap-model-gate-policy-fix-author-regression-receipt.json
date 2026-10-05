@@ -1,0 +1,26 @@
+{
+  "utc": "2026-10-05T05:31:30.942482+00:00",
+  "results": {
+    "router-overlap-model-gate-pure-tests": {
+      "exit": 0,
+      "elapsedSeconds": 0.7315920419059694,
+      "exeSha256": "7d52778f9a9785c723c336f4ad6474886a05f6b861564d1fffae4d57e737ec68",
+      "GPU": false,
+      "modelReadOrHash": false
+    },
+    "router-overlap-runtime-pure-tests": {
+      "exit": 0,
+      "elapsedSeconds": 0.5129352076910436,
+      "exeSha256": "9237cc9821e1a31b80d316e1c118c0f62df630322622022d0868369c62fc8c74",
+      "GPU": false,
+      "modelReadOrHash": false
+    },
+    "router-overlap-pure-tests": {
+      "exit": 0,
+      "elapsedSeconds": 0.9469679580070078,
+      "exeSha256": "db8803e1b4298913baf94f9ae13dd956d3860844bf850f50dec0922dda825b55",
+      "GPU": false,
+      "modelReadOrHash": false
+    }
+  }
+}

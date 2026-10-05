@@ -1,0 +1,180 @@
+{
+  "benchmark": {
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/router-overlap-model-gate",
+      "--qualification-only",
+      "--gguf",
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+      "--region",
+      "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+      "--graph",
+      "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+      "--fixtures",
+      "/tmp/leviathan-forge2-tooling/phase50-simd-model-integration/model-gate-fixtures.json",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase53-all-three-model-qualification-run/qualification-report.json"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "child": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 37395,
+      "ppid": 37394,
+      "start_tvsec": 1791180251,
+      "start_tvusec": 114706,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 37395,
+        "ppid": 37394,
+        "start_tvsec": 1791180251,
+        "start_tvusec": 114706,
+        "uid": 501
+      },
+      "pid": 37395,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 37395,
+    "spawnedUTC": "2026-10-05T06:04:11.116360Z"
+  },
+  "cleanupResult": {
+    "lockReleaseEligible": true,
+    "lockReleaseError": null,
+    "lockReleased": true
+  },
+  "createdUTC": "2026-10-05T06:04:11.113684Z",
+  "kind": "owned_benchmark_supervisor_state",
+  "launchUUID": "df35347a-3a71-413c-a80c-1e8e9013a9c5",
+  "markers": {
+    "endObservedUTC": "2026-10-05T06:07:27.289315Z",
+    "goSentUTC": "2026-10-05T06:04:11.702378Z",
+    "readyObservedUTC": "2026-10-05T06:04:11.685538Z"
+  },
+  "outputDir": "/tmp/leviathan-forge2-tooling/phase53-all-three-model-qualification-run",
+  "phase": "finished",
+  "phaseHistory": [
+    {
+      "phase": "created",
+      "utc": "2026-10-05T06:04:11.113701Z"
+    },
+    {
+      "phase": "spawning_wrapper",
+      "utc": "2026-10-05T06:04:11.114110Z"
+    },
+    {
+      "phase": "wrapper_spawned",
+      "utc": "2026-10-05T06:04:11.116393Z"
+    },
+    {
+      "phase": "identity_recorded",
+      "utc": "2026-10-05T06:04:11.117102Z"
+    },
+    {
+      "phase": "start_released",
+      "utc": "2026-10-05T06:04:11.117473Z"
+    },
+    {
+      "phase": "ready_observed",
+      "utc": "2026-10-05T06:04:11.685732Z"
+    },
+    {
+      "phase": "pre_go_snapshot",
+      "utc": "2026-10-05T06:04:11.686351Z"
+    },
+    {
+      "phase": "sending_go",
+      "utc": "2026-10-05T06:04:11.701604Z"
+    },
+    {
+      "phase": "timed_window",
+      "utc": "2026-10-05T06:04:11.702385Z"
+    },
+    {
+      "phase": "window_ended",
+      "utc": "2026-10-05T06:07:27.289487Z"
+    },
+    {
+      "phase": "post_window",
+      "utc": "2026-10-05T06:07:27.326269Z"
+    },
+    {
+      "phase": "stdout_closed",
+      "utc": "2026-10-05T06:07:27.403034Z"
+    },
+    {
+      "phase": "child_exited",
+      "utc": "2026-10-05T06:07:27.404159Z"
+    },
+    {
+      "phase": "finished",
+      "utc": "2026-10-05T06:07:27.406896Z"
+    }
+  ],
+  "phaseUTC": "2026-10-05T06:07:27.406896Z",
+  "progress": {
+    "lastLine": "report /tmp/leviathan-forge2-tooling/phase53-all-three-model-qualification-run/qualification-report.json written: status qualificationPassed; gainQualified false; no artifact, no activation, no winner",
+    "lastLineUTC": "2026-10-05T06:07:27.327293Z",
+    "lineCount": 9,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "quietReadyFile": null,
+  "quietRequestFile": null,
+  "receiptWritten": true,
+  "schemaVersion": 1,
+  "supervisor": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 37394,
+      "ppid": 65294,
+      "start_tvsec": 1791180251,
+      "start_tvusec": 47309,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 37394,
+        "ppid": 65294,
+        "start_tvsec": 1791180251,
+        "start_tvusec": 47309,
+        "uid": 501
+      },
+      "pid": 37394,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 37394,
+    "uid": 501
+  },
+  "timeoutSeconds": 1200.0,
+  "wrapperArgv": [
+    "/opt/anaconda3/bin/python3",
+    "-I",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/tools/owned_benchmark_supervisor.py",
+    "_exec-wrapper",
+    "--",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/router-overlap-model-gate",
+    "--qualification-only",
+    "--gguf",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "--region",
+    "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+    "--graph",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "--fixtures",
+    "/tmp/leviathan-forge2-tooling/phase50-simd-model-integration/model-gate-fixtures.json",
+    "--report",
+    "/tmp/leviathan-forge2-tooling/phase53-all-three-model-qualification-run/qualification-report.json"
+  ]
+}

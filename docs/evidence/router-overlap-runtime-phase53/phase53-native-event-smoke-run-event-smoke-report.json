@@ -1,0 +1,98 @@
+{
+  "boundedCleanupObservedCompletion" : true,
+  "cpuRaise" : {
+    "dataOK" : true,
+    "eventValueBeforeRaise" : 8,
+    "finalCommandStatus" : 4,
+    "queue" : "second MTLCommandQueue, same retained MTLSharedEvent",
+    "releasedWithinBound" : true,
+    "waitValue" : 9,
+    "waiterNotCompleteBeforeRaise" : true
+  },
+  "device" : "Apple M1 Max",
+  "deviceRegistryID" : 4294970104,
+  "eventFinalValue" : 9,
+  "eventInitialValue" : 0,
+  "failures" : [
+
+  ],
+  "gpuBusyTimeClaimed" : false,
+  "ledgerAsyncCommitted" : 8,
+  "ledgerDrained" : 8,
+  "ledgerFailedDrains" : 1,
+  "ledgerLastCommittedSignal" : 8,
+  "notTested" : [
+    "genuine GPU command-buffer failure",
+    "whether Metal signals an event from a failed command buffer",
+    "ledger command-buffer interval accounting (adapter reports 0 microseconds)",
+    "runner integration and model execution",
+    "whether a later GPU signal of a lower value lowers signaledValue after a CPU raise (never encountered by this tool)",
+    "GPU busy time or performance"
+  ],
+  "performanceClaims" : false,
+  "realPrimitives" : [
+    "one retained MTLSharedEvent with encodeWaitForEvent before each compute encoder and encodeSignalEvent per ticket",
+    "public LeviathanCore RouterOverlapTicketLedger commit\/drain with a local MTLCommandBuffer adapter",
+    "bounded status polling before every ledger waitUntilCompleted",
+    "CPU signaledValue raise releasing an already committed waiter on a second command queue"
+  ],
+  "rounds" : [
+    {
+      "eventValueAfterRound" : 2,
+      "round" : 0,
+      "routerDataOK" : true,
+      "routerSignal" : 1,
+      "sharedCommandStatusObservedAtRouterDrain" : 3,
+      "sharedDataOK" : true,
+      "sharedPendingInLedgerAfterRouterDrain" : true,
+      "sharedSignal" : 2,
+      "signalsMonotonic" : true,
+      "simulatedHostFailure" : false
+    },
+    {
+      "eventValueAfterRound" : 4,
+      "round" : 1,
+      "routerDataOK" : true,
+      "routerSignal" : 3,
+      "sharedCommandStatusObservedAtRouterDrain" : 3,
+      "sharedDataOK" : true,
+      "sharedPendingInLedgerAfterRouterDrain" : true,
+      "sharedSignal" : 4,
+      "signalsMonotonic" : true,
+      "simulatedHostFailure" : false
+    },
+    {
+      "eventValueAfterRound" : 6,
+      "round" : 2,
+      "routerDataOK" : true,
+      "routerSignal" : 5,
+      "sharedCommandStatusObservedAtRouterDrain" : 4,
+      "sharedDataOK" : true,
+      "sharedPendingInLedgerAfterRouterDrain" : true,
+      "sharedSignal" : 6,
+      "signalsMonotonic" : true,
+      "simulatedHostFailure" : false
+    },
+    {
+      "eventValueAfterRound" : 8,
+      "round" : 3,
+      "routerDataOK" : true,
+      "routerSignal" : 7,
+      "sharedCommandStatusObservedAtRouterDrain" : 4,
+      "sharedDataOK" : true,
+      "sharedPendingInLedgerAfterRouterDrain" : false,
+      "sharedSignal" : 8,
+      "signalsMonotonic" : true,
+      "simulatedHostFailure" : true
+    }
+  ],
+  "schema" : "router-overlap-event-smoke-v1",
+  "simulated" : [
+    "round 3: the router handle REPORTS failure from the host over a command that SUCCEEDED on the GPU; only ledger cleanup choreography (drain extension to S, poison, two unblock calls both through the highest committed signal) is exercised"
+  ],
+  "status" : "pass",
+  "unblockCalls" : [
+    8,
+    8
+  ]
+}

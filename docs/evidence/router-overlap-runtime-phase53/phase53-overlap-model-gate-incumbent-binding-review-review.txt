@@ -1,0 +1,28 @@
+**Verdict: ACCEPT** for the bounded correctness-only run under normal concurrency. Text-only review of the current files, the author patch set and the receipt. I ran nothing and make no execution claims.
+
+## The incumbent-binding change
+
+- **Candidate.** Both arms now declare divisor 1 with router GPU residency, par64 and tiled F32 off. That entry exists in the legal candidate set, passes the candidate validator because residency is on and tiled F32 is off, and the scope's candidate rejection accepts any allowed divisor. The expected fourteen-flag map follows, so the old divisor-0 candidate now fails identity.
+- **Derived count.** The router projection count is read from the prepared SSA: F32 matvec instructions whose tensor name ends in the router weight suffix. That matches the runtime's router-shaped predicate, which also requires the hidden by expert-count shape. The scale tensor is never a matvec instruction and does not match the suffix. The failure list requires one per layer.
+- **Per-forward expectation.** The runtime increments the launch-applied counter once per router-shaped F32 matvec when residency is armed, the divisor is nonzero and tiled F32 is off. The gate expects one per projection in OFF and ON, scaled by prompt length for prefill and by 31 for continuation, and zero in the direct reference where residency is never armed. If the geometry derivation declines on hardware, the fallback counter becomes nonzero and the exact-counter check fails closed. The actual value is confirmed only by the approved run.
+- **Kernel and buffer relation unchanged.** The divisor path dispatches the same pipeline with the same bindings through the same segment path, so it adds no kernel or buffer and ON versus OFF relations are unaffected. Both arms share the divisor, so the bit-equality contract is unchanged in meaning.
+- **Clean axes between tokens.** The executor arms the divisor per token and its defer resets it to zero. Preconditions, scope entry and the per-token preflight all check the persistent default before the executor runs, so the zero requirement still holds. The persistent runner default is untouched.
+
+| expectation | derived | runtime source |
+|---|---|---|
+| router launch applied, OFF and ON | projections = 30 per forward | one per router-shaped F32 matvec with nonzero divisor |
+| router launch applied, reference | 0 | residency never armed on the direct path |
+| router launch fallback, all arms | 0 | counted only when armed and declined |
+
+## Tests
+
+- The synthetic derived JSON carries the new field, the corruption list adds a 29-projection case, and the OFF literal moves from 0 to 30 for the legitimate reason the gate changed. The test keeps its name and purpose.
+- The new incumbent-binding test asserts the declared divisor and map, rejects the divisor-0 variant against the map, checks 30 applied in OFF and ON with 0 in the reference and no fallback, and shows that a run which never applied the geometry produces exactly one named mismatch at 930 for the continuation phase.
+- Existing assertions remain consistent: the three-key ON versus OFF difference, the zero expectation for every fallback and total key, and the legality and scope acceptance of the declared candidate all still hold with divisor 1.
+- The receipt reports exit 0 with no GPU and no model read or hash. I do not assert a specific check count beyond that.
+
+## Compatibility and caveats
+
+- **Old identity-bearing reports no longer decode.** The derived record has a new required field. No prior full-model report exists and the report is not an artifact schema with a default or promotion path, so this is acceptable. Any earlier diagnostic report that may surface must not be presented as comparable to, or as qualifying under, the current gate.
+- **Static coupling.** The per-forward table reads the divisor from the gate's declared candidate rather than from the context's candidate. Identity pins the context candidate to the same map, so the two cannot diverge in this tool. Passing the candidate into the table would remove the coupling if the gate is ever reused with another candidate.
+- **No performance meaning.** This approval covers correctness qualification under normal concurrency only. Timings collected in that mode carry no TPOT claim and no quiet-environment assumption, and gainQualified stays false regardless of outcome.

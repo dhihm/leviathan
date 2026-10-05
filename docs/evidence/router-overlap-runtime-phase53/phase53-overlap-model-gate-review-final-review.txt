@@ -1,0 +1,26 @@
+**Verdict: ACCEPT.** Both required changes from the previous review are in place, the new public policy tests exercise the real gate code rather than mirrors, and the receipt is consistent with the claims. Text-only review. I ran nothing and make no execution claims beyond what the supplied receipt states.
+
+## The two corrections
+
+- **Per-arm GPU elapsed coverage.** The report now carries a reference, off and on coverage string. The ON text leads with INCOMPLETE, names the excluded asynchronous R and S ticket buffers at two per layer per forward, states that coverage differs from OFF and the reference, forbids summing, and denies busy time, utilization and gain. The totals struct doc and the notes say the same, and the earlier "may include event waits" wording is gone. Nothing in the gate reads these strings for any decision.
+- **gainQualified contract on serialization.** A same-type extension in the same file copies the report and forces the flag false before encoding. Both the compact and pretty encoders go through it. The stated limitation is accurate: a report decoded from external JSON can hold true in memory, and encoders outside this tool are out of scope. No activation API exists.
+
+Core qualification, performance collection, counters, kernels, defaults and hash policy are unchanged from the previously reviewed file.
+
+## Tests: meaning and shape
+
+- **Fixtures.** Every frozen ID and every prompt token of every fixture is tampered one at a time and rejected, plus swaps, 31 and 33 IDs, extra and missing fixtures, renamed and case-changed keys, swapped contents, missing and mistyped fields, truncation, and the 64 KiB bound at exactly the limit and one byte over. Two tests are honestly labeled as documenting current behavior rather than asserting a requirement.
+- **Statistics.** The 31-wall rule is strict in both directions, with NaN, infinities, zero and negatives rejected at either end. The outlier test shows a huge wall is kept, not trimmed. Spread and gain boundary values compare exactly, which holds because the quotients used are correctly rounded to the same doubles as the literals.
+- **Outcome and status.** Seven blocks strict in both directions, warmup presence and order, AB versus BA order per block, duplicated block labels, excluded warmups still failing run checks, missing run TPOT, and the precedence runCheckFailed over unstable over noGain at both the fixture and the status level. No adaptive cut, retry or exclusion path exists for a test to find.
+- **Counters and derived.** The key set, the two relative-total keys, missing-key semantics, and mismatch naming in key order are asserted. Derived expectations for a 30-layer top-8 set reproduce GU, ACT, DN at 60, merges at 240, generated at 180, the 685 reference Q4 dispatches, and the ON delta of exactly three overlap keys.
+- **Report encoding.** Infinity and NaN encode as the declared strings instead of throwing. A tampered report with the flag true re-encodes false in both encoders while other decoded fields survive. An old report without the coverage key still decodes and re-encodes without inventing it.
+- **No device.** Every call is to pure static functions, Codable surfaces, or the candidate legality functions. The receipt records GPU false and no model read or hash for all three executables with exit 0.
+
+## Non-blocking observations
+
+- **fixtureOutcome trusts the stored run TPOT.** The production path derives it from the walls inside measuredRun, so this is consistent today, but recomputing it from the recorded walls inside fixtureOutcome would make a hand-edited record unable to pass with 30 walls and a stale TPOT.
+- **Two fixture test labels say "out-of-range".** Parsing rejects those values only because they differ from the pinned fixtures. The vocabulary range check lives in the gate entry point. The label could say "differs from pinned" to avoid implying a parse-time range check.
+- **Decoded coverage text is not normalized on re-encode.** It is report text only and feeds no decision, so this is cosmetic.
+- **Counter snapshot key drift** remains guarded only by convention, as noted before. A key-set assertion inside the runner-backed initializer would close it when a runner-backed test becomes possible.
+
+The gate itself stays unrun until the separate scope coordination the request describes, and no performance claim is implied by this acceptance.

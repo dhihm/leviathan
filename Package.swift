@@ -25,6 +25,11 @@ let package = Package(
             path: "tools/router_overlap_model_gate"
         ),
         .executableTarget(
+            name: "router-overlap-model-gate-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/router_overlap_model_gate_pure_tests"
+        ),
+        .executableTarget(
             name: "leviathan-forge-helper",
             dependencies: ["LeviathanCore"],
             path: "Sources/leviathan-forge-helper"

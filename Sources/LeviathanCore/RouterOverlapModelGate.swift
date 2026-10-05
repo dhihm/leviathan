@@ -285,6 +285,9 @@ public struct RouterOverlapGateDerived: Codable, Equatable, Sendable {
     public let routerScaleOps: Int
     public let expertChains: Int
     public let overlapWindows: Int
+    /// Router F32 projection matvecs (blk.N.ffn_gate_inp.weight), one per layer;
+    /// each is one router-launch-geometry dispatch under a nonzero divisor.
+    public let routerProjections: Int
 
     /// RMSNorm instructions not served by the statistics plan: each goes
     /// through Gemma4Runner.rmsnorm and its cooperative hook.
@@ -305,6 +308,7 @@ public struct RouterOverlapGateDerived: Codable, Equatable, Sendable {
         if routerScaleOps != layers { f.append("derived: router scale ops != layers") }
         if expertChains != layers { f.append("derived: expert chains != layers") }
         if overlapWindows != layers { f.append("derived: overlap windows != layers") }
+        if routerProjections != layers { f.append("derived: router projections != layers") }
         if rmsCooperativeCalls <= 0 { f.append("derived: no cooperative RMSNorm calls") }
         return f
     }
@@ -332,6 +336,10 @@ public struct RouterOverlapGateDerived: Codable, Equatable, Sendable {
             c.values["rmsStatsReused"] = statisticsReuses
             c.values["routerScaleApplied"] = routerScaleOps
             c.values["residentZeroApplied"] = expertChains
+            // Declared incumbent divisor != 0: every router projection dispatches
+            // the derived launch geometry exactly once (fallback stays 0).
+            c.values["routerLaunchApplied"] = RouterOverlapModelGate.modernCandidate.routerLaunchDivisor != 0
+                ? routerProjections : 0
             if arm == .on {
                 c.values["overlapApplied"] = overlapWindows
                 c.values["overlapAsyncCommitted"] = 2 * overlapWindows
@@ -344,13 +352,22 @@ public struct RouterOverlapGateDerived: Codable, Equatable, Sendable {
 
 // MARK: - Records
 
+/// Per-run kernel, command-buffer and GPU-elapsed totals. The GPU-elapsed
+/// fields carry the runner's existing per-call command-buffer elapsed total
+/// (gpuEndTime - gpuStartTime) with arm-dependent coverage (see
+/// RouterOverlapGateReport.gpuElapsedCoverage): ON values EXCLUDE the
+/// asynchronously committed router overlap R/S ticket command buffers, are
+/// INCOMPLETE and do not share coverage with OFF or the reference. No arm's
+/// value is busy time, utilization or gain; values are never compared between
+/// arms and the separate async ticket intervals are never added to them.
 public struct RouterOverlapGateTotals: Codable, Equatable, Sendable {
     public var prefillKernels = 0
     public var prefillBuffers = 0
-    /// Command-buffer elapsed (gpuEnd - gpuStart), not busy time.
+    /// Command-buffer elapsed, not busy time; ON excludes async R/S tickets.
     public var prefillGpuElapsedMicros = 0.0
     public var continuationKernels: [Int] = []
     public var continuationBuffers: [Int] = []
+    /// Same coverage as prefillGpuElapsedMicros, one value per continuation.
     public var continuationGpuElapsedMicros: [Double] = []
 }
 
@@ -542,11 +559,27 @@ public struct RouterOverlapGateReport: Codable, Equatable {
     public var restoredPristine = false
     public var abortReason: String? = nil
     public var status: RouterOverlapGateStatus = .aborted
+    /// Always false: internal qualification/performance criteria are never
+    /// external resource eligibility. A report decoded from external JSON may
+    /// carry true in memory; encodeReport never re-emits it (see
+    /// withGainQualifiedContract).
     public private(set) var gainQualified = false
     public private(set) var externalResourceEligibility = RouterOverlapModelGate.externalResourceEligibility
     public private(set) var notes = RouterOverlapModelGate.notes
+    /// Per-arm GPU-elapsed coverage (keys reference, off, on); diagnostic text only.
+    public private(set) var gpuElapsedCoverage: [String: String]? = RouterOverlapModelGate.gpuElapsedCoverage
 
     public init(mode: RouterOverlapModelGateMode) { self.mode = mode }
+}
+
+extension RouterOverlapGateReport {
+    /// Serialization copy with the always-false contract re-asserted. Only
+    /// gainQualified is normalized; every other decoded field is kept as is.
+    func withGainQualifiedContract() -> RouterOverlapGateReport {
+        var copy = self
+        copy.gainQualified = false
+        return copy
+    }
 }
 
 // MARK: - Internal helpers
@@ -686,18 +719,38 @@ public enum RouterOverlapModelGate {
         "PENDING: the supervisor's global resource receipts before GO and after TIMED_WINDOW_END "
         + "decide resource eligibility; no internal resource pass is assumed"
 
-    /// The declared full modern candidate for BOTH arms (fourteen flags).
+    /// Coverage of the recorded GPU-elapsed totals per arm. Report text only:
+    /// no value here is summed, compared or used by any gate decision.
+    public static let gpuElapsedCoverage: [String: String] = [
+        "reference": "direct serial Gemma4Runner.forward gpuMicros for the call; no router overlap "
+            + "tickets exist on this path; different execution path and coverage from OFF/ON; not "
+            + "busy time, utilization or gain; never compared between arms",
+        "off": "runner's existing per-call command-buffer elapsed total (gpuEndTime - gpuStartTime) "
+            + "over its synchronous command buffers; OFF commits no async router overlap tickets; "
+            + "not busy time, utilization or gain; never compared with ON",
+        "on": "INCOMPLETE: synchronous command buffers only; EXCLUDES the asynchronously committed "
+            + "router overlap R/S ticket command buffers (2 per layer per forward), so coverage "
+            + "differs from OFF and reference; async ticket intervals are not reported and must not "
+            + "be added (a sum is not busy time); not busy time, utilization or gain; never "
+            + "compared with OFF",
+    ]
+
+    /// The declared full modern candidate for BOTH arms (fourteen flags): the
+    /// frozen incumbent binding (par64, router GPU residency with router
+    /// launch divisor 1, v1 E4R32 install, Q4 width 32, CPU FP64 routing).
+    /// The divisor is armed per token by the executor; the persistent runner
+    /// default stays 0 and axisFlagsClean still requires 0 between tokens.
     public static let modernCandidate = GemmaForgeCandidate(
         segmentBatching: true, top5Diagnostic: false, vectorizedLoads: true,
         gpuCacheAppend: true, parallelAttention: true, rmsnormCooperative: true,
         matvecCooperativeQ6: true, rmsStatisticsReuse: true, routerGPUResidency: true,
-        routerLaunchDivisor: 0)
+        routerLaunchDivisor: 1)
 
     public static let expectedCandidateFlags: [String: Int] = [
         "segmentBatching": 1, "top5Diagnostic": 0, "matvecTiledQ4": 0, "matvecTiledQ6": 0,
         "rmsnormTiled": 0, "matvecTiledF32": 0, "vectorizedLoads": 1, "gpuCacheAppend": 1,
         "parallelAttention": 1, "rmsnormCooperative": 1, "matvecCooperativeQ6": 1,
-        "rmsStatisticsReuse": 1, "routerGPUResidency": 1, "routerLaunchDivisor": 0,
+        "rmsStatisticsReuse": 1, "routerGPUResidency": 1, "routerLaunchDivisor": 1,
     ]
 
     public static let refusalTestNames = [
@@ -724,8 +777,9 @@ public enum RouterOverlapModelGate {
             + "ceil(topK / 4) * layers, ordered merges = topK * layers, router scale and resident "
             + "zero = layers, statistics compute = plan groups (= layers) and reuse = plan reuses "
             + "(= 2 * layers), cooperative RMS = unplanned RMSNorm instructions, cooperative Q6 = "
-            + "Q6 matvecs, parallel attention = attention ops; ON overlap applied = layers, async "
-            + "commits = drained = 2 * layers, pending 0; every fallback 0.",
+            + "Q6 matvecs, parallel attention = attention ops, router launch applied = router "
+            + "projections (= layers, declared divisor 1; 0 in the direct reference); ON overlap "
+            + "applied = layers, async commits = drained = 2 * layers, pending 0; every fallback 0.",
         "Dispatch multiset proxy: per-name kernel attribution does not exist in segment-batched "
             + "mode, so equivalence is established by the exact per-family counters plus total "
             + "kernels ON == OFF and command buffers ON == OFF + layers per forward, checked for "
@@ -733,9 +787,12 @@ public enum RouterOverlapModelGate {
         "The existing reusable-statistics inverse buffer is pre-sized once before any dispatch "
             + "(allocation only) so its lazy first growth cannot flush an open segment inside the "
             + "first OFF token and perturb buffer totals.",
-        "Command-buffer elapsed (gpuEndTime - gpuStartTime) is recorded but is not busy time or "
-            + "utilization, may include event waits under overlap, and is never summed or compared "
-            + "between arms as gain.",
+        "Command-buffer elapsed (gpuEndTime - gpuStartTime) is recorded per call with arm-dependent "
+            + "coverage (gpuElapsedCoverage): ON values exclude the asynchronously committed router "
+            + "overlap R/S ticket command buffers, are incomplete and do not share coverage with OFF "
+            + "or the reference. No arm's value is busy time, utilization or gain; values are never "
+            + "compared between arms, and the separate async ticket intervals are neither reported "
+            + "nor added (a sum would not reconstruct busy time).",
         "Wall timers bracket only executeGraph(prompt) and each executeGraphContinue(previous "
             + "argmax), including the normal CPU argmax and logits readback; candidate calls include "
             + "the runtime's unavoidable per-token overlap guards. Scope entry, install/source/"
@@ -882,7 +939,7 @@ public enum RouterOverlapModelGate {
     }
 
     public static func encodeReport(_ r: RouterOverlapGateReport, pretty: Bool) throws -> Data {
-        try jsonEncoder(pretty: pretty).encode(r)
+        try jsonEncoder(pretty: pretty).encode(r.withGainQualifiedContract())
     }
 
     static func event<T: Encodable>(_ name: String, _ payload: T) -> String {
@@ -1012,11 +1069,13 @@ public enum RouterOverlapModelGate {
         var rms = 0
         var routerScale = 0
         var chains = 0
+        var routerProjections = 0
         for inst in on.ssa.instructions {
             switch inst.op {
             case "matvec":
                 if let t = inst.tensors.first, let ref = r.ref[t] {
                     if ref.type == .q4_0 { q4 += 1 } else if ref.type == .q6_K { q6 += 1 }
+                    else if ref.type == .float32, t.hasSuffix(".ffn_gate_inp.weight") { routerProjections += 1 }
                 }
             case "attention": attention += 1
             case "rmsnorm": rms += 1
@@ -1032,7 +1091,8 @@ public enum RouterOverlapModelGate {
             q4Matvecs: q4, q6Matvecs: q6, attentionOps: attention, rmsnormOps: rms,
             statisticsGroups: on.statisticsPlan.groupCount,
             statisticsReuses: on.statisticsPlan.reuseCount, routerScaleOps: routerScale,
-            expertChains: chains, overlapWindows: on.routerOverlapPlan?.windows.count ?? 0)
+            expertChains: chains, overlapWindows: on.routerOverlapPlan?.windows.count ?? 0,
+            routerProjections: routerProjections)
     }
 
     static func makeIdentity(_ c: RouterOverlapGateContext, modelSha256: String,

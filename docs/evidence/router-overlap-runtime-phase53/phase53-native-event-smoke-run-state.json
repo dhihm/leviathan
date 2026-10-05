@@ -1,0 +1,158 @@
+{
+  "benchmark": {
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/router-overlap-event-smoke",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase53-native-event-smoke-run/event-smoke-report.json"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "child": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 72428,
+      "ppid": 72427,
+      "start_tvsec": 1791178431,
+      "start_tvusec": 670285,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 72428,
+        "ppid": 72427,
+        "start_tvsec": 1791178431,
+        "start_tvusec": 670285,
+        "uid": 501
+      },
+      "pid": 72428,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 72428,
+    "spawnedUTC": "2026-10-05T05:33:51.671794Z"
+  },
+  "cleanupResult": {
+    "lockReleaseEligible": true,
+    "lockReleaseError": null,
+    "lockReleased": true
+  },
+  "createdUTC": "2026-10-05T05:33:51.669280Z",
+  "kind": "owned_benchmark_supervisor_state",
+  "launchUUID": "7bc3d033-a12c-44cc-a568-acb2d8e51121",
+  "markers": {
+    "endObservedUTC": "2026-10-05T05:33:52.593187Z",
+    "goSentUTC": "2026-10-05T05:33:52.311067Z",
+    "readyObservedUTC": "2026-10-05T05:33:52.293131Z"
+  },
+  "outputDir": "/tmp/leviathan-forge2-tooling/phase53-native-event-smoke-run",
+  "phase": "finished",
+  "phaseHistory": [
+    {
+      "phase": "created",
+      "utc": "2026-10-05T05:33:51.669291Z"
+    },
+    {
+      "phase": "spawning_wrapper",
+      "utc": "2026-10-05T05:33:51.669665Z"
+    },
+    {
+      "phase": "wrapper_spawned",
+      "utc": "2026-10-05T05:33:51.671818Z"
+    },
+    {
+      "phase": "identity_recorded",
+      "utc": "2026-10-05T05:33:51.672524Z"
+    },
+    {
+      "phase": "start_released",
+      "utc": "2026-10-05T05:33:51.672994Z"
+    },
+    {
+      "phase": "ready_observed",
+      "utc": "2026-10-05T05:33:52.293287Z"
+    },
+    {
+      "phase": "pre_go_snapshot",
+      "utc": "2026-10-05T05:33:52.293865Z"
+    },
+    {
+      "phase": "sending_go",
+      "utc": "2026-10-05T05:33:52.310392Z"
+    },
+    {
+      "phase": "timed_window",
+      "utc": "2026-10-05T05:33:52.311073Z"
+    },
+    {
+      "phase": "window_ended",
+      "utc": "2026-10-05T05:33:52.593294Z"
+    },
+    {
+      "phase": "post_window",
+      "utc": "2026-10-05T05:33:52.606824Z"
+    },
+    {
+      "phase": "child_exited",
+      "utc": "2026-10-05T05:33:52.642208Z"
+    },
+    {
+      "phase": "finished",
+      "utc": "2026-10-05T05:33:52.643473Z"
+    }
+  ],
+  "phaseUTC": "2026-10-05T05:33:52.643473Z",
+  "progress": {
+    "lastLine": "ROUTER_OVERLAP_EVENT_SMOKE status=pass",
+    "lastLineUTC": "2026-10-05T05:33:52.641910Z",
+    "lineCount": 101,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "quietReadyFile": null,
+  "quietRequestFile": null,
+  "receiptWritten": true,
+  "schemaVersion": 1,
+  "supervisor": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 72427,
+      "ppid": 65294,
+      "start_tvsec": 1791178431,
+      "start_tvusec": 607712,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 72427,
+        "ppid": 65294,
+        "start_tvsec": 1791178431,
+        "start_tvusec": 607712,
+        "uid": 501
+      },
+      "pid": 72427,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 72427,
+    "uid": 501
+  },
+  "timeoutSeconds": 120.0,
+  "wrapperArgv": [
+    "/opt/anaconda3/bin/python3",
+    "-I",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/tools/owned_benchmark_supervisor.py",
+    "_exec-wrapper",
+    "--",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/router-overlap-event-smoke",
+    "--report",
+    "/tmp/leviathan-forge2-tooling/phase53-native-event-smoke-run/event-smoke-report.json"
+  ]
+}
