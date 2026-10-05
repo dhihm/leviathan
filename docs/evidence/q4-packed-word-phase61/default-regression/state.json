@@ -1,0 +1,160 @@
+{
+  "benchmark": {
+    "argv": [
+      "python3",
+      "/tmp/leviathan-forge2-tooling/phase53-existing-test-orchestration/run-existing-tests.py",
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53",
+      "/tmp/leviathan-forge2-tooling/phase61-final-default-inner"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "child": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 81012,
+      "ppid": 81011,
+      "start_tvsec": 1791205499,
+      "start_tvusec": 887322,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 81012,
+        "ppid": 81011,
+        "start_tvsec": 1791205499,
+        "start_tvusec": 887322,
+        "uid": 501
+      },
+      "pid": 81012,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 81012,
+    "spawnedUTC": "2026-10-05T13:04:59.889960Z"
+  },
+  "cleanupResult": {
+    "lockReleaseEligible": true,
+    "lockReleaseError": null,
+    "lockReleased": true
+  },
+  "createdUTC": "2026-10-05T13:04:59.886114Z",
+  "kind": "owned_benchmark_supervisor_state",
+  "launchUUID": "1f6f8390-8be4-426c-b162-8655b6dcf2b5",
+  "markers": {
+    "endObservedUTC": "2026-10-05T13:05:16.319814Z",
+    "goSentUTC": "2026-10-05T13:05:00.079303Z",
+    "readyObservedUTC": "2026-10-05T13:05:00.055905Z"
+  },
+  "outputDir": "/tmp/leviathan-forge2-tooling/phase61-final-default-regression",
+  "phase": "finished",
+  "phaseHistory": [
+    {
+      "phase": "created",
+      "utc": "2026-10-05T13:04:59.886135Z"
+    },
+    {
+      "phase": "spawning_wrapper",
+      "utc": "2026-10-05T13:04:59.886620Z"
+    },
+    {
+      "phase": "wrapper_spawned",
+      "utc": "2026-10-05T13:04:59.890007Z"
+    },
+    {
+      "phase": "identity_recorded",
+      "utc": "2026-10-05T13:04:59.891484Z"
+    },
+    {
+      "phase": "start_released",
+      "utc": "2026-10-05T13:04:59.892031Z"
+    },
+    {
+      "phase": "ready_observed",
+      "utc": "2026-10-05T13:05:00.056112Z"
+    },
+    {
+      "phase": "pre_go_snapshot",
+      "utc": "2026-10-05T13:05:00.056868Z"
+    },
+    {
+      "phase": "sending_go",
+      "utc": "2026-10-05T13:05:00.078257Z"
+    },
+    {
+      "phase": "timed_window",
+      "utc": "2026-10-05T13:05:00.079314Z"
+    },
+    {
+      "phase": "window_ended",
+      "utc": "2026-10-05T13:05:16.319870Z"
+    },
+    {
+      "phase": "post_window",
+      "utc": "2026-10-05T13:05:16.336617Z"
+    },
+    {
+      "phase": "child_exited",
+      "utc": "2026-10-05T13:05:16.337370Z"
+    },
+    {
+      "phase": "finished",
+      "utc": "2026-10-05T13:05:16.338536Z"
+    }
+  ],
+  "phaseUTC": "2026-10-05T13:05:16.338536Z",
+  "progress": {
+    "lastLine": "TIMED_WINDOW_END",
+    "lastLineUTC": "2026-10-05T13:05:16.319814Z",
+    "lineCount": 29,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "quietReadyFile": null,
+  "quietRequestFile": null,
+  "receiptWritten": true,
+  "schemaVersion": 1,
+  "supervisor": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 81011,
+      "ppid": 65294,
+      "start_tvsec": 1791205499,
+      "start_tvusec": 777263,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 81011,
+        "ppid": 65294,
+        "start_tvsec": 1791205499,
+        "start_tvusec": 777263,
+        "uid": 501
+      },
+      "pid": 81011,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 81011,
+    "uid": 501
+  },
+  "timeoutSeconds": 180.0,
+  "wrapperArgv": [
+    "/opt/anaconda3/bin/python3",
+    "-I",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/tools/owned_benchmark_supervisor.py",
+    "_exec-wrapper",
+    "--",
+    "python3",
+    "/tmp/leviathan-forge2-tooling/phase53-existing-test-orchestration/run-existing-tests.py",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53",
+    "/tmp/leviathan-forge2-tooling/phase61-final-default-inner"
+  ]
+}

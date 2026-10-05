@@ -1,0 +1,9 @@
+[
+  {
+    "file": "Sources/LeviathanCore/Q4PackedWord.swift",
+    "beforeSHA256": "7a19924b452a7442023a81f8848169b7fa1c4b2fae8393db3a89585579f41c87",
+    "afterSHA256": "2b1176a89febc048b85e62c501fdb95f8a247a1b9585951595cdb269fb2e19b3",
+    "requiredPatches": 3,
+    "conditionalApplied": false
+  }
+]

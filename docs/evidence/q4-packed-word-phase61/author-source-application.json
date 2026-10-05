@@ -1,0 +1,27 @@
+[
+  {
+    "file": "Sources/LeviathanCore/Q4WeightStage.swift",
+    "beforeSHA256": "8900c8826019f8d1a849d9396628e60d3dec389a088b60febdddb35ba28d1323",
+    "afterSHA256": "a5aea525a3869b1810b103a10e8fdc72941eca672e83b38d88b2565c245f973c"
+  },
+  {
+    "file": "Package.swift",
+    "beforeSHA256": "9a35d4c6b15eac71277501c05ca9b40dc8092fd5f2fcd30daaf639b0b8129c65",
+    "afterSHA256": "aa7cb0d71d5c29517a67705b41277a70ca5595f9fe27b9ca801ae2e96b8e1a78"
+  },
+  {
+    "file": "Sources/LeviathanCore/Q4PackedWord.swift",
+    "beforeSHA256": null,
+    "afterSHA256": "7a19924b452a7442023a81f8848169b7fa1c4b2fae8393db3a89585579f41c87"
+  },
+  {
+    "file": "tools/q4_packed_word_component/main.swift",
+    "beforeSHA256": null,
+    "afterSHA256": "3ecdc5eddd1e34873d5792d4a25e395e38369ebf6d3be1338484bb6f8fdc6608"
+  },
+  {
+    "file": "tools/q4_packed_word_pure_tests/main.swift",
+    "beforeSHA256": null,
+    "afterSHA256": "6910524127c3f2787992a85b009d927838d39c56123fb67f0862ffa6995eb049"
+  }
+]

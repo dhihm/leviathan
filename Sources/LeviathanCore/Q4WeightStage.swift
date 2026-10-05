@@ -1181,6 +1181,23 @@ public enum Q4WeightStageDiagnostics {
     static func timedShape(gpu: Q4WeightStageGPU, device: MTLDevice, schedule: Q4WeightStageSchedule,
                            pipeline: MTLComputePipelineState, sampleBuffer: MTLCounterSampleBuffer,
                            tc: Q4WeightStageCase) -> (shape: Q4WeightStageTimingShape?, terminal: Bool) {
+        let decline = Q4WeightStagePlan.declineReason(
+            inDim: tc.inDim, outDim: tc.outDim, weightOffset: Q4WeightStageGPU.guardBytes,
+            weightLength: 2 * Q4WeightStageGPU.guardBytes + tc.blocks.count, schedule: schedule,
+            executionWidth: pipeline.threadExecutionWidth, pipelineMaxThreads: pipeline.maxTotalThreadsPerThreadgroup,
+            staticThreadgroupBytes: pipeline.staticThreadgroupMemoryLength,
+            deviceThreadgroupCap: device.maxThreadgroupMemoryLength)
+        return timedShapeCore(gpu: gpu, candidateDecline: decline,
+                              candidateLaunch: Q4WeightStagePlan.launch(outDim: tc.outDim, schedule: schedule),
+                              pipeline: pipeline, sampleBuffer: sampleBuffer, tc: tc)
+    }
+
+    /// The same fixed timing protocol for ANY candidate pipeline: the caller supplies the candidate's own
+    /// pre-dispatch decline reason (nil = supported) and launch geometry. Behaviour for the phase-60 threadgroup
+    /// candidates is unchanged (timedShape above delegates here).
+    static func timedShapeCore(gpu: Q4WeightStageGPU, candidateDecline: String?, candidateLaunch: Q4WeightStageLaunch,
+                               pipeline: MTLComputePipelineState, sampleBuffer: MTLCounterSampleBuffer,
+                               tc: Q4WeightStageCase) -> (shape: Q4WeightStageTimingShape?, terminal: Bool) {
         func notTimed(_ why: String) -> Q4WeightStageTimingShape {
             Q4WeightStageTimingShape(name: tc.name, origin: tc.origin, inDim: tc.inDim, outDim: tc.outDim,
                                      warmupPairs: warmupPairs, timedPairs: timedPairs, pairs: [],
@@ -1189,12 +1206,7 @@ public enum Q4WeightStageDiagnostics {
                                      ratioMedianCandidateFirst: nil, controlMedianWallMicros: nil, passed: false,
                                      failures: [why])
         }
-        if let reason = Q4WeightStagePlan.declineReason(
-            inDim: tc.inDim, outDim: tc.outDim, weightOffset: Q4WeightStageGPU.guardBytes,
-            weightLength: 2 * Q4WeightStageGPU.guardBytes + tc.blocks.count, schedule: schedule,
-            executionWidth: pipeline.threadExecutionWidth, pipelineMaxThreads: pipeline.maxTotalThreadsPerThreadgroup,
-            staticThreadgroupBytes: pipeline.staticThreadgroupMemoryLength,
-            deviceThreadgroupCap: device.maxThreadgroupMemoryLength) {
+        if let reason = candidateDecline {
             return (notTimed("declined: " + reason), true)
         }
         let b: Q4WeightStageBuffers
@@ -1209,7 +1221,6 @@ public enum Q4WeightStageDiagnostics {
         }
         let controlLaunch = Q4WeightStagePlan.controlLaunch(outDim: tc.outDim,
                                                             pipelineMaxThreads: gpu.control.maxTotalThreadsPerThreadgroup)
-        let candidateLaunch = Q4WeightStagePlan.launch(outDim: tc.outDim, schedule: schedule)
         var failures = [String]()
         var pairs = [Q4WeightStageTimingPair]()
         var previousMax: UInt64? = nil

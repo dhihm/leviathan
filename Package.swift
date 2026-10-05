@@ -110,6 +110,16 @@ let package = Package(
             path: "tools/q4_weight_stage_pure_tests"
         ),
         .executableTarget(
+            name: "q4-packed-word-component",
+            dependencies: ["LeviathanCore"],
+            path: "tools/q4_packed_word_component"
+        ),
+        .executableTarget(
+            name: "q4-packed-word-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/q4_packed_word_pure_tests"
+        ),
+        .executableTarget(
             name: "leviathan-forge-helper",
             dependencies: ["LeviathanCore"],
             path: "Sources/leviathan-forge-helper"

@@ -1,0 +1,162 @@
+{
+  "benchmark": {
+    "argv": [
+      ".build/release/q4-packed-word-component",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase61-packed-word-component-run/component-report.json",
+      "--gguf",
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "child": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 40425,
+      "ppid": 40424,
+      "start_tvsec": 1791205242,
+      "start_tvusec": 266239,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 40425,
+        "ppid": 40424,
+        "start_tvsec": 1791205242,
+        "start_tvusec": 266239,
+        "uid": 501
+      },
+      "pid": 40425,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 40425,
+    "spawnedUTC": "2026-10-05T13:00:42.268178Z"
+  },
+  "cleanupResult": {
+    "lockReleaseEligible": true,
+    "lockReleaseError": null,
+    "lockReleased": true
+  },
+  "createdUTC": "2026-10-05T13:00:42.264299Z",
+  "kind": "owned_benchmark_supervisor_state",
+  "launchUUID": "3815a0a7-e621-42e0-938d-85b5ef6394bb",
+  "markers": {
+    "endObservedUTC": "2026-10-05T13:00:42.778759Z",
+    "goSentUTC": "2026-10-05T13:00:42.371878Z",
+    "readyObservedUTC": "2026-10-05T13:00:42.341720Z"
+  },
+  "outputDir": "/tmp/leviathan-forge2-tooling/phase61-packed-word-component-run",
+  "phase": "finished",
+  "phaseHistory": [
+    {
+      "phase": "created",
+      "utc": "2026-10-05T13:00:42.264325Z"
+    },
+    {
+      "phase": "spawning_wrapper",
+      "utc": "2026-10-05T13:00:42.265348Z"
+    },
+    {
+      "phase": "wrapper_spawned",
+      "utc": "2026-10-05T13:00:42.268211Z"
+    },
+    {
+      "phase": "identity_recorded",
+      "utc": "2026-10-05T13:00:42.269020Z"
+    },
+    {
+      "phase": "start_released",
+      "utc": "2026-10-05T13:00:42.269534Z"
+    },
+    {
+      "phase": "ready_observed",
+      "utc": "2026-10-05T13:00:42.341897Z"
+    },
+    {
+      "phase": "pre_go_snapshot",
+      "utc": "2026-10-05T13:00:42.342466Z"
+    },
+    {
+      "phase": "sending_go",
+      "utc": "2026-10-05T13:00:42.371091Z"
+    },
+    {
+      "phase": "timed_window",
+      "utc": "2026-10-05T13:00:42.371889Z"
+    },
+    {
+      "phase": "window_ended",
+      "utc": "2026-10-05T13:00:42.778809Z"
+    },
+    {
+      "phase": "post_window",
+      "utc": "2026-10-05T13:00:42.795905Z"
+    },
+    {
+      "phase": "child_exited",
+      "utc": "2026-10-05T13:00:42.797389Z"
+    },
+    {
+      "phase": "finished",
+      "utc": "2026-10-05T13:00:42.798776Z"
+    }
+  ],
+  "phaseUTC": "2026-10-05T13:00:42.798776Z",
+  "progress": {
+    "lastLine": "report /tmp/leviathan-forge2-tooling/phase61-packed-word-component-run/component-report.json written: status correctnessFailed; component only, raw stage ticks are not busy time, no gain, install or production claim",
+    "lastLineUTC": "2026-10-05T13:00:42.796805Z",
+    "lineCount": 5,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "quietReadyFile": null,
+  "quietRequestFile": null,
+  "receiptWritten": true,
+  "schemaVersion": 1,
+  "supervisor": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 40424,
+      "ppid": 65294,
+      "start_tvsec": 1791205242,
+      "start_tvusec": 185355,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 40424,
+        "ppid": 65294,
+        "start_tvsec": 1791205242,
+        "start_tvusec": 185355,
+        "uid": 501
+      },
+      "pid": 40424,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 40424,
+    "uid": 501
+  },
+  "timeoutSeconds": 600.0,
+  "wrapperArgv": [
+    "/opt/anaconda3/bin/python3",
+    "-I",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/tools/owned_benchmark_supervisor.py",
+    "_exec-wrapper",
+    "--",
+    ".build/release/q4-packed-word-component",
+    "--report",
+    "/tmp/leviathan-forge2-tooling/phase61-packed-word-component-run/component-report.json",
+    "--gguf",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf"
+  ]
+}
