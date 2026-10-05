@@ -1,0 +1,7 @@
+{
+  "placeholderFileResolved": "Sources/LeviathanCore/Q4FirstDivergence.swift",
+  "requiredPatches": 4,
+  "beforeSHA256": "f5a2a8e7af46daee4075ff629864f18d34a3fd4c209ceaeec968773ec26661f3",
+  "afterSHA256": "96ec52252166fb55f4b865129ff40dd7da0775fdbca088d9c9cf52e05cdf9629",
+  "conditionalPatchesApplied": false
+}

@@ -130,6 +130,16 @@ let package = Package(
             path: "tools/q4_register_loop_pure_tests"
         ),
         .executableTarget(
+            name: "q4-first-divergence-diagnostic",
+            dependencies: ["LeviathanCore"],
+            path: "tools/q4_first_divergence_diagnostic"
+        ),
+        .executableTarget(
+            name: "q4-first-divergence-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/q4_first_divergence_pure_tests"
+        ),
+        .executableTarget(
             name: "leviathan-forge-helper",
             dependencies: ["LeviathanCore"],
             path: "Sources/leviathan-forge-helper"

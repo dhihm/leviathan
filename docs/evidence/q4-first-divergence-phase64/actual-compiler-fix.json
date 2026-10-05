@@ -1,0 +1,9 @@
+{
+  "patches": [
+    {
+      "file": "Sources/LeviathanCore/Q4FirstDivergence.swift",
+      "old": "            if let d = v.stages.first(where: { !$0.identical }) {\n                return (true, \"ESTABLISHED by the \" + name + \" trace (both trace finals equal their uninstrumented \"\n                        + \"originals): first divergence at stage \" + d.stage + \" index \" + String(d.firstIndex ?? -1)\n                        + \" (\" + (d.locator ?? \"\") + \"), production \" + (d.productionHex ?? \"?\") + \" register \"\n                        + (d.registerHex ?? \"?\") + \"; decode operands identical\")\n            }\n",
+      "new": "            if let d = v.stages.first(where: { !$0.identical }) {\n                let indexText: String = String(d.firstIndex ?? -1)\n                let locatorText: String = d.locator ?? \"\"\n                let productionText: String = d.productionHex ?? \"?\"\n                let registerText: String = d.registerHex ?? \"?\"\n                var s: String = \"ESTABLISHED by the \" + name\n                s += \" trace (both trace finals equal their uninstrumented originals): first divergence at stage \"\n                s += d.stage\n                s += \" index \" + indexText\n                s += \" (\" + locatorText + \"), production \" + productionText\n                s += \" register \" + registerText + \"; decode operands identical\"\n                return (true, s)\n            }\n"
+    }
+  ]
+}

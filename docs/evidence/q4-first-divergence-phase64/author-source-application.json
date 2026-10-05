@@ -1,0 +1,22 @@
+[
+  {
+    "file": "Package.swift",
+    "beforeSHA256": "8ed1856ec6d4bb38d21c2f1fe40ed66771bc613534d748e0197e461dcb838eeb",
+    "afterSHA256": "19e2352c517de63790f7c89c6eff113bc5aeb1cac749028d6b6196c2af8fa8dd"
+  },
+  {
+    "file": "Sources/LeviathanCore/Q4FirstDivergence.swift",
+    "beforeSHA256": null,
+    "afterSHA256": "8143b1b465622341d26118301e476ed4a8f845964ce3594ce23d0be8f3230b8b"
+  },
+  {
+    "file": "tools/q4_first_divergence_diagnostic/main.swift",
+    "beforeSHA256": null,
+    "afterSHA256": "53f053078b4ded5a1a037d58e9ba4a440974db2592855608b75ce3138325a63a"
+  },
+  {
+    "file": "tools/q4_first_divergence_pure_tests/main.swift",
+    "beforeSHA256": null,
+    "afterSHA256": "4acc9289bf2c68d6e53ab9810402a5b9932a94f1f1e4468be3ca4503b14fc865"
+  }
+]

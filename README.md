@@ -25,6 +25,8 @@ Leviathan is a personal project building a local LLM inference engine for Mac GP
 - [Prepared GPU routing](docs/DEVICE_ROUTING_NUMERICAL_PHASE57.md): all three model fixtures and 4,170 actual routes passed; the default-off path removes CPU routing selections and reduces continuation command buffers from 37 to seven without changing output bits.
 - [Fixed GPU routing comparison](docs/DEVICE_ROUTING_PERFORMANCE_PHASE58.md): all 48 runs passed correctness; observed TPOT medians were 69.60–72.19 ms versus 84.29–87.56 ms for the incumbent. Failed spread gates leave the result unqualified; defaults are unchanged and no Ollama ratio is claimed.
 - [Actual kernel stage attribution](docs/KERNEL_STAGE_ATTRIBUTION_PHASE59.md): all three model fixtures were bit-identical with sampling, covering 125,457 kernel encoders. Changed encoder topology and overlapping timestamp ranges limit latency attribution.
+- Isolated Q4 load experiments are closed: [shared weight staging](docs/Q4_WEIGHT_STAGING_PHASE60.md) preserved bits but was 2.48–2.86 times slower; [unrolled register decoding](docs/Q4_PACKED_WORD_PHASE61.md) and [loop-preserving register decoding](docs/Q4_REGISTER_LOOP_PHASE62.md) failed compiled-bit gates, so timing was withheld and no candidate was installed.
+- [Frozen minimum-row diagnosis](docs/Q4_FIRST_DIVERGENCE_PHASE64.md) reproduced the original one-bit mismatch and equal decoded operands; trace stores changed the control output, leaving the original arithmetic cause unestablished.
 - Performance: closing the gap with Ollama and broader Python model coverage are in progress.
 
 [MIT](LICENSE); model weights keep their upstream terms.
