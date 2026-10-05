@@ -1,0 +1,12 @@
+[
+  {
+    "path": "Sources/LeviathanCore/OwnProcessDiagnostics.swift",
+    "beforeSHA256": "47c7fbaa8736eed0ae6d98bac318559712fdd9946006eeb53395f7b892075478",
+    "afterSHA256": "b6137ef5e64444fc2a9fd4227b824e8f3a75aadf19213f0d2eaf5b1e1e70181d"
+  },
+  {
+    "path": "tools/owned_process_diagnostics_pure_tests/main.swift",
+    "beforeSHA256": "171d3d00d1532447f58066d6576e73d99a69da0884ccc4fb6ebdedd189041aea",
+    "afterSHA256": "54ab95a22df59b9e15259b29742da103978b0956430b8af9a75e290d2c05958f"
+  }
+]

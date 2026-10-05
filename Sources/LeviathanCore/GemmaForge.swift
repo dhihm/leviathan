@@ -436,6 +436,8 @@ public struct GemmaPreparedExecution {
     /// structural graph equality. No engine-identity hashing, no graph
     /// digesting, no lowering. Rejected before any GPU work on mismatch.
     func assertBound(to runner: Gemma4Runner, graph: GemmaGraphIR) throws {
+        let bindingT0 = runner.breakdownSiteBegin()
+        defer { runner.breakdownBindingCheckEnd(bindingT0) }
         guard runner === self.runner else {
             throw GemmaForgeError.invalidPlan(
                 "prepared execution is bound to a different runner")
@@ -1113,11 +1115,13 @@ public enum GemmaForge {
                         "embed tensor binding is not the embedding table")
                 }
                 try runner.decodeEmbedding(token)
+                let embedSiteT0 = runner.breakdownSiteBegin()
                 let emb = try runner.read(runner.bufEmbed, runner.hidden)
                 guard emb.allSatisfy({ $0.isFinite }) else {
                     throw GemmaForgeError.executionFailed("embedding nonfinite")
                 }
                 try runner.write(emb, to: try vb(inst.output))
+                runner.breakdownSiteEnd(.embed, embedSiteT0)
             case "rmsnorm":
                 // n is PER VECTOR (the primitive's contract): the validated
                 // width for vectorized norms, the total length otherwise.
@@ -1205,9 +1209,11 @@ public enum GemmaForge {
                                     ? runner.globalFreqBuffer
                                     : runner.localFreqBuffer)
             case "copy":
+                let copySiteT0 = runner.breakdownSiteBegin()
                 let src = try runner.read(try vb(inst.inputs[0]),
                                           byID[inst.inputs[0]]!.length)
                 try runner.write(src, to: try vb(inst.output))
+                runner.breakdownSiteEnd(.copy, copySiteT0)
             case "axpy":
                 // inputs[0] is the accumulator (x) — validated to alias the
                 // output — inputs[1] the addend (h).
@@ -1341,12 +1347,15 @@ public enum GemmaForge {
                     scores = try runner.routerOverlapRouterScores(
                         buffer: try vb(inst.inputs[0]), count: config.expertCount)
                 } else {
+                    let routerSiteT0 = runner.breakdownSiteBegin()
                     try runner.flushOpenSegment()
                     scores = try runner.read(try vb(inst.inputs[0]), config.expertCount)
+                    runner.breakdownSiteEnd(.router, routerSiteT0)
                 }
                 guard scores.allSatisfy({ $0.isFinite }) else {
                     throw GemmaForgeError.executionFailed("router scores nonfinite")
                 }
+                let routerSelectionT0 = runner.breakdownSiteBegin()
                 let maxScore = scores.max() ?? 0
                 let exps = scores.map { exp(Double($0 - maxScore)) }
                 let sumExp = exps.reduce(0, +)
@@ -1358,6 +1367,7 @@ public enum GemmaForge {
                 let scales = runner.expertScales[layer]
                 let weights = topIdx.map { Float(probs[$0] / probSum) * scales[$0] }
                 routerState[layer] = (topIdx, weights)
+                runner.breakdownRouterSelectionEnd(routerSelectionT0)
             case "expert_matvec_chain":
                 guard let layer = inst.layer, layer >= 0,
                       layer < config.layerCount,
@@ -1485,7 +1495,9 @@ public enum GemmaForge {
               finalValue.length == config.vocabSize else {
             throw GemmaForgeError.executionFailed("schedule terminal is not logits")
         }
+        let logitsSiteT0 = runner.breakdownSiteBegin()
         let logits = try runner.read(try vb(finalInst.output), finalValue.length)
+        runner.breakdownSiteEnd(.logits, logitsSiteT0)
         guard logits.allSatisfy({ $0.isFinite }) else {
             throw GemmaForgeError.executionFailed("nonfinite logits")
         }

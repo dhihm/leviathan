@@ -1,0 +1,38 @@
+```json
+{
+  "verdict": "ACCEPT",
+  "requiredFixes": [],
+  "findings": [
+    {
+      "severity": "info",
+      "file": "Sources/LeviathanCore/OwnProcessDiagnostics.swift",
+      "symbol": "OwnProcessDiagnostics.readyToken / goToken / endToken",
+      "reason": "The three constants now alias RouterOverlapModelGate.readyToken, goToken and endToken, so the tool prints BENCHMARK_READY, waits for GO and prints TIMED_WINDOW_END, identical to the gate tool the supervisor already drives. Static-let cross-reference between two enums in one module is lazily initialized and compiles. goAccepted is untouched and still requires the line to equal the GO token exactly; EOF, empty and padded lines remain refused, and the refusal still precedes any model mapping or device creation. No numerical, gate, runtime, default or report-policy behavior changes."
+    },
+    {
+      "severity": "info",
+      "file": "tools/owned_process_diagnostics_pure_tests/main.swift",
+      "symbol": "testProtocolInputs (token assertion)",
+      "reason": "The replaced assertion is a meaningful integration check in both directions: equality with the gate constants detects the diagnostic decoupling from the gate, and the literal BENCHMARK_READY, GO and TIMED_WINDOW_END checks detect the gate drifting from the supervisor's expected strings. The old anchor matches the previously reviewed test text exactly, and the check count is unchanged."
+    },
+    {
+      "severity": "minor",
+      "file": "tools/owned_process_diagnostics/main.swift and OwnProcessDiagnostics.swift",
+      "symbol": "header comments, run() doc comment, 'END withheld' stderr message",
+      "reason": "Comments and one stderr diagnostic still say READY and END rather than the supervisor tokens. The supervisor reads stdout tokens, so this cannot affect the protocol, but the wording is now stale. Non-blocking; update the text in a later cosmetic patch."
+    },
+    {
+      "severity": "minor",
+      "file": "tools/owned_process_diagnostics_pure_tests/main.swift",
+      "symbol": "testProtocolInputs (refused GO list)",
+      "reason": "The refused list keeps the obsolete READY literal and does not include BENCHMARK_READY or TIMED_WINDOW_END as explicit refusal cases. Both are refused by goAccepted's exact comparison regardless; adding them would document the intent. Non-blocking."
+    },
+    {
+      "severity": "info",
+      "file": "protocol evidence",
+      "symbol": "interrupted first start",
+      "reason": "The interrupted start occurred before GO, so by construction no model mapping, device creation, hardware work or evidence was produced; the token mismatch alone explains the supervisor never issuing GO. This patch addresses exactly that cause and nothing else."
+    }
+  ]
+}
+```

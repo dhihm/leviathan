@@ -30,6 +30,16 @@ let package = Package(
             path: "tools/router_overlap_model_gate_pure_tests"
         ),
         .executableTarget(
+            name: "owned-process-diagnostics",
+            dependencies: ["LeviathanCore"],
+            path: "tools/owned_process_diagnostics"
+        ),
+        .executableTarget(
+            name: "owned-process-diagnostics-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/owned_process_diagnostics_pure_tests"
+        ),
+        .executableTarget(
             name: "leviathan-forge-helper",
             dependencies: ["LeviathanCore"],
             path: "Sources/leviathan-forge-helper"

@@ -1,0 +1,31 @@
+ok   tampered permutation fails the digest: router overlap rejected: plan digest mismatch
+ok   tampered permutation fails reverify: router overlap rejected: plan digest mismatch
+ok   wrong shared gate tensor: router overlap rejected: window layer 3 i1 (matvec): tensor binding ["blk.3.ffn_up.weight"] != ["blk.3.ffn_gate.weight"]
+ok   wrong shared gate tensor (graph entry): router overlap rejected: schedule is not the canonical lowering of this graph
+ok   wrong shared_up GU offset: router overlap rejected: window layer 3 i2 (matvec): attrs/geometry ["rows": 2112, "offset": 0] != ["offset": 2112, "rows": 2112]
+ok   wrong shared_up GU offset (graph entry): router overlap rejected: schedule is not the canonical lowering of this graph
+ok   wrong ffn_norm geometry attrs: router overlap rejected: window layer 3 i0 (rmsnorm): attrs/geometry ["width": 2816] != [:]
+ok   wrong ffn_norm geometry attrs (graph entry): router overlap rejected: schedule is not the canonical lowering of this graph
+ok   wrong router scale attrs: router overlap rejected: window layer 3 i7 (scale): attrs/geometry ["routerScale": 1, "layerScale": 1] != ["routerScale": 1]
+ok   wrong router scale attrs (graph entry): router overlap rejected: schedule is not the canonical lowering of this graph
+ok   wrong topK: router overlap rejected: window layer 3 i9 (router_topk): attrs/geometry ["experts": 128, "topK": 7] != ["experts": 128, "topK": 8]
+ok   wrong topK (graph entry): router overlap rejected: schedule is not the canonical lowering of this graph
+ok   escaped remapped router input: router overlap rejected: window layer 3: remapped router_scale value escapes its segment: h@28 used at [116, 118], allowed only at [116]
+ok   escaped remapped router input (graph entry): router overlap rejected: schedule is not the canonical lowering of this graph
+ok   extra router score consumer: router overlap rejected: window layer 29: router scores not consumed only by router_topk: router@29 used at [923, 926], allowed only at [923]
+ok   extra router score consumer (graph entry): router overlap rejected: schedule is not the canonical lowering of this graph
+ok   missing FFN window: router overlap rejected: missing or ambiguous FFN window for layer 3 (0 ffn_norm candidates)
+ok   missing FFN window (graph entry): router overlap rejected: schedule is not the canonical lowering of this graph
+ok   wrong global rope pattern: router overlap rejected: layer pattern: layer 5 local/global geometry or window position mismatch
+ok   wrong global rope pattern (graph entry): router overlap rejected: schedule is not the canonical lowering of this graph
+ok   missing layer (config claims 31 layers): router overlap rejected: missing or ambiguous FFN window for layer 30 (0 ffn_norm candidates)
+ok   unknown op rejected by the planner: router overlap rejected: canonical SSA dataflow invalid: ssa dataflow invalid: unknown ssa op mystery_op at 1
+ok   statistics reuse turned into compute: router overlap rejected: statistics: layer 3 actions are not compute/reuse/reuse
+ok   statistics slot swapped: router overlap rejected: statistics: layer 3 slot 3 not shared or not unique
+ok   statistics input version changed: router overlap rejected: statistics: layer 3 action input/width/vectors mismatch
+ok   statistics action outside any window: router overlap rejected: statistics action at instruction 1 lies outside every FFN window
+ok   statistics analysis version changed: router overlap rejected: statistics plan analysis 1 != 2
+ok   statistics epsilon bits changed: router overlap rejected: statistics epsilon bits differ from the planner epsilon
+ok   statistics group lost a reuse: router overlap rejected: statistics plan shape is not 30 groups / 60 reuses over 934 instructions
+ok   planner epsilon differs from the statistics epsilon: router overlap rejected: statistics epsilon bits differ from the planner epsilon
+router overlap pure tests: 333 passed, 0 failed

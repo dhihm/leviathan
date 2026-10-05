@@ -1,0 +1,82 @@
+```json
+{
+  "verdict": "ACCEPT",
+  "findings": [
+    {
+      "severity": "info",
+      "file": "Sources/LeviathanCore/Gemma4.swift",
+      "symbol": "Gemma4Runner.flushOpenSegment",
+      "reason": "Default path unchanged: the split timers read the clock only when breakdownInstrumentation is true; gpuMicrosTotal receives the identical expression (cmd.gpuEndTime - cmd.gpuStartTime) * 1e6 computed once; endEncoding, commit and waitUntilCompleted order and the submittedBuffers increment are unchanged. Nested sub-phases are measured strictly inside the existing brFlushMicros span, so the nesting invariant checked by violations() holds by construction."
+    },
+    {
+      "severity": "info",
+      "file": "Sources/LeviathanCore/Gemma4.swift",
+      "symbol": "Gemma4Runner.dispatch / dispatchPipeline / read / write",
+      "reason": "Anchors are unique per site (the flush site was already rewritten by the earlier patch and its continuation line differs). Direct-submit and copy counters increment only under the flag; no kernel, geometry or accounting change on the default path."
+    },
+    {
+      "severity": "info",
+      "file": "Sources/LeviathanCore/GemmaForge.swift",
+      "symbol": "GemmaPreparedExecution.assertBound, executeToken embed_row/copy/router_topk/logits sites",
+      "reason": "All anchors match the current file exactly; the router softmax anchor is applied in GemmaForge.swift only, not the identical lines in Gemma4.swift. Default cost is one Bool branch plus an internal call returning 0 per site; no clock reads or syscalls when the flag is off. No arithmetic, order, flush point or finiteness check is altered. Site counts derived per forward (embed 1, router = layers, copy = SSA copies, logits 1, reads 3 + layers + copies, writes 1 + copies, one binding check per executor call) agree with the executor's actual read/write calls on the OFF path with the modern candidate."
+    },
+    {
+      "severity": "info",
+      "file": "Sources/LeviathanCore/OwnProcessDiagnostics.swift",
+      "symbol": "OwnProcessInfo.taskEvents / vmInfo",
+      "reason": "Own-task task_info only. Native word counts come from MemoryLayout of the imported structs (task_events_info is 8 integer_t words). A kern_return failure or a short TASK_EVENTS_INFO count is recorded as UNKNOWN with the code, never zero; phys_footprint is gated on the returned count against the field offset. counterDelta uses checked subtraction, marks overflow unknown and a decreasing cumulative counter nonMonotonic. NaN/inf in any Double field encode as strings through the gate's encoder."
+    },
+    {
+      "severity": "minor",
+      "file": "Sources/LeviathanCore/OwnProcessDiagnostics.swift",
+      "symbol": "OwnProcessInfo.vmInfo",
+      "reason": "virtual_size and resident_size are reported whenever kern_return succeeds, without checking the returned count against their offsets. Any real TASK_VM_INFO reply covers them, and the struct is zero-initialized, so no garbage can appear; still, the same count-gated pattern used for phys_footprint would make the partial branch fully truthful. Not blocking."
+    },
+    {
+      "severity": "minor",
+      "file": "Sources/LeviathanCore/OwnProcessDiagnostics.swift",
+      "symbol": "OwnProcessInfo.taskEvents",
+      "reason": "TASK_EVENTS_INFO fields are signed 32-bit and can wrap on a long-lived process. The raw snapshot then carries a negative value and the delta is correctly reported nonMonotonic. This is faithful to the API, but the report should state that these are 32-bit wrapping counters. Not blocking for a sub-hour process."
+    },
+    {
+      "severity": "minor",
+      "file": "Sources/LeviathanCore/OwnProcessDiagnostics.swift",
+      "symbol": "OwnProcessDiagnostics.run (memoryAccounting sampling point)",
+      "reason": "ownProcessMemoryAccounting is sampled once before the phase-53 gate, when moeScratch and routerIn are not yet allocated, so activationAndScratchBytes omits them. The K/V and mapping figures are unaffected. Sampling a second accounting at the end label would close the gap. Not blocking."
+    },
+    {
+      "severity": "minor",
+      "file": "tools/owned_process_diagnostics/main.swift",
+      "symbol": "writeReport after END",
+      "reason": "If the encoded report exceeds the 16 MiB bound the report is dropped after END was already printed and the tool exits 1. The ordering is truthful and the bound is far above the expected size (six runs with 31 per-token records plus the embedded gate report), but a bound failure loses all evidence. Not blocking."
+    },
+    {
+      "severity": "minor",
+      "file": "tools/owned_process_diagnostics_pure_tests/main.swift",
+      "symbol": "testTaskInfo (fresh page fault check)",
+      "reason": "The positive-fault assertion assumes the 32 MiB allocation receives not-yet-resident pages. On this platform a large malloc is mmap-backed, so the touch loop faults, but the test depends on allocator behavior rather than the diagnostic's policy. Treat a failure there as an environment artifact, not a diagnostic defect."
+    },
+    {
+      "severity": "info",
+      "file": "Sources/LeviathanCore/OwnProcessDiagnostics.swift",
+      "symbol": "OwnProcessDiagnostics.profile / profiledRun",
+      "reason": "Isolation and gates are intact: the unchanged phase-53 gate runs qualification-only first with instrumentation off; profiling needs qualificationPassed, the same derived counts as the gate identity, the hard-pinned E4R32 install inside the width-32 scope, and a fresh direct reference per fixture. Every profiled run requires 32 frozen IDs fed by the previous actual argmax, 31 continuations, full-vocabulary finiteness, exact OFF phase counters, totals equal to the qualified OFF run, zero direct submissions, flushes equal to submitted buffers, per-token interval agreement, breakdown nesting with no violations, and both the gate's vector bound and the stricter per-element bound strictly below 1e-4. Instrumentation is switched off and the runner reset on every exit path including throws; restoredPristine requires instrumentation off and clean axes. ON is never profiled and the overlap scope still refuses the flag. gainQualified, installable and productionTPOTClaim are forced false at encode; no promotion, no default change, no phase-53 retry."
+    },
+    {
+      "severity": "info",
+      "file": "tools/owned_process_diagnostics/main.swift",
+      "symbol": "runTool",
+      "reason": "Before GO only argument parsing, exclusive new-.json path policy, bounded parsing, the cached digest record and the executable digest run; no auto rehash. The runner, device and the first task_info snapshot are created only after exactly GO; EOF or any other line exits 1. END is printed only when the runner is quiescent and is withheld otherwise with the report still written. Exit codes match the documented map. No signals, no process enumeration."
+    }
+  ],
+  "requiredFixes": [],
+  "limitations": [
+    "Nothing was built or run here. Native build readiness is assessed by reading: no access-level, memberwise-order or anchor mismatch was found, and all referenced gate internals are internal to LeviathanCore. The one compile-time assumption is MemoryLayout.offset(of:) on the imported task_vm_info key path; if it were unavailable the nil fallback still compiles and yields a conservative full-count requirement.",
+    "The readback-site counts, the flush equals submitted-buffers relation and the per-token interval equality are source-derived predictions; the tool fails with a named mismatch rather than guessing, so a first hardware run may surface an executor path not modeled here.",
+    "The serialization tests for gainQualified, installable and productionTPOTClaim verify the encoder contract only; they are not a permission mechanism and do not prevent a foreign encoder from emitting true.",
+    "Residual (wall minus command-buffer interval) is unattributed host-side time under instrumentation; it is not GPU idle and not a TPOT or performance claim, and instrumented timings must never be compared with gate or benchmark timings.",
+    "Supervisor bound: the diagnostic performs the full qualification (9 arm runs plus refusal tests), 3 fresh references and 6 instrumented OFF runs. Scaled from the recorded 411 s run that included 42 performance runs, this should fit comfortably inside 1200 s, but that is an estimate, not a measurement; the supervisor remains the time authority and the run is correctness-only under normal concurrency.",
+    "The Fable GPU-routing advisory remains unaccepted; this patch is diagnostics only and introduces no routing, kernel, candidate, threshold, fixture or hash-policy change."
+  ]
+}
+```

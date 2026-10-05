@@ -745,6 +745,35 @@ public final class Gemma4Runner {
     internal var brFlushMicros = 0.0
     internal var brReadCopyMicros = 0.0
     internal var brWriteCopyMicros = 0.0
+    /// Phase-54 split of the same opt-in breakdown (same flag, same
+    /// monotonic clock), read only through submissionBreakdown(); the
+    /// original breakdownCounters() tuple and its four meanings are
+    /// unchanged. endEncoding, commit and waitUntilCompleted are NESTED
+    /// inside brFlushMicros. The flushed command-buffer interval is
+    /// GPU-side coverage (gpuEndTime - gpuStartTime), not CPU time and not
+    /// busy time. Site, router-selection and binding-check fields are
+    /// written by OwnProcessDiagnostics.swift helpers. With the flag off
+    /// every site only branches on the flag.
+    internal var brFlushEndEncodingMicros = 0.0
+    internal var brFlushCommitMicros = 0.0
+    internal var brFlushWaitMicros = 0.0
+    internal var brFlushIntervalMicros = 0.0
+    internal var brFlushCount = 0
+    internal var brDirectSubmitCount = 0
+    internal var brReadCopyCount = 0
+    internal var brWriteCopyCount = 0
+    internal var brRouterSelectionMicros = 0.0
+    internal var brRouterSelectionCount = 0
+    internal var brBindingCheckMicros = 0.0
+    internal var brBindingCheckCount = 0
+    internal var brSiteEmbedMicros = 0.0
+    internal var brSiteEmbedCount = 0
+    internal var brSiteRouterMicros = 0.0
+    internal var brSiteRouterCount = 0
+    internal var brSiteCopyMicros = 0.0
+    internal var brSiteCopyCount = 0
+    internal var brSiteLogitsMicros = 0.0
+    internal var brSiteLogitsCount = 0
 
     /// Zeroes the breakdown counters (call right before the measured
     /// window; GPU time is read as a gpuMicrosTotal delta by the caller).
@@ -753,6 +782,7 @@ public final class Gemma4Runner {
         brFlushMicros = 0
         brReadCopyMicros = 0
         brWriteCopyMicros = 0
+        submissionBreakdownResetSplit()
     }
 
     /// Point sample of the counters (microseconds) since the last reset.
@@ -2338,12 +2368,23 @@ public final class Gemma4Runner {
         openEnc = nil
         let ctTrace = commandTimelineEnabled
         let ctEndEncodeStart = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
+        let brSplit = breakdownInstrumentation
+        let brEndEncodeT0 = brSplit ? Self.brNow() : 0
         enc.endEncoding()
+        let brEndEncodeT1 = brSplit ? Self.brNow() : 0
         let ctBeforeCommit = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
         cmd.commit()
+        let brCommitT1 = brSplit ? Self.brNow() : 0
         let ctAfterCommit = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
         submittedBuffers += 1
         cmd.waitUntilCompleted()
+        if brSplit {
+            let brWaitT1 = Self.brNow()
+            brFlushEndEncodingMicros += brEndEncodeT1 - brEndEncodeT0
+            brFlushCommitMicros += brCommitT1 - brEndEncodeT1
+            brFlushWaitMicros += brWaitT1 - brCommitT1
+            brFlushCount += 1
+        }
         if ctTrace {
             let ctAfterWait = Gemma4CommandTimeline.hostSeconds()
             let known = !ctPendingPartial
@@ -2361,7 +2402,9 @@ public final class Gemma4Runner {
             throw Gemma4Error.commandBufferFailed(
                 "deferred segment: status \(cmd.status.rawValue), \(String(describing: cmd.error))")
         }
-        gpuMicrosTotal += (cmd.gpuEndTime - cmd.gpuStartTime) * 1e6
+        let flushedInterval = (cmd.gpuEndTime - cmd.gpuStartTime) * 1e6
+        gpuMicrosTotal += flushedInterval
+        if breakdownInstrumentation { brFlushIntervalMicros += flushedInterval }
         expertCache?.noteSegmentFlushed()
     }
 
@@ -2493,6 +2536,7 @@ public final class Gemma4Runner {
         cmd.commit()
         let ctAfterCommit = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
         submittedBuffers += 1
+        if breakdownInstrumentation { brDirectSubmitCount += 1 }
         cmd.waitUntilCompleted()
         if ctTrace {
             let ctAfterWait = Gemma4CommandTimeline.hostSeconds()
@@ -2599,6 +2643,7 @@ public final class Gemma4Runner {
         cmd.commit()
         let ctAfterCommit = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
         submittedBuffers += 1
+        if breakdownInstrumentation { brDirectSubmitCount += 1 }
         cmd.waitUntilCompleted()
         if ctTrace {
             let ctAfterWait = Gemma4CommandTimeline.hostSeconds()
@@ -3371,7 +3416,12 @@ public final class Gemma4Runner {
         // readback — a failed segment must surface, not vanish.
         try flushOpenSegment()
         let brT0 = breakdownInstrumentation ? Self.brNow() : 0
-        defer { if breakdownInstrumentation { brReadCopyMicros += Self.brNow() - brT0 } }
+        defer {
+            if breakdownInstrumentation {
+                brReadCopyMicros += Self.brNow() - brT0
+                brReadCopyCount += 1
+            }
+        }
         return [Float](UnsafeBufferPointer(start: buffer.contents().assumingMemoryBound(to: Float.self),
                                            count: count))
     }
@@ -3379,7 +3429,12 @@ public final class Gemma4Runner {
     internal func write(_ values: [Float], to buffer: MTLBuffer) throws {
         try flushOpenSegment()
         let brT0 = breakdownInstrumentation ? Self.brNow() : 0
-        defer { if breakdownInstrumentation { brWriteCopyMicros += Self.brNow() - brT0 } }
+        defer {
+            if breakdownInstrumentation {
+                brWriteCopyMicros += Self.brNow() - brT0
+                brWriteCopyCount += 1
+            }
+        }
         _ = values.withUnsafeBytes { raw in
             memcpy(buffer.contents(), raw.baseAddress!, values.count * 4)
         }

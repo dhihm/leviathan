@@ -1,0 +1,2 @@
+BENCHMARK_READY
+owned-process-diagnostics: expected exactly GO on stdin; nothing loaded, no device created

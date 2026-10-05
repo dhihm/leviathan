@@ -1,0 +1,422 @@
+{
+  "status": "profiledChecksPassed",
+  "restoredPristine": true,
+  "profileFailures": [],
+  "memory": {
+    "activationAndScratchBytes": 1242624,
+    "caveats": [
+      "Allocation capacity (buffer lengths, MTLDevice.currentAllocatedSize) is not physical residency.",
+      "The resident GGUF mapping is file-backed and read-only; how many of its pages are resident depends on the page cache and is not claimed here.",
+      "K/V capacity is derived from the configured maxContext (the existing 4096 bound) and must equal the actual cache allocation; the fixture bound is an upper bound on bytes written.",
+      "currentAllocatedSize is a point sample; the allocator may retain freed bytes and lazy allocations may not have happened yet."
+    ],
+    "fixtureKVBytesUpperBound": 24780800,
+    "fixtureMaxPositions": 55,
+    "ggufFileBytes": 14439363584,
+    "kvActualAllocationBytes": 1845493760,
+    "kvBytesPerPosition": 450560,
+    "kvCapacityPositions": 4096,
+    "kvDerivedAllocationBytes": 1845493760,
+    "kvDerivedMatchesActual": true,
+    "kvLayerWidthsFloats": [
+      2048,
+      2048,
+      2048,
+      2048,
+      2048,
+      1024,
+      2048,
+      2048,
+      2048,
+      2048,
+      2048,
+      1024,
+      2048,
+      2048,
+      2048,
+      2048,
+      2048,
+      1024,
+      2048,
+      2048,
+      2048,
+      2048,
+      2048,
+      1024,
+      2048,
+      2048,
+      2048,
+      2048,
+      2048,
+      1024
+    ],
+    "metalCurrentAllocatedBytes": 16286433280,
+    "residentWeightsMappingBytes": 14439366656
+  },
+  "initSnapshots": [
+    {
+      "events": {
+        "contextSwitches": 181,
+        "cowFaults": 252,
+        "faults": 3111,
+        "pageins": 15,
+        "status": "ok"
+      },
+      "label": "before-runner-init",
+      "metalStatus": "UNKNOWN(no runner Metal device sampled)",
+      "uptimeNanos": 3710483596068291,
+      "vm": {
+        "physFootprintBytes": 10863808,
+        "residentBytes": 17465344,
+        "status": "ok",
+        "virtualBytes": 445854629888
+      }
+    },
+    {
+      "events": {
+        "contextSwitches": 944,
+        "cowFaults": 275,
+        "faults": 6618,
+        "pageins": 1108,
+        "status": "ok"
+      },
+      "label": "runner-loaded",
+      "metalCurrentAllocatedBytes": 16286433280,
+      "metalStatus": "ok",
+      "uptimeNanos": 3710483783390958,
+      "vm": {
+        "physFootprintBytes": 47602560,
+        "residentBytes": 74203136,
+        "status": "ok",
+        "virtualBytes": 476730867712
+      }
+    },
+    {
+      "events": {
+        "contextSwitches": 944,
+        "cowFaults": 277,
+        "faults": 6628,
+        "pageins": 1108,
+        "status": "ok"
+      },
+      "label": "before-gate-qualification",
+      "metalCurrentAllocatedBytes": 16286433280,
+      "metalStatus": "ok",
+      "uptimeNanos": 3710483783623583,
+      "vm": {
+        "physFootprintBytes": 47684480,
+        "residentBytes": 74334208,
+        "status": "ok",
+        "virtualBytes": 476730867712
+      }
+    }
+  ],
+  "runs": [
+    {
+      "fixture": "en-chat",
+      "checksPassed": true,
+      "strictMaxPerElementNormalized": 3.740191459655762e-05,
+      "mediansMicros": {
+        "encodeMicros": 1111.796875,
+        "flushMicros": 82282.173828125,
+        "flushCommitMicros": 269.1259765625,
+        "flushWaitMicros": 81841.6240234375,
+        "readCopyMicros": 125.5830078125,
+        "writeCopyMicros": 3.125,
+        "routerSelectionMicros": 528.9970703125,
+        "bindingCheckMicros": 4.708984375,
+        "siteRouterMicros": 70524.083984375,
+        "siteCopyMicros": 6192.4150390625,
+        "siteEmbedMicros": 525,
+        "siteLogitsMicros": 4108.2080078125
+      },
+      "wallMedianMicros": 88872.875,
+      "commandBufferIntervalMedianMicros": 62164.376489818096,
+      "waitMinusIntervalMedianMicros": 19025.87201142311,
+      "siteExpectationPerForward": {
+        "copySites": 5,
+        "embedSites": 1,
+        "logitsSites": 1,
+        "readCopies": 38,
+        "routerSelections": 30,
+        "routerSites": 30,
+        "writeCopies": 6
+      },
+      "processDelta": {
+        "counters": [
+          {
+            "after": 91984,
+            "before": 89553,
+            "delta": 2431,
+            "monotonic": true,
+            "name": "faults",
+            "status": "known"
+          },
+          {
+            "after": 29736,
+            "before": 29736,
+            "delta": 0,
+            "monotonic": true,
+            "name": "pageins",
+            "status": "known"
+          },
+          {
+            "after": 280,
+            "before": 280,
+            "delta": 0,
+            "monotonic": true,
+            "name": "cowFaults",
+            "status": "known"
+          },
+          {
+            "after": 1688655,
+            "before": 1678639,
+            "delta": 10016,
+            "monotonic": true,
+            "name": "contextSwitches",
+            "status": "known"
+          },
+          {
+            "after": 476738977792,
+            "before": 476738404352,
+            "delta": 573440,
+            "monotonic": false,
+            "name": "virtualBytes",
+            "status": "known"
+          },
+          {
+            "after": 88915968,
+            "before": 80576512,
+            "delta": 8339456,
+            "monotonic": false,
+            "name": "residentBytes",
+            "status": "known"
+          },
+          {
+            "after": 2024090240,
+            "before": 2023156288,
+            "delta": 933952,
+            "monotonic": false,
+            "name": "physFootprintBytes",
+            "status": "known"
+          },
+          {
+            "after": 16286613504,
+            "before": 16286613504,
+            "delta": 0,
+            "monotonic": false,
+            "name": "metalCurrentAllocatedBytes",
+            "status": "known"
+          }
+        ],
+        "elapsedNanos": 4633855208,
+        "from": "run-start en-chat measured",
+        "to": "run-end en-chat measured"
+      }
+    },
+    {
+      "fixture": "kr-chat",
+      "checksPassed": true,
+      "strictMaxPerElementNormalized": 3.272294998168945e-05,
+      "mediansMicros": {
+        "encodeMicros": 822.869140625,
+        "flushMicros": 77688.9990234375,
+        "flushCommitMicros": 210,
+        "flushWaitMicros": 77414.3310546875,
+        "readCopyMicros": 112.2900390625,
+        "writeCopyMicros": 2.7509765625,
+        "routerSelectionMicros": 419.79296875,
+        "bindingCheckMicros": 4.9580078125,
+        "siteRouterMicros": 66808.9990234375,
+        "siteCopyMicros": 5462.0830078125,
+        "siteEmbedMicros": 246.5,
+        "siteLogitsMicros": 3944.125
+      },
+      "wallMedianMicros": 83179.917,
+      "commandBufferIntervalMedianMicros": 62072.29197025299,
+      "waitMinusIntervalMedianMicros": 15314.707095175982,
+      "siteExpectationPerForward": {
+        "copySites": 5,
+        "embedSites": 1,
+        "logitsSites": 1,
+        "readCopies": 38,
+        "routerSelections": 30,
+        "routerSites": 30,
+        "writeCopies": 6
+      },
+      "processDelta": {
+        "counters": [
+          {
+            "after": 106469,
+            "before": 104088,
+            "delta": 2381,
+            "monotonic": true,
+            "name": "faults",
+            "status": "known"
+          },
+          {
+            "after": 29967,
+            "before": 29967,
+            "delta": 0,
+            "monotonic": true,
+            "name": "pageins",
+            "status": "known"
+          },
+          {
+            "after": 280,
+            "before": 280,
+            "delta": 0,
+            "monotonic": true,
+            "name": "cowFaults",
+            "status": "known"
+          },
+          {
+            "after": 2138022,
+            "before": 2128130,
+            "delta": 9892,
+            "monotonic": true,
+            "name": "contextSwitches",
+            "status": "known"
+          },
+          {
+            "after": 476738404352,
+            "before": 476738977792,
+            "delta": -573440,
+            "monotonic": false,
+            "name": "virtualBytes",
+            "status": "known"
+          },
+          {
+            "after": 82182144,
+            "before": 68616192,
+            "delta": 13565952,
+            "monotonic": false,
+            "name": "residentBytes",
+            "status": "known"
+          },
+          {
+            "after": 2048797312,
+            "before": 2048486080,
+            "delta": 311232,
+            "monotonic": false,
+            "name": "physFootprintBytes",
+            "status": "known"
+          },
+          {
+            "after": 16286613504,
+            "before": 16286613504,
+            "delta": 0,
+            "monotonic": false,
+            "name": "metalCurrentAllocatedBytes",
+            "status": "known"
+          }
+        ],
+        "elapsedNanos": 4508365208,
+        "from": "run-start kr-chat measured",
+        "to": "run-end kr-chat measured"
+      }
+    },
+    {
+      "fixture": "raw-hello",
+      "checksPassed": true,
+      "strictMaxPerElementNormalized": 7.529184222221375e-05,
+      "mediansMicros": {
+        "encodeMicros": 729.94921875,
+        "flushMicros": 69260.4140625,
+        "flushCommitMicros": 212.541015625,
+        "flushWaitMicros": 68914.79296875,
+        "readCopyMicros": 102.3359375,
+        "writeCopyMicros": 2.5,
+        "routerSelectionMicros": 395.0009765625,
+        "bindingCheckMicros": 4.75,
+        "siteRouterMicros": 59546.416015625,
+        "siteCopyMicros": 5307.125,
+        "siteEmbedMicros": 253.9169921875,
+        "siteLogitsMicros": 3936.3330078125
+      },
+      "wallMedianMicros": 72900.166,
+      "commandBufferIntervalMedianMicros": 60033.66596996784,
+      "waitMinusIntervalMedianMicros": 8759.376022219658,
+      "siteExpectationPerForward": {
+        "copySites": 5,
+        "embedSites": 1,
+        "logitsSites": 1,
+        "readCopies": 38,
+        "routerSelections": 30,
+        "routerSites": 30,
+        "writeCopies": 6
+      },
+      "processDelta": {
+        "counters": [
+          {
+            "after": 121517,
+            "before": 119298,
+            "delta": 2219,
+            "monotonic": true,
+            "name": "faults",
+            "status": "known"
+          },
+          {
+            "after": 30177,
+            "before": 30177,
+            "delta": 0,
+            "monotonic": true,
+            "name": "pageins",
+            "status": "known"
+          },
+          {
+            "after": 280,
+            "before": 280,
+            "delta": 0,
+            "monotonic": true,
+            "name": "cowFaults",
+            "status": "known"
+          },
+          {
+            "after": 2413597,
+            "before": 2407632,
+            "delta": 5965,
+            "monotonic": true,
+            "name": "contextSwitches",
+            "status": "known"
+          },
+          {
+            "after": 476738404352,
+            "before": 476738404352,
+            "delta": 0,
+            "monotonic": false,
+            "name": "virtualBytes",
+            "status": "known"
+          },
+          {
+            "after": 88834048,
+            "before": 78118912,
+            "delta": 10715136,
+            "monotonic": false,
+            "name": "residentBytes",
+            "status": "known"
+          },
+          {
+            "after": 2060593792,
+            "before": 2060184192,
+            "delta": 409600,
+            "monotonic": false,
+            "name": "physFootprintBytes",
+            "status": "known"
+          },
+          {
+            "after": 16286613504,
+            "before": 16286613504,
+            "delta": 0,
+            "monotonic": false,
+            "name": "metalCurrentAllocatedBytes",
+            "status": "known"
+          }
+        ],
+        "elapsedNanos": 2540649667,
+        "from": "run-start raw-hello measured",
+        "to": "run-end raw-hello measured"
+      }
+    }
+  ]
+}

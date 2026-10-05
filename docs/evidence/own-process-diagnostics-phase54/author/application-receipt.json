@@ -1,0 +1,37 @@
+{
+  "appliedUTC": "2026-10-05T07:09:54.845854+00:00",
+  "canonicalAuthorModel": "claude-opus-5-5",
+  "mechanicalExactPatchOnly": true,
+  "files": [
+    {
+      "path": "Package.swift",
+      "beforeSHA256": "05830da943431931f85d02d932900842b307e0e5ba1b4de018dea6786a53a6de",
+      "afterSHA256": "a72501ad0cb9da93e6939c952bb4ca29b888e6c3773c2bdbe6f13face0d9e112"
+    },
+    {
+      "path": "Sources/LeviathanCore/Gemma4.swift",
+      "beforeSHA256": "32c2090c0f30605cbd90a4953f6e191efb55e3eb3cea3d85dbd35eaaec267317",
+      "afterSHA256": "2e1fa49aee5b7309e45e783947fae9daa14bbf5802ca3f47bb41cd0ae82d7fac"
+    },
+    {
+      "path": "Sources/LeviathanCore/GemmaForge.swift",
+      "beforeSHA256": "69ff5e6e50a57d49955dac23ae144e4804ca35e88772082baf103ff04b1f6a70",
+      "afterSHA256": "ab66746e3705167972adc19832a4137eff801ea0044f1b2556e540983488919f"
+    },
+    {
+      "path": "Sources/LeviathanCore/OwnProcessDiagnostics.swift",
+      "beforeSHA256": null,
+      "afterSHA256": "47c7fbaa8736eed0ae6d98bac318559712fdd9946006eeb53395f7b892075478"
+    },
+    {
+      "path": "tools/owned_process_diagnostics/main.swift",
+      "beforeSHA256": null,
+      "afterSHA256": "48f1e9962c102476bf412265ef6c67ad92054cffad50d2857e218ca6bdd02fe4"
+    },
+    {
+      "path": "tools/owned_process_diagnostics_pure_tests/main.swift",
+      "beforeSHA256": null,
+      "afterSHA256": "171d3d00d1532447f58066d6576e73d99a69da0884ccc4fb6ebdedd189041aea"
+    }
+  ]
+}

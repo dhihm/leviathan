@@ -1,0 +1,63 @@
+{
+  "abortReason": null,
+  "benchmark": {
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/owned-process-diagnostics",
+      "--gguf",
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+      "--region",
+      "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+      "--graph",
+      "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+      "--fixtures",
+      "/tmp/leviathan-forge2-tooling/phase50-simd-model-integration/model-gate-fixtures.json",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase54-own-process-profile-run/diagnostic-report.json"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "childPid": 63187,
+  "childStatus": "exited",
+  "cleanupAction": "sigterm",
+  "elapsedSeconds": 81.354068,
+  "endMarkerObserved": false,
+  "error": null,
+  "exitCode": null,
+  "exitEvidenceSource": "supervisor_popen_wait_status",
+  "exitSignal": 15,
+  "goSent": false,
+  "interruptedBy": "SIGINT",
+  "kind": "owned_benchmark_supervisor_receipt",
+  "launchUUID": "afb7ac18-feee-4b27-a769-af07d2584e2b",
+  "lockPath": "/tmp/leviathan-forge2-tooling/phase54-own-process-profile-run/supervisor.lock",
+  "lockReleaseEligible": true,
+  "markers": {
+    "endObservedUTC": null,
+    "goSentUTC": null,
+    "readyObservedUTC": null
+  },
+  "notes": [],
+  "progress": {
+    "lastLine": "READY",
+    "lastLineUTC": "2026-10-05T07:18:00.775903Z",
+    "lineCount": 1,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "readyObserved": false,
+  "receiptUTC": "2026-10-05T07:19:22.052543Z",
+  "resources": {
+    "postWindow": null,
+    "postWindowSkippedReason": "go_not_sent",
+    "preGo": null
+  },
+  "result": "interrupted",
+  "schemaVersion": 1,
+  "signalsReceived": [
+    "SIGINT"
+  ],
+  "startReleased": true,
+  "supervisorPid": 63055,
+  "timedOut": false,
+  "windowElapsedSeconds": null
+}

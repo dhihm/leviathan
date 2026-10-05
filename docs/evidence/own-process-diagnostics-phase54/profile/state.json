@@ -1,0 +1,207 @@
+{
+  "benchmark": {
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/owned-process-diagnostics",
+      "--gguf",
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+      "--region",
+      "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+      "--graph",
+      "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+      "--fixtures",
+      "/tmp/leviathan-forge2-tooling/phase50-simd-model-integration/model-gate-fixtures.json",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase54-own-process-profile-run-protocol-bound/diagnostic-report.json"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "child": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 25857,
+      "ppid": 25856,
+      "start_tvsec": 1791185116,
+      "start_tvusec": 977276,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 25857,
+        "ppid": 25856,
+        "start_tvsec": 1791185116,
+        "start_tvusec": 977276,
+        "uid": 501
+      },
+      "pid": 25857,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 25857,
+    "spawnedUTC": "2026-10-05T07:25:16.978915Z"
+  },
+  "cleanupResult": {
+    "lockReleaseEligible": true,
+    "lockReleaseError": null,
+    "lockReleased": true
+  },
+  "createdUTC": "2026-10-05T07:25:16.976328Z",
+  "kind": "owned_benchmark_supervisor_state",
+  "launchUUID": "7b3972c9-5381-4bf3-9546-f10c10bf86c4",
+  "markers": {
+    "endObservedUTC": "2026-10-05T07:30:25.409541Z",
+    "goSentUTC": "2026-10-05T07:25:17.064577Z",
+    "readyObservedUTC": "2026-10-05T07:25:17.048533Z"
+  },
+  "outputDir": "/tmp/leviathan-forge2-tooling/phase54-own-process-profile-run-protocol-bound",
+  "phase": "finished",
+  "phaseHistory": [
+    {
+      "phase": "created",
+      "utc": "2026-10-05T07:25:16.976342Z"
+    },
+    {
+      "phase": "spawning_wrapper",
+      "utc": "2026-10-05T07:25:16.976700Z"
+    },
+    {
+      "phase": "wrapper_spawned",
+      "utc": "2026-10-05T07:25:16.978979Z"
+    },
+    {
+      "phase": "identity_recorded",
+      "utc": "2026-10-05T07:25:16.979560Z"
+    },
+    {
+      "phase": "start_released",
+      "utc": "2026-10-05T07:25:16.979956Z"
+    },
+    {
+      "phase": "ready_observed",
+      "utc": "2026-10-05T07:25:17.048698Z"
+    },
+    {
+      "phase": "pre_go_snapshot",
+      "utc": "2026-10-05T07:25:17.049728Z"
+    },
+    {
+      "phase": "sending_go",
+      "utc": "2026-10-05T07:25:17.063849Z"
+    },
+    {
+      "phase": "timed_window",
+      "utc": "2026-10-05T07:25:17.064583Z"
+    },
+    {
+      "phase": "window_ended",
+      "utc": "2026-10-05T07:30:25.410687Z"
+    },
+    {
+      "phase": "post_window",
+      "utc": "2026-10-05T07:30:25.503994Z"
+    },
+    {
+      "phase": "stdout_closed",
+      "utc": "2026-10-05T07:30:25.544683Z"
+    },
+    {
+      "phase": "child_exited",
+      "utc": "2026-10-05T07:30:25.545404Z"
+    },
+    {
+      "phase": "finished",
+      "utc": "2026-10-05T07:30:25.548941Z"
+    }
+  ],
+  "phaseUTC": "2026-10-05T07:30:25.548941Z",
+  "progress": {
+    "lastLine": "report /tmp/leviathan-forge2-tooling/phase54-own-process-profile-run-protocol-bound/diagnostic-report.json written: status profiledChecksPassed; diagnostic only, gainQualified false, not installable, no production TPOT claim",
+    "lastLineUTC": "2026-10-05T07:30:25.505890Z",
+    "lineCount": 18,
+    "tpotLines": [
+      {
+        "line": "PROGRESS {\"event\":\"profiledRun\",\"payload\":{\"allFinite\":true,\"checksPassed\":true,\"comparison\":{\"comparedSteps\":32,\"invalidSteps\":0,\"maxAbsDelta\":5.054473876953125e-05,\"maxPerElementNormalized\":3.740191459655762e-05,\"maxVectorNormalized\":2.0590199018647806e-06,\"perStepMaxPerElementNormalized\":[2.1636486053466797e-05,3.405660390853882e-05,2.8431415557861328e-05,2.8461217880249023e-05,2.8673559427261353e-05,2.162158489227295e-05,1.8984079360961914e-05,2.664327621459961e-05,2.454192106659189e-05,2.5719404220581055e-05,3.337860107421875e-05,2.0742416381835938e-05,2.4259090423583984e-05,2.5331974029541016e-05,2.872943878173828e-05,1.6927719116210938e-05,1.845678959762233e-05,3.740191459655762e-05,2.3424625396728516e-05,2.2470951080322266e-05,3.445148468017578e-05,2.759695053100586e-05,3.11732292175293e-05,2.777576446533203e-05,2.86102294921875e-05,3.6947429180145264e-05,3.0934810638427734e-05,2.3543834686279297e-05,1.749396324157715e-05,1.6808509826660156e-05,2.5287270545959473e-05,2.703070640563965e-05],\"worstPerElement\":{\"absDelta\":3.740191459655762e-05,\"index\":7511,\"perElementNormalized\":3.740191459655762e-05,\"reference\":-0.29192597,\"step\":17,\"value\":-0.29188856}},\"continuationBreakdownPerToken\":[{\"bindingCheckCount\":1,\"bindingCheckMicros\":9.416015625,\"directSubmitCount\":0,\"encodeMicros\":882.6611328125,\"flushCommandBufferIntervalMicros\":60496.58311530948,\"flushCommitMicros\":254.2919921875,\"flushCount\":37,\"flushEndEncodingMicros\":103.9970703125,\"flushMicros\":85746.0849609375,\"flushWaitMicros\":85342.1689453125,\"readCopyCount\":38,\"readCopyMicros\":126.1298828125,\"routerSelectionCount\":30,\"routerSelectionMicros\":518.580078125,\"siteCopyCount\":5,\"siteCopyMicros\":5880.2490234375,\"siteEmbedCount\":1,\"siteEmbedMicros\":589.2919921875,\"siteLogitsCount\":1,\"siteLogitsMicros\":3945.041015625,\"siteRouterCount\":30,\"siteRouterMicros\":75684.748046875,\"writeCopyCount\":6,\"writeCopyMicros\":2.5},{\"bindingCheckCount\":1,\"bindingCheckMicros\":4.083984375,\"directSubmitCount\":0,\"encodeMicros\":1362.98",
+        "utc": "2026-10-05T07:28:48.905442Z"
+      },
+      {
+        "line": "PROGRESS {\"event\":\"profiledRun\",\"payload\":{\"allFinite\":true,\"checksPassed\":true,\"comparison\":{\"comparedSteps\":32,\"invalidSteps\":0,\"maxAbsDelta\":5.054473876953125e-05,\"maxPerElementNormalized\":3.740191459655762e-05,\"maxVectorNormalized\":2.0590199018647806e-06,\"perStepMaxPerElementNormalized\":[2.1636486053466797e-05,3.405660390853882e-05,2.8431415557861328e-05,2.8461217880249023e-05,2.8673559427261353e-05,2.162158489227295e-05,1.8984079360961914e-05,2.664327621459961e-05,2.454192106659189e-05,2.5719404220581055e-05,3.337860107421875e-05,2.0742416381835938e-05,2.4259090423583984e-05,2.5331974029541016e-05,2.872943878173828e-05,1.6927719116210938e-05,1.845678959762233e-05,3.740191459655762e-05,2.3424625396728516e-05,2.2470951080322266e-05,3.445148468017578e-05,2.759695053100586e-05,3.11732292175293e-05,2.777576446533203e-05,2.86102294921875e-05,3.6947429180145264e-05,3.0934810638427734e-05,2.3543834686279297e-05,1.749396324157715e-05,1.6808509826660156e-05,2.5287270545959473e-05,2.703070640563965e-05],\"worstPerElement\":{\"absDelta\":3.740191459655762e-05,\"index\":7511,\"perElementNormalized\":3.740191459655762e-05,\"reference\":-0.29192597,\"step\":17,\"value\":-0.29188856}},\"continuationBreakdownPerToken\":[{\"bindingCheckCount\":1,\"bindingCheckMicros\":11.125,\"directSubmitCount\":0,\"encodeMicros\":1180.5283203125,\"flushCommandBufferIntervalMicros\":60910.66636145115,\"flushCommitMicros\":220.2919921875,\"flushCount\":37,\"flushEndEncodingMicros\":67.1259765625,\"flushMicros\":82282.173828125,\"flushWaitMicros\":81962.6640625,\"readCopyCount\":38,\"readCopyMicros\":201.9189453125,\"routerSelectionCount\":30,\"routerSelectionMicros\":451.8349609375,\"siteCopyCount\":5,\"siteCopyMicros\":7278.166015625,\"siteEmbedCount\":1,\"siteEmbedMicros\":219.75,\"siteLogitsCount\":1,\"siteLogitsMicros\":3901.0830078125,\"siteRouterCount\":30,\"siteRouterMicros\":71158.5029296875,\"writeCopyCount\":6,\"writeCopyMicros\":3.125},{\"bindingCheckCount\":1,\"bindingCheckMicros\":9.083984375,\"directSubmitCount\":0,\"encodeMicros\":4082.1806640625,\"flu",
+        "utc": "2026-10-05T07:28:53.541075Z"
+      },
+      {
+        "line": "PROGRESS {\"event\":\"profiledRun\",\"payload\":{\"allFinite\":true,\"checksPassed\":true,\"comparison\":{\"comparedSteps\":32,\"invalidSteps\":0,\"maxAbsDelta\":6.389617919921875e-05,\"maxPerElementNormalized\":3.272294998168945e-05,\"maxVectorNormalized\":2.598958244438617e-06,\"perStepMaxPerElementNormalized\":[2.7685851522107207e-05,2.4765729904174805e-05,2.1614134311676025e-05,2.8967857360839844e-05,1.1771917343139648e-05,2.7567148208618164e-05,2.1755695343017578e-05,2.1021724854487306e-05,3.0040740966796875e-05,2.2977590560913086e-05,2.8520822525024414e-05,1.7374753952026367e-05,2.0503997802734375e-05,2.467632293701172e-05,2.866983413696289e-05,2.7477741241455078e-05,2.958253026008606e-05,2.5153160095214844e-05,2.199411392211914e-05,2.0802021026611328e-05,2.2530555725097656e-05,2.0802021026611328e-05,2.1338462829589844e-05,3.24249267578125e-05,2.866983413696289e-05,2.2470951080322266e-05,1.537799835205078e-05,2.6971101760864258e-05,2.637505531311035e-05,3.272294998168945e-05,2.276897430419922e-05,2.168353548053469e-05],\"worstPerElement\":{\"absDelta\":3.272294998168945e-05,\"index\":236866,\"perElementNormalized\":3.272294998168945e-05,\"reference\":0.68782216,\"step\":29,\"value\":0.68778944}},\"continuationBreakdownPerToken\":[{\"bindingCheckCount\":1,\"bindingCheckMicros\":9.541015625,\"directSubmitCount\":0,\"encodeMicros\":567.0009765625,\"flushCommandBufferIntervalMicros\":59895.625337958336,\"flushCommitMicros\":166.7080078125,\"flushCount\":37,\"flushEndEncodingMicros\":57.8330078125,\"flushMicros\":67855.54296875,\"flushWaitMicros\":67610.1259765625,\"readCopyCount\":38,\"readCopyMicros\":75.08203125,\"routerSelectionCount\":30,\"routerSelectionMicros\":312.0009765625,\"siteCopyCount\":5,\"siteCopyMicros\":5342.666015625,\"siteEmbedCount\":1,\"siteEmbedMicros\":574.708984375,\"siteLogitsCount\":1,\"siteLogitsMicros\":3813.4580078125,\"siteRouterCount\":30,\"siteRouterMicros\":58312.791015625,\"writeCopyCount\":6,\"writeCopyMicros\":2.416015625},{\"bindingCheckCount\":1,\"bindingCheckMicros\":3.75,\"directSubmitCount\":0,\"encodeMicros\":930.900",
+        "utc": "2026-10-05T07:29:45.348011Z"
+      },
+      {
+        "line": "PROGRESS {\"event\":\"profiledRun\",\"payload\":{\"allFinite\":true,\"checksPassed\":true,\"comparison\":{\"comparedSteps\":32,\"invalidSteps\":0,\"maxAbsDelta\":6.389617919921875e-05,\"maxPerElementNormalized\":3.272294998168945e-05,\"maxVectorNormalized\":2.598958244438617e-06,\"perStepMaxPerElementNormalized\":[2.7685851522107207e-05,2.4765729904174805e-05,2.1614134311676025e-05,2.8967857360839844e-05,1.1771917343139648e-05,2.7567148208618164e-05,2.1755695343017578e-05,2.1021724854487306e-05,3.0040740966796875e-05,2.2977590560913086e-05,2.8520822525024414e-05,1.7374753952026367e-05,2.0503997802734375e-05,2.467632293701172e-05,2.866983413696289e-05,2.7477741241455078e-05,2.958253026008606e-05,2.5153160095214844e-05,2.199411392211914e-05,2.0802021026611328e-05,2.2530555725097656e-05,2.0802021026611328e-05,2.1338462829589844e-05,3.24249267578125e-05,2.866983413696289e-05,2.2470951080322266e-05,1.537799835205078e-05,2.6971101760864258e-05,2.637505531311035e-05,3.272294998168945e-05,2.276897430419922e-05,2.168353548053469e-05],\"worstPerElement\":{\"absDelta\":3.272294998168945e-05,\"index\":236866,\"perElementNormalized\":3.272294998168945e-05,\"reference\":0.68782216,\"step\":29,\"value\":0.68778944}},\"continuationBreakdownPerToken\":[{\"bindingCheckCount\":1,\"bindingCheckMicros\":6.375,\"directSubmitCount\":0,\"encodeMicros\":686.9677734375,\"flushCommandBufferIntervalMicros\":60253.501404076815,\"flushCommitMicros\":210,\"flushCount\":37,\"flushEndEncodingMicros\":70.8759765625,\"flushMicros\":68481.7509765625,\"flushWaitMicros\":68172.0830078125,\"readCopyCount\":38,\"readCopyMicros\":85.748046875,\"routerSelectionCount\":30,\"routerSelectionMicros\":355.6689453125,\"siteCopyCount\":5,\"siteCopyMicros\":5249.9990234375,\"siteEmbedCount\":1,\"siteEmbedMicros\":244.3330078125,\"siteLogitsCount\":1,\"siteLogitsMicros\":3895.541015625,\"siteRouterCount\":30,\"siteRouterMicros\":59291.666015625,\"writeCopyCount\":6,\"writeCopyMicros\":2.4169921875},{\"bindingCheckCount\":1,\"bindingCheckMicros\":3.3330078125,\"directSubmitCount\":0,\"encodeMicros\":582.7207031",
+        "utc": "2026-10-05T07:29:49.886108Z"
+      },
+      {
+        "line": "PROGRESS {\"event\":\"profiledRun\",\"payload\":{\"allFinite\":true,\"checksPassed\":true,\"comparison\":{\"comparedSteps\":32,\"invalidSteps\":0,\"maxAbsDelta\":7.808208465576172e-05,\"maxPerElementNormalized\":7.529184222221375e-05,\"maxVectorNormalized\":3.959383273791248e-06,\"perStepMaxPerElementNormalized\":[1.6219913959503174e-05,4.67449426651001e-05,3.6776065826416016e-05,2.2351741790771484e-05,5.346536636352539e-05,2.790987491607666e-05,5.396455526351929e-05,3.600120544433594e-05,1.3485550880432129e-05,4.805624485015869e-05,4.8160552978515625e-05,3.056973218917847e-05,2.664327621459961e-05,6.771087646484375e-05,3.2067298889160156e-05,4.458427429199219e-05,2.467632293701172e-05,3.0100345611572266e-05,3.147125244140625e-05,2.150610089302063e-05,2.9981136322021484e-05,2.8520822525024414e-05,2.790987491607666e-05,5.179643630981445e-05,2.9146671295166016e-05,7.529184222221375e-05,3.428757190704346e-05,3.1400471925735474e-05,6.186962127685547e-05,4.363059997558594e-05,3.1054019927978516e-05,2.8371810913085938e-05],\"worstPerElement\":{\"absDelta\":7.529184222221375e-05,\"index\":82685,\"perElementNormalized\":7.529184222221375e-05,\"reference\":0.038098138,\"step\":25,\"value\":0.03817343}},\"continuationBreakdownPerToken\":[{\"bindingCheckCount\":1,\"bindingCheckMicros\":6.0419921875,\"directSubmitCount\":0,\"encodeMicros\":631.1142578125,\"flushCommandBufferIntervalMicros\":58489.16806280613,\"flushCommitMicros\":199.416015625,\"flushCount\":37,\"flushEndEncodingMicros\":64.5849609375,\"flushMicros\":66445.7958984375,\"flushWaitMicros\":66157.25,\"readCopyCount\":38,\"readCopyMicros\":86.4189453125,\"routerSelectionCount\":30,\"routerSelectionMicros\":324.9990234375,\"siteCopyCount\":5,\"siteCopyMicros\":5238.8330078125,\"siteEmbedCount\":1,\"siteEmbedMicros\":555.5,\"siteLogitsCount\":1,\"siteLogitsMicros\":3809.041015625,\"siteRouterCount\":30,\"siteRouterMicros\":57016.7900390625,\"writeCopyCount\":6,\"writeCopyMicros\":2.2080078125},{\"bindingCheckCount\":1,\"bindingCheckMicros\":3.5,\"directSubmitCount\":0,\"encodeMicros\":608.6669921875,\"flushComman",
+        "utc": "2026-10-05T07:30:22.863228Z"
+      },
+      {
+        "line": "PROGRESS {\"event\":\"profiledRun\",\"payload\":{\"allFinite\":true,\"checksPassed\":true,\"comparison\":{\"comparedSteps\":32,\"invalidSteps\":0,\"maxAbsDelta\":7.808208465576172e-05,\"maxPerElementNormalized\":7.529184222221375e-05,\"maxVectorNormalized\":3.959383273791248e-06,\"perStepMaxPerElementNormalized\":[1.6219913959503174e-05,4.67449426651001e-05,3.6776065826416016e-05,2.2351741790771484e-05,5.346536636352539e-05,2.790987491607666e-05,5.396455526351929e-05,3.600120544433594e-05,1.3485550880432129e-05,4.805624485015869e-05,4.8160552978515625e-05,3.056973218917847e-05,2.664327621459961e-05,6.771087646484375e-05,3.2067298889160156e-05,4.458427429199219e-05,2.467632293701172e-05,3.0100345611572266e-05,3.147125244140625e-05,2.150610089302063e-05,2.9981136322021484e-05,2.8520822525024414e-05,2.790987491607666e-05,5.179643630981445e-05,2.9146671295166016e-05,7.529184222221375e-05,3.428757190704346e-05,3.1400471925735474e-05,6.186962127685547e-05,4.363059997558594e-05,3.1054019927978516e-05,2.8371810913085938e-05],\"worstPerElement\":{\"absDelta\":7.529184222221375e-05,\"index\":82685,\"perElementNormalized\":7.529184222221375e-05,\"reference\":0.038098138,\"step\":25,\"value\":0.03817343}},\"continuationBreakdownPerToken\":[{\"bindingCheckCount\":1,\"bindingCheckMicros\":6.0830078125,\"directSubmitCount\":0,\"encodeMicros\":660.9189453125,\"flushCommandBufferIntervalMicros\":58639.12496715784,\"flushCommitMicros\":190.0849609375,\"flushCount\":37,\"flushEndEncodingMicros\":89.5,\"flushMicros\":66761.1259765625,\"flushWaitMicros\":66457.4990234375,\"readCopyCount\":38,\"readCopyMicros\":84.623046875,\"routerSelectionCount\":30,\"routerSelectionMicros\":334.95703125,\"siteCopyCount\":5,\"siteCopyMicros\":5141.125,\"siteEmbedCount\":1,\"siteEmbedMicros\":234.333984375,\"siteLogitsCount\":1,\"siteLogitsMicros\":3867.208984375,\"siteRouterCount\":30,\"siteRouterMicros\":57689.9189453125,\"writeCopyCount\":6,\"writeCopyMicros\":2.2080078125},{\"bindingCheckCount\":1,\"bindingCheckMicros\":3.625,\"directSubmitCount\":0,\"encodeMicros\":637.5537109375,\"flushComman",
+        "utc": "2026-10-05T07:30:25.403649Z"
+      },
+      {
+        "line": "report /tmp/leviathan-forge2-tooling/phase54-own-process-profile-run-protocol-bound/diagnostic-report.json written: status profiledChecksPassed; diagnostic only, gainQualified false, not installable, no production TPOT claim",
+        "utc": "2026-10-05T07:30:25.505890Z"
+      }
+    ]
+  },
+  "quietAck": null,
+  "quietReadyFile": null,
+  "quietRequestFile": null,
+  "receiptWritten": true,
+  "schemaVersion": 1,
+  "supervisor": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 25856,
+      "ppid": 65294,
+      "start_tvsec": 1791185116,
+      "start_tvusec": 911187,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 25856,
+        "ppid": 65294,
+        "start_tvsec": 1791185116,
+        "start_tvusec": 911187,
+        "uid": 501
+      },
+      "pid": 25856,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 25856,
+    "uid": 501
+  },
+  "timeoutSeconds": 1200.0,
+  "wrapperArgv": [
+    "/opt/anaconda3/bin/python3",
+    "-I",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/tools/owned_benchmark_supervisor.py",
+    "_exec-wrapper",
+    "--",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/owned-process-diagnostics",
+    "--gguf",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "--region",
+    "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+    "--graph",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "--fixtures",
+    "/tmp/leviathan-forge2-tooling/phase50-simd-model-integration/model-gate-fixtures.json",
+    "--report",
+    "/tmp/leviathan-forge2-tooling/phase54-own-process-profile-run-protocol-bound/diagnostic-report.json"
+  ]
+}
