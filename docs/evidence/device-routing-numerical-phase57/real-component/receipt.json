@@ -1,0 +1,103 @@
+{
+  "abortReason": null,
+  "benchmark": {
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/router-device-routing-component",
+      "--gguf",
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+      "--region",
+      "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase57-device-routing-real-component-run/component-report.json"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "childPid": 50582,
+  "childStatus": "exited",
+  "cleanupAction": null,
+  "elapsedSeconds": 9.825237,
+  "endMarkerObserved": true,
+  "error": null,
+  "exitCode": 0,
+  "exitEvidenceSource": "supervisor_popen_wait_status",
+  "exitSignal": null,
+  "goSent": true,
+  "interruptedBy": null,
+  "kind": "owned_benchmark_supervisor_receipt",
+  "launchUUID": "7f486b1d-cec6-49d7-a6cf-7e6090becbda",
+  "lockPath": "/tmp/leviathan-forge2-tooling/phase57-device-routing-real-component-run/supervisor.lock",
+  "lockReleaseEligible": true,
+  "markers": {
+    "endObservedUTC": "2026-10-05T10:22:34.457670Z",
+    "goSentUTC": "2026-10-05T10:22:25.377112Z",
+    "readyObservedUTC": "2026-10-05T10:22:25.360072Z"
+  },
+  "notes": [],
+  "progress": {
+    "lastLine": "report /tmp/leviathan-forge2-tooling/phase57-device-routing-real-component-run/component-report.json written: status componentPassed; diagnostic only, gainQualified false, realE4GateComplete false",
+    "lastLineUTC": "2026-10-05T10:22:34.495272Z",
+    "lineCount": 3,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "readyObserved": true,
+  "receiptUTC": "2026-10-05T10:22:34.534906Z",
+  "resources": {
+    "postWindow": {
+      "commands": {
+        "pmset_therm": {
+          "argv": [
+            "/usr/bin/pmset",
+            "-g",
+            "therm"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+        },
+        "vm_stat": {
+          "argv": [
+            "/usr/bin/vm_stat"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                5881.\nPages active:                             85508.\nPages inactive:                           76779.\nPages speculative:                         7429.\nPages throttled:                              0.\nPages wired down:                       1615791.\nPages purgeable:                              2.\n\"Translation faults\":              205974656871.\nPages copy-on-write:                46734624414.\nPages zero filled:                  42305645104.\nPages reactivated:                  21667199994.\nPages purged:                         754907782.\nFile-backed pages:                        85150.\nAnonymous pages:                          84566.\nPages stored in compressor:             3410164.\nPages occupied by compressor:            249202.\nDecompressions:                     17895012919.\nCompressions:                       18769657832.\nPageins:                             3546600005.\nPageouts:                              13635101.\nSwapins:                              323169425.\nSwapouts:                             443078734.\n"
+        }
+      },
+      "label": "post_end",
+      "utc": "2026-10-05T10:22:34.461148Z"
+    },
+    "postWindowSkippedReason": null,
+    "preGo": {
+      "commands": {
+        "pmset_therm": {
+          "argv": [
+            "/usr/bin/pmset",
+            "-g",
+            "therm"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+        },
+        "vm_stat": {
+          "argv": [
+            "/usr/bin/vm_stat"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                9452.\nPages active:                            581042.\nPages inactive:                          525773.\nPages speculative:                        54527.\nPages throttled:                              0.\nPages wired down:                        736586.\nPages purgeable:                           1545.\n\"Translation faults\":              205974413025.\nPages copy-on-write:                46734617247.\nPages zero filled:                  42305603026.\nPages reactivated:                  21666894821.\nPages purged:                         754900828.\nFile-backed pages:                       409922.\nAnonymous pages:                         751420.\nPages stored in compressor:             2764862.\nPages occupied by compressor:            133114.\nDecompressions:                     17894758298.\nCompressions:                       18768753668.\nPageins:                             3545706549.\nPageouts:                              13635027.\nSwapins:                              323165769.\nSwapouts:                             442866506.\n"
+        }
+      },
+      "label": "pre_go",
+      "utc": "2026-10-05T10:22:25.361469Z"
+    }
+  },
+  "result": "success",
+  "schemaVersion": 1,
+  "signalsReceived": [],
+  "startReleased": true,
+  "supervisorPid": 50580,
+  "timedOut": false,
+  "windowElapsedSeconds": 9.079992
+}

@@ -1,0 +1,115 @@
+{
+  "abortReason": null,
+  "benchmark": {
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/router-device-routing-gate",
+      "--gguf",
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+      "--region",
+      "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+      "--graph",
+      "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+      "--fixtures",
+      "/tmp/leviathan-forge2-tooling/phase50-simd-model-integration/model-gate-fixtures.json",
+      "--component-report",
+      "/tmp/leviathan-forge2-tooling/phase57-device-routing-real-component-run/component-report.json",
+      "--component-executable",
+      "/tmp/leviathan-forge2-tooling/phase57-device-routing-real-component-run/qualified-router-device-routing-component",
+      "--selection-report",
+      "/tmp/leviathan-forge2-tooling/phase57-final-selection-gpu-run/component-report.json",
+      "--selection-executable",
+      "/tmp/leviathan-forge2-tooling/phase57-final-selection-gpu-run/qualified-router-selection-component",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase57-all-three-device-routing-model-gate-run/model-gate-report.json"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "childPid": 84956,
+  "childStatus": "exited",
+  "cleanupAction": null,
+  "elapsedSeconds": 177.464377,
+  "endMarkerObserved": true,
+  "error": null,
+  "exitCode": 0,
+  "exitEvidenceSource": "supervisor_popen_wait_status",
+  "exitSignal": null,
+  "goSent": true,
+  "interruptedBy": null,
+  "kind": "owned_benchmark_supervisor_receipt",
+  "launchUUID": "a9f293d3-d42f-4667-9f4f-3877ef81af16",
+  "lockPath": "/tmp/leviathan-forge2-tooling/phase57-all-three-device-routing-model-gate-run/supervisor.lock",
+  "lockReleaseEligible": true,
+  "markers": {
+    "endObservedUTC": "2026-10-05T10:29:26.679928Z",
+    "goSentUTC": "2026-10-05T10:26:29.522326Z",
+    "readyObservedUTC": "2026-10-05T10:26:29.504635Z"
+  },
+  "notes": [],
+  "progress": {
+    "lastLine": "report /tmp/leviathan-forge2-tooling/phase57-all-three-device-routing-model-gate-run/model-gate-report.json written: status qualificationPassed; diagnostic only, gainQualified false, not installable, no performance claim",
+    "lastLineUTC": "2026-10-05T10:29:26.870091Z",
+    "lineCount": 10,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "readyObserved": true,
+  "receiptUTC": "2026-10-05T10:29:26.873522Z",
+  "resources": {
+    "postWindow": {
+      "commands": {
+        "pmset_therm": {
+          "argv": [
+            "/usr/bin/pmset",
+            "-g",
+            "therm"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+        },
+        "vm_stat": {
+          "argv": [
+            "/usr/bin/vm_stat"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                8121.\nPages active:                             56982.\nPages inactive:                           52149.\nPages speculative:                         3638.\nPages throttled:                              0.\nPages wired down:                       1749732.\nPages purgeable:                              2.\n\"Translation faults\":              206008452768.\nPages copy-on-write:                46738917005.\nPages zero filled:                  42309231724.\nPages reactivated:                  21675052388.\nPages purged:                         755064321.\nFile-backed pages:                        59045.\nAnonymous pages:                          53724.\nPages stored in compressor:             3440700.\nPages occupied by compressor:            169659.\nDecompressions:                     17919163429.\nCompressions:                       18794094380.\nPageins:                             3549831123.\nPageouts:                              13639846.\nSwapins:                              324029489.\nSwapouts:                             444051582.\n"
+        }
+      },
+      "label": "post_end",
+      "utc": "2026-10-05T10:29:26.686844Z"
+    },
+    "postWindowSkippedReason": null,
+    "preGo": {
+      "commands": {
+        "pmset_therm": {
+          "argv": [
+            "/usr/bin/pmset",
+            "-g",
+            "therm"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+        },
+        "vm_stat": {
+          "argv": [
+            "/usr/bin/vm_stat"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                7679.\nPages active:                            596159.\nPages inactive:                          518370.\nPages speculative:                        73534.\nPages throttled:                              0.\nPages wired down:                        731449.\nPages purgeable:                           2142.\n\"Translation faults\":              205985988734.\nPages copy-on-write:                46737528207.\nPages zero filled:                  42307642517.\nPages reactivated:                  21667201210.\nPages purged:                         754916667.\nFile-backed pages:                       633794.\nAnonymous pages:                         554269.\nPages stored in compressor:             2936093.\nPages occupied by compressor:            113166.\nDecompressions:                     17895471949.\nCompressions:                       18769663211.\nPageins:                             3547394033.\nPageouts:                              13635872.\nSwapins:                              323278226.\nSwapouts:                             443084442.\n"
+        }
+      },
+      "label": "pre_go",
+      "utc": "2026-10-05T10:26:29.506119Z"
+    }
+  },
+  "result": "success",
+  "schemaVersion": 1,
+  "signalsReceived": [],
+  "startReleased": true,
+  "supervisorPid": 84953,
+  "timedOut": false,
+  "windowElapsedSeconds": 177.156696
+}

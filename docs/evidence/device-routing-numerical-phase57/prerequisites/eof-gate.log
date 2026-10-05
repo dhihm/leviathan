@@ -1,0 +1,2 @@
+BENCHMARK_READY
+router-device-routing-gate: expected exactly GO on stdin; nothing loaded, no device created

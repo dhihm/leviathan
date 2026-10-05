@@ -1,0 +1,83 @@
+{
+  "verdict": "ACCEPT WITH REQUIRED PATCHES. The gate's numerical contract is complete and fail-closed: fresh reference per fixture, OFF and ON both on the 32 frozen IDs with 31 previous-actual-argmax continuations, full-vocabulary finite, vector and strict per-element 1e-4 against the same reference, ON == OFF Float bit identity at every logit, exact derived counters, kernels OFF + 30 and command buffers OFF - 30 per forward, 0 CPU / 30 GPU selections and 30 record chains per forward, 4170 frames each CPU-FP64-exact on ids, quotient bits, coefficient bits and real offsets, and a 4170-frame component-entry replay; realE4GateComplete is recomputed from status, result and the in-process receipt. The confirmed boundary hole (public Gemma4Runner.forward is not refused inside the device-routing scope) is a genuine contract violation and is closed below with a before-work, non-poisoning refusal plus a 16th predetermined live probe and the matching pure expectation. No numeric gate, count, seed, tolerance or policy is changed. One compile item is conditional and depends on where part 1 placed prepareRouterDeviceRouting.",
+  "findings": [
+    {
+      "area": "direct forward bypass (confirmed)",
+      "result": "BLOCKER, fixed by patches 1 to 5",
+      "detail": "forward(tokenIds:) starts with routerOverlapRefuseInScope only, so inside an active device-routing scope it would run the incumbent CPU path, dispatch kernels, increment routerCPUSelectionCount and advance consumedPosition without touching the routing state. The fix adds routerDeviceRoutingRefuseInScope(\"direct forward\") immediately after the overlap refusal: it throws only when deviceRoutingState is active, before validation, reset or GPU work, and does not poison. Outside the scope it is a no-op, so the default path is unchanged. The new probe direct-forward-inside-device-scope runs inside the live scope and requires refusal, no GPU work, unchanged position and counters, no open segment and no poison; refusalPassed requires the 16 names in order."
+    },
+    {
+      "area": "prerequisites and receipt",
+      "result": "PASS with a verification item",
+      "detail": "Before BENCHMARK_READY the tool hashes the two small component executables, reads both reports bounded at 1 MiB, recomputes the part-1 component status from its contents, binds both reports to this build's emitted selector source and IR digests and to the cached model SHA, and exits 2 with nothing loaded on any failure. The selection-report keys (status, sourceSHA256, componentSourceSHA256, executableSHA256, unflaggedMismatches, unexpectedFlags, guardsIntact, gainQualified) must match the actual phase-55 report schema; a mismatch fails closed, never passes. Weights are never hashed."
+    },
+    {
+      "area": "scope lifetime and poison",
+      "result": "PASS",
+      "detail": "deviceRun calls reset() before entering the fixture scope and again after it; begin() therefore clears a previous poison only after an explicit caller reset. The refusal-test scope executes no token. Scope exit discards any open segment without throwing; a poisoned scope, in-flight token, changed install or dirty axes make the scope throw and the ON arm fail. The gate's own restore check explicitly requires routerDeviceRoutingActive false in addition to pristine, instrumentation and axis checks."
+    },
+    {
+      "area": "refusal probes",
+      "result": "PASS (16 after patch)",
+      "detail": "Each probe records refused, no-GPU-work (kernels, buffers, GPU time, position, all device counters) and state-intact (no open segment, no pending ticket, scope flag unchanged, not poisoned, install and width unchanged unless the probe uninstalls). The overlap-scope entry probe passes if either scope refuses and does not identify which guard fired; alias and wrong-width entry refusals have no live probe. Both are reported limitations, not passes."
+    },
+    {
+      "area": "status, report, protocol",
+      "result": "PASS",
+      "detail": "Status priority replayNotEnded, runnerNotRestored, aborted, prerequisitesFailed, then qualification; NOT_ENDED exit 5 with END withheld; END only when quiescent; exclusive 16 MiB report never trimmed; the gate encoder handles non-finite values; report carries counters, booleans, layer indices, logit statistics and digests only. A decoded-then-re-encoded report keeps a decoded receipt, so realE4GateComplete can only be true for an embedded receipt that is itself valid; the live tool never decodes a report, and this is noted, not a tool path."
+    },
+    {
+      "area": "pure tests",
+      "result": "PASS, 33 checks after patch",
+      "detail": "Counts: totals 4, positions 4, receipts 7, contract 4, status 6, options 8 (with the added direct-forward name check). Expected final line: passed 33 failed 0. Arithmetic verified: 1349 + 30 = 1379, 37 - 30 = 7, prefill deltas 30 x 21, 31 per-step kernel mismatches for the bad-kernel fixture, 4170 frames, 816 = 102 x 8 consumer slots, receipt recompute refuses a failed real layer behind a passed label. The RouterOverlapGateTotals dictionary keys used by the fixtures must match that struct's Codable keys; a mismatch shows as a visible test failure."
+    }
+  ],
+  "requiredFixes": [
+    "Apply patches 1 to 5 (direct-forward refusal, 16th probe, names list, pure expectation). Do not run the gate without them: the scope contract would be unenforced for the public forward entry.",
+    "Conditional compile fix: part 1 inserted prepareRouterDeviceRouting next to the unqualified prepare(graph:runner:) call before the byID builder comment; if that enclosing type is GemmaForge rather than GemmaPreparedExecution, the two gate call sites must read GemmaForge.prepareRouterDeviceRouting (patch 6, apply only on that compile error).",
+    "Build verification items (fail loudly, no runtime risk): GemmaForge.fileDigest(_:), RouterOverlapModelGate.notRun(_:_:), RouterOverlapModelGate.bindingFailures(_:_:), RouterOverlapGateGuardState fields (kernels, buffers, gpuBits, position, open, pending, scopeActive, moeDigest, q4Width), RouterOverlapGateBitComparator.first, RouterOverlapGateRefusalTest memberwise init, GemmaForgeCandidate(segmentBatching:top5Diagnostic:), GemmaForge.executeGraph(_:runner:tokenIds:candidate:schedule:), runner.withRouterOverlapDiagnosticScope, RouterOverlapGateProtocol.required.continuationsPerRun, and RouterOverlapGateTotals Codable keys.",
+    "Semantic verification during the run, all fail-closed: phaseCounts under the .off expectation must not embed per-forward kernel or buffer totals (those are compared by deviceTotalsRelation), the control path must zero y with a GPU kernel so kernels are exactly OFF + 30, and the preflight must precede routerDeviceRoutingBeginToken on both executeGraph entries.",
+    "Run order: build; part-1 pure tests (42); gate pure tests expecting passed 33 failed 0; rerun phase-55 router-selection-component on source SHA 6c34d907cefc0895b256d566bd7ad99529e61c4d5399b0ac635eb1ccf064d3fd; run the part-1 router-device-routing-component; only then this gate. Passing outcome: identity and 16 refusals passed, three fixtures passed, framesChecked 4170, framesExact 4170, replay COMPLETED with 4170 identical frames and 0 mismatches, status qualificationPassed, realE4GateComplete true, exit 0. Any flag, decline, mismatch or counter deviation is a recorded failure."
+  ],
+  "patches": [
+    {
+      "file": "Sources/LeviathanCore/RouterDeviceRouting.swift",
+      "old": "    public var routerDeviceRoutingPoisonReason: String? { deviceRoutingState?.poisonReason }\n",
+      "new": "    public var routerDeviceRoutingPoisonReason: String? { deviceRoutingState?.poisonReason }\n\n    /// Refuses a direct (non-prepared) runner entry while the device-routing scope is active. Thrown before any\n    /// validation, reset or GPU work and without poisoning; outside an active scope it is a no-op.\n    func routerDeviceRoutingRefuseInScope(_ what: String) throws {\n        guard let s = deviceRoutingState, s.active else { return }\n        throw RouterDeviceRoutingError(\"device routing: \" + what + \" refused inside the scope\")\n    }\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/Gemma4.swift",
+      "old": "        try routerOverlapRefuseInScope(\"direct forward\")\n        guard !tokenIds.isEmpty else { throw Gemma4Error.badTokenId(-1) }\n",
+      "new": "        try routerOverlapRefuseInScope(\"direct forward\")\n        try routerDeviceRoutingRefuseInScope(\"direct forward\")\n        guard !tokenIds.isEmpty else { throw Gemma4Error.badTokenId(-1) }\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/RouterDeviceRoutingModelGate.swift",
+      "old": "        \"route-capture-inside-device-scope\",\n        \"device-scope-entry-inside-overlap-scope\",\n",
+      "new": "        \"route-capture-inside-device-scope\",\n        \"direct-forward-inside-device-scope\",\n        \"device-scope-entry-inside-overlap-scope\",\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/RouterDeviceRoutingModelGate.swift",
+      "old": "                probe(\"route-capture-inside-device-scope\", inside: true) {\n                    let capture = try RouterRouteCapture(expertCount: r.config.expertCount, topK: r.config.topKExperts,\n                                                         layerCount: r.config.layerCount, maxFrames: 1)\n                    _ = try r.withRouteCapture(capture) { () -> Int in 0 }\n                }\n            }\n",
+      "new": "                probe(\"route-capture-inside-device-scope\", inside: true) {\n                    let capture = try RouterRouteCapture(expertCount: r.config.expertCount, topK: r.config.topKExperts,\n                                                         layerCount: r.config.layerCount, maxFrames: 1)\n                    _ = try r.withRouteCapture(capture) { () -> Int in 0 }\n                }\n                probe(\"direct-forward-inside-device-scope\", inside: true) {\n                    _ = try r.forward(tokenIds: prompt)\n                }\n            }\n"
+    },
+    {
+      "file": "tools/router_device_routing_gate_pure_tests/main.swift",
+      "old": "    h.check(RouterDeviceRoutingModelGate.refusalTestNames.count == 15\n            && Set(RouterDeviceRoutingModelGate.refusalTestNames).count == 15, \"fifteen distinct refusal tests\")\n",
+      "new": "    h.check(RouterDeviceRoutingModelGate.refusalTestNames.count == 16\n            && Set(RouterDeviceRoutingModelGate.refusalTestNames).count == 16, \"sixteen distinct refusal tests\")\n    h.check(RouterDeviceRoutingModelGate.refusalTestNames.contains(\"direct-forward-inside-device-scope\"),\n            \"direct forward refusal inside the device scope is a predetermined probe\")\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/RouterDeviceRoutingModelGate.swift",
+      "condition": "apply only if the compiler reports that GemmaPreparedExecution has no member prepareRouterDeviceRouting (part 1 placed it on GemmaForge); two occurrences",
+      "old": "GemmaPreparedExecution.prepareRouterDeviceRouting(graph: graph, runner: runner)",
+      "new": "GemmaForge.prepareRouterDeviceRouting(graph: graph, runner: runner)"
+    }
+  ],
+  "limitations": [
+    "Text-only review; I compiled and executed nothing. Identifiers outside the supplied files are unverified and listed as build items.",
+    "The direct-forward probe exercises the new guard only; it is not a reference computation and the legacy forward is never used as a reference inside the scope.",
+    "The overlap-scope entry probe cannot attribute the refusal to a specific guard; alias and wrong-width entry refusals remain unprobed live. These are reported as limitations, not passes.",
+    "realE4GateComplete asserts numerical and receipt coverage only; gainQualified, installable and productionPerformanceClaim stay false, and part 3 must not run until this gate actually passes with exit 0.",
+    "No equivalence theorem: the rounding certificate remains an estimate used only to decline; the per-frame CPU FP64 recomputation and the bit-identity gates are the authority.",
+    "Runner-internal synchronous flushes during qualification are unbounded; the external supervisor owns that deadline without signals or process enumeration."
+  ]
+}

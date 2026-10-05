@@ -1,0 +1,26 @@
+{
+  "authoredNewFilesScanned": {
+    "Sources/LeviathanCore/RouterDeviceRouting.swift": {
+      "Append this text directly": 0,
+      "Together they form one JSON document": 0,
+      "```text": 0,
+      "```json": 0,
+      "let done = Dispat\n": 0
+    },
+    "tools/router_device_routing_component/main.swift": {
+      "Append this text directly": 0,
+      "Together they form one JSON document": 0,
+      "```text": 0,
+      "```json": 0,
+      "let done = Dispat\n": 0
+    },
+    "tools/router_device_routing_pure_tests/main.swift": {
+      "Append this text directly": 0,
+      "Together they form one JSON document": 0,
+      "```text": 0,
+      "```json": 0,
+      "let done = Dispat\n": 0
+    }
+  },
+  "mechanicalAuthorReassemblyVerified": true
+}

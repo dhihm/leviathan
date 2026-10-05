@@ -700,6 +700,13 @@ public final class Gemma4Runner {
     /// Default-off phase-56 route capture slot (RouterRouteReplay.swift): inactive unless
     /// withRouteCapture is running; the SSA router_topk case only checks this one optional.
     internal let routeCaptureSlot = RouterRouteCaptureSlot()
+    /// Default-off phase-57 device-routing scope state (RouterDeviceRouting.swift): nil until the first
+    /// withRouterDeviceRoutingScope entry and inactive outside the scope. The SSA executor consults it only
+    /// for a device-routing preparation.
+    internal var deviceRoutingState: RouterDeviceRoutingState? = nil
+    /// Incumbent CPU router_topk selections performed by the SSA executor: one integer increment per
+    /// selection (no clock, no syscall), so device routing can prove zero CPU selections in scope.
+    internal var routerCPUSelectionCount = 0
     /// Diagnostic sum of async router overlap ticket command-buffer intervals
     /// (gpuEndTime - gpuStartTime, microseconds) for successfully completed
     /// tickets. NOT busy time and NOT utilization: an interval may include
@@ -2221,6 +2228,138 @@ public final class Gemma4Runner {
         }
     }
 
+    /// Phase-57 default-off device-routing variant of runMoeBatchedRouted (RouterDeviceRouting.swift): the
+    /// SAME installed GU/ACT/DN pipelines, p arguments, chunk geometry, scratch, 8 ordered g4_axpy merges and
+    /// counters. Only the sources change: GU/DN `constant const ulong* offs` (buffer 1) and every merge
+    /// coefficient (g4_axpy `constant const float& c`, buffer 3) are setBuffer bindings into a GPU selection
+    /// record written earlier in the same serial encoder. No CPU read of ids, offsets or coefficients here;
+    /// the record flags are checked after the token's final logits drain.
+    internal func runMoeBatchedRecordRouted(x: MTLBuffer, y: MTLBuffer, layer: Int,
+                                            records: MTLBuffer, recordBase: Int,
+                                            layout: RouterSelectionLayout,
+                                            installed: MoEInstalledLowering) throws {
+        let region = installed.region
+        let schedule = installed.schedule
+        let binding = installed.binding
+        guard expertCache == nil else {
+            throw Gemma4Error.badTensorGeometry("record-routed region requires resident mode")
+        }
+        guard config.topKExperts == region.topK, layout.topK == region.topK,
+              config.expertIntermediate == region.expertIntermediate,
+              config.hiddenSize == region.hidden else {
+            throw Gemma4Error.badTensorGeometry("installed MoE region or record layout disagree with this model")
+        }
+        guard layer >= 0, layer < binding.layerCount,
+              x.length >= region.hidden * 4, y.length >= region.hidden * 4 else {
+            throw Gemma4Error.badTensorGeometry("record-routed layer or buffers invalid")
+        }
+        let (recordEnd, recordOverflow) = recordBase.addingReportingOverflow(layout.recordStride)
+        guard recordBase >= 0, !recordOverflow, recordEnd <= records.length,
+              recordBase % layout.bindingAlignment == 0,
+              layout.guOffsetsOffset % layout.bindingAlignment == 0,
+              layout.dnOffsetsOffset % layout.bindingAlignment == 0,
+              layout.coefficientOffset % layout.bindingAlignment == 0,
+              layout.coefficientStride % layout.bindingAlignment == 0 else {
+            throw Gemma4Error.badTensorGeometry("selection record binding offsets invalid")
+        }
+        guard let wb = weightsBuffer, records !== wb, records !== x, records !== y else {
+            throw Gemma4Error.badTensorGeometry("selection record aliases the weights or routed buffers")
+        }
+        let scratch = try ensureMoeScratch(binding)
+        guard scratch.gu !== x, scratch.act !== x, scratch.dn !== x,
+              scratch.gu !== y, scratch.act !== y, scratch.dn !== y,
+              records !== scratch.gu, records !== scratch.act, records !== scratch.dn else {
+            throw Gemma4Error.badTensorGeometry("batched scratch aliases the routed input, accumulator or record")
+        }
+        let topK = region.topK
+        let guOffsetsBinding = recordBase + layout.guOffsetsOffset
+        let dnOffsetsBinding = recordBase + layout.dnOffsetsOffset
+        let e = schedule.batch
+        let r = schedule.rowsPerGroup
+        var chunkStart = 0
+        while chunkStart < topK {
+            let chunkSlots = min(e, topK - chunkStart)
+            let slotBase = chunkStart
+            guard slotBase + chunkSlots <= topK, chunkSlots > 0, chunkSlots <= e else {
+                throw Gemma4Error.badTensorGeometry("chunk bounds violated")
+            }
+            var gp = SIMD4<UInt32>(UInt32(region.hidden), UInt32(region.gateUpOut),
+                                   UInt32(chunkSlots), UInt32(slotBase))
+            let guRows = chunkSlots * region.gateUpOut
+            try dispatchPipeline(installed.kernels.guPipeline,
+                                 name: schedule.guKernelName,
+                                 groups: (guRows + r - 1) / r, threads: r) { enc in
+                enc.setBytes(&gp, length: MemoryLayout<SIMD4<UInt32>>.stride, index: 0)
+                enc.setBuffer(records, offset: guOffsetsBinding, index: 1)
+                enc.setBuffer(wb, offset: 0, index: 2)
+                enc.setBuffer(x, offset: 0, index: 3)
+                enc.setBuffer(scratch.gu, offset: 0, index: 4)
+            }
+            moeGuDispatchCount += 1
+            var ap = SIMD3<UInt32>(UInt32(region.expertIntermediate),
+                                   UInt32(chunkSlots), UInt32(slotBase))
+            let actThreads = min(1024, installed.kernels.actPipeline.maxTotalThreadsPerThreadgroup)
+            let actCount = chunkSlots * region.expertIntermediate
+            try dispatchPipeline(installed.kernels.actPipeline,
+                                 name: schedule.actKernelName,
+                                 groups: (actCount + actThreads - 1) / actThreads,
+                                 threads: actThreads) { enc in
+                enc.setBytes(&ap, length: MemoryLayout<SIMD3<UInt32>>.stride, index: 0)
+                enc.setBuffer(scratch.gu, offset: 0, index: 1)
+                enc.setBuffer(scratch.act, offset: 0, index: 2)
+            }
+            moeActDispatchCount += 1
+            var dp = SIMD4<UInt32>(UInt32(region.expertIntermediate),
+                                   UInt32(region.hidden),
+                                   UInt32(chunkSlots), UInt32(slotBase))
+            let dnRows = chunkSlots * region.hidden
+            try dispatchPipeline(installed.kernels.dnPipeline,
+                                 name: schedule.dnKernelName,
+                                 groups: (dnRows + r - 1) / r, threads: r) { enc in
+                enc.setBytes(&dp, length: MemoryLayout<SIMD4<UInt32>>.stride, index: 0)
+                enc.setBuffer(records, offset: dnOffsetsBinding, index: 1)
+                enc.setBuffer(wb, offset: 0, index: 2)
+                enc.setBuffer(scratch.act, offset: 0, index: 3)
+                enc.setBuffer(scratch.dn, offset: 0, index: 4)
+            }
+            moeDnDispatchCount += 1
+            moeGeneratedDispatchCount += 3
+            chunkStart += chunkSlots
+        }
+        for slot in 0..<topK {
+            try axpyRecordCoefficient(x: scratch.dn, xOffset: slot * region.hidden * 4, y: y,
+                                      coefficients: records,
+                                      coefficientOffset: recordBase + layout.coefficientOffset
+                                          + slot * layout.coefficientStride,
+                                      n: region.hidden)
+            moeAxpyMergeCount += 1
+        }
+    }
+
+    /// The unchanged g4_axpy pipeline, grid and buffers 0...2 of axpy(); only buffer 3 (constant const
+    /// float& c) is a setBuffer binding into a 4-byte coefficient slot instead of a host setBytes value.
+    internal func axpyRecordCoefficient(x: MTLBuffer, xOffset: Int, y: MTLBuffer,
+                                        coefficients: MTLBuffer, coefficientOffset: Int, n: Int) throws {
+        guard n > 0, n <= Int(UInt32.max), xOffset >= 0, xOffset % 4 == 0,
+              coefficientOffset >= 0, coefficientOffset % 4 == 0 else {
+            throw Gemma4Error.badTensorGeometry("record axpy bounds invalid")
+        }
+        let (n4, of1) = n.multipliedReportingOverflow(by: 4)
+        let (span, of2) = of1 ? (0, true) : n4.addingReportingOverflow(xOffset)
+        let (cEnd, of3) = coefficientOffset.addingReportingOverflow(4)
+        guard !of1, !of2, !of3, x.length >= span, y.length >= n4, cEnd <= coefficients.length,
+              coefficients !== x, coefficients !== y else {
+            throw Gemma4Error.badTensorGeometry("record axpy buffers too small or aliased")
+        }
+        var count = UInt32(n)
+        try dispatch("g4_axpy", grid: n) { enc in
+            enc.setBytes(&count, length: MemoryLayout<UInt32>.stride, index: 0)
+            enc.setBuffer(x, offset: xOffset, index: 1)
+            enc.setBuffer(y, offset: 0, index: 2)
+            enc.setBuffer(coefficients, offset: coefficientOffset, index: 3)
+        }
+    }
+
     /// PRODUCTION install of the phase-10 generated RMSNorm kernel: full
     /// artifact identity validation (op, codegen, re-emitted source bytes,
     /// hardware, toolchain, GGUF, executable, component gates incl. bit-
@@ -3625,6 +3764,7 @@ public final class Gemma4Runner {
     /// argmax and top-5 logits at the final position.
     public func forward(tokenIds: [Int]) throws -> Gemma4RunEvidence {
         try routerOverlapRefuseInScope("direct forward")
+        try routerDeviceRoutingRefuseInScope("direct forward")
         guard !tokenIds.isEmpty else { throw Gemma4Error.badTokenId(-1) }
         guard tokenIds.allSatisfy({ $0 >= 0 && $0 < config.vocabSize }) else {
             throw Gemma4Error.badTokenId(tokenIds.first { $0 < 0 || $0 >= config.vocabSize } ?? -1)

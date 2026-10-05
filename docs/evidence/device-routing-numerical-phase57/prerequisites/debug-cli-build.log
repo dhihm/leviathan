@@ -1,0 +1,141 @@
+[0/1] Planning build
+Building for debugging...
+[0/5] Write sources
+[1/5] Write swift-version--1AB21518FC5DEDBE.txt
+[3/10] Compiling LeviathanCore Gemma4.swift
+[4/10] Compiling LeviathanCore GemmaForge.swift
+[5/10] Compiling LeviathanCore RouterDeviceRouting.swift
+[6/10] Emitting module LeviathanCore
+[7/10] Compiling LeviathanCore RouterRouteReplay.swift
+[8/21] Compiling LeviathanCore RouterSelectionKernel.swift
+[9/24] Compiling LeviathanCore AttentionLowering.swift
+[10/24] Compiling LeviathanCore GemmaCompositeForge.swift
+[11/24] Compiling LeviathanCore GemmaOpportunityDiscovery.swift
+[12/24] Compiling LeviathanCore GemmaShadowComposition.swift
+[13/24] Compiling LeviathanCore LoweringSelect.swift
+[14/24] Compiling LeviathanCore MoELowering.swift
+[15/24] Compiling LeviathanCore MoEProfile.swift
+[16/24] Compiling LeviathanCore OwnProcessDiagnostics.swift
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/LeviathanCore/Q4LaunchLowering.swift:966:25: warning: immutable value 'controlRec' was never used; consider replacing with '_' or removing it [#no-usage]
+ 964 |                               r.screenMicrosPerShape.map { String(format: "%.1f us", $0.reduce(0, +)) } ?? ""))
+ 965 |         }
+ 966 |         let (finalists, controlRec) = Q4LaunchForge.finalists(componentResults,
+     |                         `- warning: immutable value 'controlRec' was never used; consider replacing with '_' or removing it [#no-usage]
+ 967 |                                                               controlWidth: control.width)
+ 968 |         guard !finalists.isEmpty else {
+[17/24] Compiling LeviathanCore Q4LaunchLowering.swift
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/LeviathanCore/Q4LaunchLowering.swift:966:25: warning: immutable value 'controlRec' was never used; consider replacing with '_' or removing it [#no-usage]
+ 964 |                               r.screenMicrosPerShape.map { String(format: "%.1f us", $0.reduce(0, +)) } ?? ""))
+ 965 |         }
+ 966 |         let (finalists, controlRec) = Q4LaunchForge.finalists(componentResults,
+     |                         `- warning: immutable value 'controlRec' was never used; consider replacing with '_' or removing it [#no-usage]
+ 967 |                                                               controlWidth: control.width)
+ 968 |         guard !finalists.isEmpty else {
+[18/24] Compiling LeviathanCore Q4Lowering.swift
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/LeviathanCore/Q4LaunchLowering.swift:966:25: warning: immutable value 'controlRec' was never used; consider replacing with '_' or removing it [#no-usage]
+ 964 |                               r.screenMicrosPerShape.map { String(format: "%.1f us", $0.reduce(0, +)) } ?? ""))
+ 965 |         }
+ 966 |         let (finalists, controlRec) = Q4LaunchForge.finalists(componentResults,
+     |                         `- warning: immutable value 'controlRec' was never used; consider replacing with '_' or removing it [#no-usage]
+ 967 |                                                               controlWidth: control.width)
+ 968 |         guard !finalists.isEmpty else {
+[19/24] Compiling LeviathanCore RMSLowering.swift
+[20/24] Compiling LeviathanCore RouterOverlapModelGate.swift
+[21/24] Compiling LeviathanCore RouterOverlapRuntime.swift
+[22/27] Compiling leviathan_cli main.swift
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/leviathan-cli/main.swift:1229:32: warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1227 |                 }
+1228 |                 for t in history {
+1229 |                     try runner.forward(tokenIds: [t])
+     |                                `- warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1230 |                 }
+1231 |                 try afterStep(0, try runner.currentLogits())
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/leviathan-cli/main.swift:1233:32: warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1231 |                 try afterStep(0, try runner.currentLogits())
+1232 |                 for s in 1..<steps {
+1233 |                     try runner.forward(tokenIds: [refIds[s]])
+     |                                `- warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1234 |                     try afterStep(s, try runner.currentLogits())
+1235 |                 }
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/leviathan-cli/main.swift:405:9: warning: immutable value 'reference' was never used; consider removing it [#no-usage]
+ 403 |     let graph: GraphIR
+ 404 |     let weights: [Float]?
+ 405 |     let reference: [Float]?   // PyTorch refOutput, only with --export-prefix
+     |         `- warning: immutable value 'reference' was never used; consider removing it [#no-usage]
+ 406 |     do {
+ 407 |         if let weightExport {
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/leviathan-cli/main.swift:1675:21: warning: variable 'fixtures' was never mutated; consider changing to 'let' constant
+1673 |                         + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>")
+1674 |                 }
+1675 |                 var fixtures = smokeTest
+     |                     `- warning: variable 'fixtures' was never mutated; consider changing to 'let' constant
+1676 |                     ? [Q4LoweringForge.Q4Fixture(name: "raw-hello",
+1677 |                                                  tokens: try tokenizer.encode("Hello"))]
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/leviathan-cli/main.swift:3351:23: warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+3349 |             requireValue("--prompt-ids", args) } ?? "2,9259"
+3350 |         func intArg(_ name: String, _ def: Int) -> Int {
+3351 |             guard let i = args.firstIndex(of: name) else { return def }
+     |                       `- warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+3352 |             guard let v = Int(requireValue(name, args)) else {
+3353 |                 fail("\(name) must be an integer"); return def }
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/leviathan-cli/main.swift:3608:23: warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+3606 |         let planPath = requireValue("--plan", args)
+3607 |         func intArgServe(_ name: String, _ def: Int) -> Int {
+3608 |             guard let i = args.firstIndex(of: name) else { return def }
+     |                       `- warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+3609 |             guard let v = Int(requireValue(name, args)) else {
+3610 |                 fail("\(name) must be an integer"); return def }
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/leviathan-cli/main.swift:3353:53: warning: will never be executed
+3351 |             guard let i = args.firstIndex(of: name) else { return def }
+3352 |             guard let v = Int(requireValue(name, args)) else {
+3353 |                 fail("\(name) must be an integer"); return def }
+     |                 |                                   `- warning: will never be executed
+     |                 `- note: a call to a never-returning function
+3354 |             return v
+3355 |         }
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/leviathan-cli/main.swift:3610:53: warning: will never be executed
+3608 |             guard let i = args.firstIndex(of: name) else { return def }
+3609 |             guard let v = Int(requireValue(name, args)) else {
+3610 |                 fail("\(name) must be an integer"); return def }
+     |                 |                                   `- warning: will never be executed
+     |                 `- note: a call to a never-returning function
+3611 |             return v
+3612 |         }
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/leviathan-cli/main.swift:2973:67: warning: will never be executed
+2971 |                     guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+2972 |                           id >= 0, id < preConfig.vocabSize else {
+2973 |                         fail("invalid prompt id '\($0)'"); return 0
+     |                         |                                         `- warning: will never be executed
+     |                         `- note: a call to a never-returning function
+2974 |                     }
+2975 |                     return id
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/leviathan-cli/main.swift:3381:64: warning: will never be executed
+3379 |                 guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+3380 |                       id >= 0, id < preConfig.vocabSize else {
+3381 |                     fail("invalid prompt id '\($0)')"); return 0 }
+     |                     |                                          `- warning: will never be executed
+     |                     `- note: a call to a never-returning function
+3382 |                 return id
+3383 |             }
+[23/27] Compiling leviathan_cli CompositeCLI.swift
+[24/27] Emitting module leviathan_cli
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/leviathan-cli/main.swift:436:20: warning: no calls to throwing functions occur within 'try' expression
+ 434 |     // Helper: the program with whichever weights this run uses.
+ 435 |     func makeProgram() throws -> LoweredProgram {
+ 436 |         let base = try CompiledArtifact(graph: graph, seed: seed).program
+     |                    `- warning: no calls to throwing functions occur within 'try' expression
+ 437 |         guard let weights else { return base }
+ 438 |         return LoweredProgram(inputDim: base.inputDim, outputDim: base.outputDim,
+[24/27] Write Objects.LinkFileList
+[25/27] Linking leviathan-cli
+[26/27] Applying leviathan-cli
+Build of product 'leviathan-cli' complete! (14.93s)

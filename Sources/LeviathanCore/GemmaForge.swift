@@ -360,6 +360,9 @@ public struct GemmaPreparedExecution {
     /// and a diagnostic preparation of the same graph are separate objects
     /// even when their SSA, statistics and install binding agree.
     let routerOverlap: RouterOverlapPreparedBinding?
+    /// Default-off phase-57 device-routing binding: nil for every normal and overlap preparation; set only
+    /// by prepareRouterDeviceRouting. Executes only inside Gemma4Runner.withRouterDeviceRoutingScope.
+    let routerDeviceRouting: RouterDeviceRoutingPreparedBinding?
 
     /// The validated router overlap plan of a diagnostic preparation (nil
     /// for normal preparations).
@@ -369,9 +372,11 @@ public struct GemmaPreparedExecution {
                  configFingerprint: GemmaConfigFingerprint,
                  byID: [String: GemmaSSAIR.Value],
                  statisticsPlan: RMSStatisticsPlan,
-                 routerOverlap: RouterOverlapPreparedBinding? = nil) {
+                 routerOverlap: RouterOverlapPreparedBinding? = nil,
+                 routerDeviceRouting: RouterDeviceRoutingPreparedBinding? = nil) {
         self.ssa = ssa
         self.routerOverlap = routerOverlap
+        self.routerDeviceRouting = routerDeviceRouting
         self.runner = runner
         self.boundGraph = graph
         self.configFingerprint = configFingerprint
@@ -421,6 +426,19 @@ public struct GemmaPreparedExecution {
             ssa: base.ssa, runner: runner, graph: base.boundGraph,
             configFingerprint: base.configFingerprint, byID: base.byID,
             statisticsPlan: base.statisticsPlan, routerOverlap: binding)
+    }
+
+    /// DIAGNOSTIC phase-57 device-routing preparation: the ordinary `prepare` plus one pure validation that
+    /// every layer has exactly one router_topk (topK 8) followed by exactly one expert_matvec_chain.
+    /// Executes only inside Gemma4Runner.withRouterDeviceRoutingScope; never persisted or selectable.
+    public static func prepareRouterDeviceRouting(graph: GemmaGraphIR,
+                                                  runner: Gemma4Runner) throws -> GemmaPreparedExecution {
+        let base = try prepare(graph: graph, runner: runner)
+        let binding = try RouterDeviceRoutingPreparedBinding.make(ssa: base.ssa, config: runner.config)
+        return GemmaPreparedExecution(
+            ssa: base.ssa, runner: runner, graph: base.boundGraph,
+            configFingerprint: base.configFingerprint, byID: base.byID,
+            statisticsPlan: base.statisticsPlan, routerDeviceRouting: binding)
     }
 
     /// Builds the id -> value dictionary for a schedule (shared by the
@@ -905,7 +923,8 @@ public enum GemmaForge {
                                           token: token, position: pos,
                                           candidate: candidate,
                                           statisticsPlan: statisticsPlan,
-                                          overlap: overlap)
+                                          overlap: overlap,
+                                          routing: prepared?.routerDeviceRouting)
                 runner.advancePosition()
                 logits = try runner.read(runner.bufLogits, runner.config.vocabSize)
             }
@@ -984,7 +1003,8 @@ public enum GemmaForge {
                                           token: token, position: position,
                                           candidate: candidate,
                                           statisticsPlan: statisticsPlan,
-                                          overlap: overlap)
+                                          overlap: overlap,
+                                          routing: prepared?.routerDeviceRouting)
             runner.advancePosition()
             let logits = try runner.read(runner.bufLogits, runner.config.vocabSize)
             return (argmax, logits, runner.gpuMicrosTotal - gpuBefore,
@@ -1005,7 +1025,9 @@ public enum GemmaForge {
                                                prepared: GemmaPreparedExecution?,
                                                candidate: GemmaForgeCandidate) throws
             -> RouterOverlapPreparedBinding? {
-        if runner.routeCaptureSlot.isActive, prepared == nil || prepared?.routerOverlap != nil {
+        try runner.routerDeviceRoutingPreflight(prepared: prepared, candidate: candidate)
+        if runner.routeCaptureSlot.isActive,
+           prepared == nil || prepared?.routerOverlap != nil || prepared?.routerDeviceRouting != nil {
             throw GemmaForgeError.executionFailed(
                 "route capture: only a control prepared execution may run inside the capture scope")
         }
@@ -1030,7 +1052,8 @@ public enum GemmaForge {
                                      token: Int, position: Int,
                                      candidate: GemmaForgeCandidate,
                                      statisticsPlan: RMSStatisticsPlan?,
-                                     overlap: RouterOverlapPreparedBinding? = nil) throws -> Int {
+                                     overlap: RouterOverlapPreparedBinding? = nil,
+                                     routing: RouterDeviceRoutingPreparedBinding? = nil) throws -> Int {
         let config = runner.config
         // The schedule was lowered, validated, and turned into a value
         // table ONCE by the caller; the executor dispatches kernels from
@@ -1105,6 +1128,11 @@ public enum GemmaForge {
             runner.routerLaunchDivisor = 0
         }
         var routerState = [Int: (topIdx: [Int], weights: [Float])]()
+        // Phase-57 device routing (scope-only): clear the 30 record markers while the GPU is idle and mark
+        // this token in flight; it is accepted only by routerDeviceRoutingVerifyToken after the logits drain.
+        if let routing {
+            try runner.routerDeviceRoutingBeginToken(binding: routing)
+        }
 
         // Fresh per-token readiness: a statistic computed in a previous
         // token, before a reset, or across a failed run is NEVER reused.
@@ -1244,9 +1272,9 @@ public enum GemmaForge {
                     // path); otherwise the ORIGINAL CPU element multiply
                     // runs unchanged.
                     if !(try runner.gpuRouterSecondScale(layer: layer, n: n, x: outBuf)) {
-                        if overlap != nil {
+                        if overlap != nil || routing != nil {
                             throw GemmaForgeError.executionFailed(
-                                "router overlap: GPU router scale declined; no CPU fallback in scope")
+                                "router overlap / device routing: GPU router scale declined; no CPU fallback in scope")
                         }
                         var routerIn = try runner.read(outBuf, n)
                         let scale = runner.routerScales[layer]
@@ -1338,6 +1366,13 @@ public enum GemmaForge {
                       layer < config.layerCount else {
                     throw GemmaForgeError.executionFailed("router layer invalid")
                 }
+                if let routing {
+                    // Phase-57 device routing (scope-only): the GPU selector writes this layer's record in
+                    // the open serial segment; no score readback, no CPU selection, no routerState entry.
+                    try runner.routerDeviceRoutingSelect(binding: routing, layer: layer, topK: a(inst, "topK"),
+                                                         router: try vb(inst.inputs[0]))
+                    break
+                }
                 let scores: [Float]
                 if let overlap {
                     // Wait for the router ticket R only (commit order),
@@ -1372,6 +1407,7 @@ public enum GemmaForge {
                 let weights = topIdx.map { Float(probs[$0] / probSum) * scales[$0] }
                 routerState[layer] = (topIdx, weights)
                 runner.breakdownRouterSelectionEnd(routerSelectionT0)
+                runner.routerCPUSelectionCount += 1
                 // Default-off diagnostic route capture (phase 56): records the unchanged decision
                 // above; inactive outside Gemma4Runner.withRouteCapture.
                 if let routeCapture = runner.routeCaptureSlot.active {
@@ -1380,6 +1416,17 @@ public enum GemmaForge {
                                                   topIdx: topIdx, weights: weights)
                 }
             case "expert_matvec_chain":
+                if let routing {
+                    guard let layer = inst.layer, layer >= 0, layer < config.layerCount,
+                          inst.tensors.count >= 2 else {
+                        throw GemmaForgeError.executionFailed("device routing: expert chain layer invalid")
+                    }
+                    try runner.routerDeviceRoutingExpertChain(
+                        binding: routing, layer: layer, tensors: inst.tensors,
+                        x: try vb(inst.inputs[0]), xCount: byID[inst.inputs[0]]!.length,
+                        y: try vb(inst.output), n: byID[inst.output]!.length)
+                    break
+                }
                 guard let layer = inst.layer, layer >= 0,
                       layer < config.layerCount,
                       let gateUp = runner.ref[inst.tensors[0]],
@@ -1511,6 +1558,9 @@ public enum GemmaForge {
         runner.breakdownSiteEnd(.logits, logitsSiteT0)
         guard logits.allSatisfy({ $0.isFinite }) else {
             throw GemmaForgeError.executionFailed("nonfinite logits")
+        }
+        if let routing {
+            try runner.routerDeviceRoutingVerifyToken(binding: routing, position: position)
         }
         if let overlap, let overlapBefore {
             try runner.routerOverlapVerifyToken(binding: overlap, since: overlapBefore)

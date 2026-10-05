@@ -1,0 +1,22 @@
+[
+  {
+    "file": "Package.swift",
+    "before": "c843345bb8a29cfa122c5cff65eafcd4cfb8e1b8c465ff83715c490ee7c611f6",
+    "after": "8ddcc922f4b656989ef7649c0a26d9f921915b9cc622fafabbef7f1db356e745"
+  },
+  {
+    "file": "Sources/LeviathanCore/RouterDeviceRoutingModelGate.swift",
+    "before": null,
+    "after": "832a690cce7a5ea08e399a50c6679a26acfc7f392c807945f1eaee1736ec87d4"
+  },
+  {
+    "file": "tools/router_device_routing_gate/main.swift",
+    "before": null,
+    "after": "983e9020c011fbe638755e90ffed03ca44fcef1bfbde53c15cd06aa14378ac46"
+  },
+  {
+    "file": "tools/router_device_routing_gate_pure_tests/main.swift",
+    "before": null,
+    "after": "dd2d5e13151040adef1364080dcdf69092e301011b75b2af553c419edb787e31"
+  }
+]

@@ -176,8 +176,8 @@ extension Gemma4Runner {
               capture.layerCount == config.layerCount else {
             throw RouterRouteCaptureError("route capture shape differs from the runner config")
         }
-        guard !routerOverlapScopeActive, !breakdownInstrumentation, !commandTimelineEnabled,
-              layerProbe == nil, moeInputProbe == nil else {
+        guard !routerOverlapScopeActive, !routerDeviceRoutingActive, !breakdownInstrumentation,
+              !commandTimelineEnabled, layerProbe == nil, moeInputProbe == nil else {
             throw RouterRouteCaptureError("route capture refuses the overlap scope, instrumentation and probes")
         }
         return try routeCaptureSlot.scoped(capture, body)

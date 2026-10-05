@@ -1,0 +1,45 @@
+{
+  "jsonDecoding": "strict=False to preserve one authored literal newline; no source rewriting",
+  "exactMechanicalApplication": [
+    {
+      "file": "Package.swift",
+      "beforeSHA256": "5f0785dc3283c3e4750bf9ca823b8017e7d385b192dc62c8a2a68133f229c875",
+      "afterSHA256": "c843345bb8a29cfa122c5cff65eafcd4cfb8e1b8c465ff83715c490ee7c611f6"
+    },
+    {
+      "file": "Sources/LeviathanCore/RouterSelectionKernel.swift",
+      "beforeSHA256": "e1acbbaea06fc2fc76bcf202f0be00e97eb49ce8551107c4c6d5002012b1f44a",
+      "afterSHA256": "bfc1d12f9657706253247d35eef4732ea99b520be8606351ec06adb678b79217"
+    },
+    {
+      "file": "Sources/LeviathanCore/Gemma4.swift",
+      "beforeSHA256": "508fd263e16f8cf24c6e139822a5d9948a7eac32187a7fea7c4cd423a12e4669",
+      "afterSHA256": "9f4bcf8a635d1611a3f73fa39b6298fb35198555ea32ba92ad2ee4a7c472bd30"
+    },
+    {
+      "file": "Sources/LeviathanCore/GemmaForge.swift",
+      "beforeSHA256": "3008812896c39f5f5f3565ec27a3514da1bb4216dca0290ab9fbb5b6cba9f808",
+      "afterSHA256": "335ff7f53518901d75da0a61c7c7b5e0f9aa0cbefeeec71e3e1fb7c1129c860b"
+    },
+    {
+      "file": "Sources/LeviathanCore/RouterRouteReplay.swift",
+      "beforeSHA256": "7ca6d2a564351730551c9567f4b641df3ac2e1fe37c9d441074c027a09cb44ec",
+      "afterSHA256": "079e116aa26766b4de0be2543f5d7efd3359ca721f45c721881dede02d53d7ad"
+    },
+    {
+      "file": "Sources/LeviathanCore/RouterDeviceRouting.swift",
+      "beforeSHA256": null,
+      "afterSHA256": "e7827a4770a139481086e5c2e21bb85af1cb38313593b2ce3d3e721ac055a085"
+    },
+    {
+      "file": "tools/router_device_routing_component/main.swift",
+      "beforeSHA256": null,
+      "afterSHA256": "223b191c47cc3f18e2e37f9767d6de1bdad6562faf587f66145094f0af758d92"
+    },
+    {
+      "file": "tools/router_device_routing_pure_tests/main.swift",
+      "beforeSHA256": null,
+      "afterSHA256": "f99e7872c57ca174f468cd95e0af8354ab34149b53534036ff1a2de532d81c5b"
+    }
+  ]
+}

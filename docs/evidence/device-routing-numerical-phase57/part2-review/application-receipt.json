@@ -1,0 +1,26 @@
+{
+  "exactRequiredPatchesApplied": 5,
+  "conditionalCompilePatchNotApplied": "actual unpatched full build passed",
+  "files": [
+    {
+      "file": "Sources/LeviathanCore/RouterDeviceRouting.swift",
+      "before": "5b7259bc37d3bcda520bf754ab593f0966c1efcd8a4163975b90db11be10f3b2",
+      "after": "dd4103f9ae27e99ff818a759936aeb2757fb7411507ad38ffeadaebfadf4aa3b"
+    },
+    {
+      "file": "Sources/LeviathanCore/Gemma4.swift",
+      "before": "9f4bcf8a635d1611a3f73fa39b6298fb35198555ea32ba92ad2ee4a7c472bd30",
+      "after": "89f08634b483ae25cc48803126f73d598c1af57cafc08fa1857d282ba7619dbb"
+    },
+    {
+      "file": "Sources/LeviathanCore/RouterDeviceRoutingModelGate.swift",
+      "before": "832a690cce7a5ea08e399a50c6679a26acfc7f392c807945f1eaee1736ec87d4",
+      "after": "8ff968a767529c0247a46e30b58cd7d86bf5e5dd960b98c09f3bdc562167939a"
+    },
+    {
+      "file": "tools/router_device_routing_gate_pure_tests/main.swift",
+      "before": "dd2d5e13151040adef1364080dcdf69092e301011b75b2af553c419edb787e31",
+      "after": "19372a1d4a32cc0efa2a3983527ca99e87ef1b30dace072ecfb38d039c422444"
+    }
+  ]
+}

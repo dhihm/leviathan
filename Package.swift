@@ -60,6 +60,26 @@ let package = Package(
             path: "tools/router_route_replay_pure_tests"
         ),
         .executableTarget(
+            name: "router-device-routing-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/router_device_routing_pure_tests"
+        ),
+        .executableTarget(
+            name: "router-device-routing-component",
+            dependencies: ["LeviathanCore"],
+            path: "tools/router_device_routing_component"
+        ),
+        .executableTarget(
+            name: "router-device-routing-gate",
+            dependencies: ["LeviathanCore"],
+            path: "tools/router_device_routing_gate"
+        ),
+        .executableTarget(
+            name: "router-device-routing-gate-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/router_device_routing_gate_pure_tests"
+        ),
+        .executableTarget(
             name: "leviathan-forge-helper",
             dependencies: ["LeviathanCore"],
             path: "Sources/leviathan-forge-helper"

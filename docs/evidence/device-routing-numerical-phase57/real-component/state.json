@@ -1,0 +1,170 @@
+{
+  "benchmark": {
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/router-device-routing-component",
+      "--gguf",
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+      "--region",
+      "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase57-device-routing-real-component-run/component-report.json"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "child": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 50582,
+      "ppid": 50580,
+      "start_tvsec": 1791195744,
+      "start_tvusec": 707179,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 50582,
+        "ppid": 50580,
+        "start_tvsec": 1791195744,
+        "start_tvusec": 707179,
+        "uid": 501
+      },
+      "pid": 50582,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 50582,
+    "spawnedUTC": "2026-10-05T10:22:24.709099Z"
+  },
+  "cleanupResult": {
+    "lockReleaseEligible": true,
+    "lockReleaseError": null,
+    "lockReleased": true
+  },
+  "createdUTC": "2026-10-05T10:22:24.705826Z",
+  "kind": "owned_benchmark_supervisor_state",
+  "launchUUID": "7f486b1d-cec6-49d7-a6cf-7e6090becbda",
+  "markers": {
+    "endObservedUTC": "2026-10-05T10:22:34.457670Z",
+    "goSentUTC": "2026-10-05T10:22:25.377112Z",
+    "readyObservedUTC": "2026-10-05T10:22:25.360072Z"
+  },
+  "outputDir": "/tmp/leviathan-forge2-tooling/phase57-device-routing-real-component-run",
+  "phase": "finished",
+  "phaseHistory": [
+    {
+      "phase": "created",
+      "utc": "2026-10-05T10:22:24.705837Z"
+    },
+    {
+      "phase": "spawning_wrapper",
+      "utc": "2026-10-05T10:22:24.706404Z"
+    },
+    {
+      "phase": "wrapper_spawned",
+      "utc": "2026-10-05T10:22:24.709146Z"
+    },
+    {
+      "phase": "identity_recorded",
+      "utc": "2026-10-05T10:22:24.710065Z"
+    },
+    {
+      "phase": "start_released",
+      "utc": "2026-10-05T10:22:24.710583Z"
+    },
+    {
+      "phase": "ready_observed",
+      "utc": "2026-10-05T10:22:25.360338Z"
+    },
+    {
+      "phase": "pre_go_snapshot",
+      "utc": "2026-10-05T10:22:25.360993Z"
+    },
+    {
+      "phase": "sending_go",
+      "utc": "2026-10-05T10:22:25.376329Z"
+    },
+    {
+      "phase": "timed_window",
+      "utc": "2026-10-05T10:22:25.377121Z"
+    },
+    {
+      "phase": "window_ended",
+      "utc": "2026-10-05T10:22:34.459794Z"
+    },
+    {
+      "phase": "post_window",
+      "utc": "2026-10-05T10:22:34.491011Z"
+    },
+    {
+      "phase": "stdout_closed",
+      "utc": "2026-10-05T10:22:34.527365Z"
+    },
+    {
+      "phase": "child_exited",
+      "utc": "2026-10-05T10:22:34.534340Z"
+    },
+    {
+      "phase": "finished",
+      "utc": "2026-10-05T10:22:34.535667Z"
+    }
+  ],
+  "phaseUTC": "2026-10-05T10:22:34.535667Z",
+  "progress": {
+    "lastLine": "report /tmp/leviathan-forge2-tooling/phase57-device-routing-real-component-run/component-report.json written: status componentPassed; diagnostic only, gainQualified false, realE4GateComplete false",
+    "lastLineUTC": "2026-10-05T10:22:34.495272Z",
+    "lineCount": 3,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "quietReadyFile": null,
+  "quietRequestFile": null,
+  "receiptWritten": true,
+  "schemaVersion": 1,
+  "supervisor": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 50580,
+      "ppid": 65294,
+      "start_tvsec": 1791195744,
+      "start_tvusec": 573846,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 50580,
+        "ppid": 65294,
+        "start_tvsec": 1791195744,
+        "start_tvusec": 573846,
+        "uid": 501
+      },
+      "pid": 50580,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 50580,
+    "uid": 501
+  },
+  "timeoutSeconds": 300.0,
+  "wrapperArgv": [
+    "/opt/anaconda3/bin/python3",
+    "-I",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/tools/owned_benchmark_supervisor.py",
+    "_exec-wrapper",
+    "--",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/router-device-routing-component",
+    "--gguf",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "--region",
+    "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+    "--report",
+    "/tmp/leviathan-forge2-tooling/phase57-device-routing-real-component-run/component-report.json"
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "verdict": "ACCEPT for build, pure tests and the single approved component run (part A standalone, part B layers 0/5/29), with no change to any numeric gate, count, seed or policy. No definite compile or correctness blocker was found in the supplied text. Several identifiers reach code outside the supplied anchors and will fail loudly at compile time if wrong; they are listed as verification items, not patched. One ternary tuple expression may be rejected by the compiler; an exact minimal patch is supplied for that case only. realE4GateComplete stays false: part 1 proves entry identity, constant-space record bindings and three real layers, not the model.",
+  "findings": [
+    {
+      "area": "emitter and numerics",
+      "result": "PASS",
+      "detail": "The shared body rs_select_body carries the stage-1 arithmetic text unchanged (same barriers, rank rule, double-float exp, certificate, scale checks, record write loop); the only textual changes are threadgroup struct members instead of separate arrays, scaleRow[eid] instead of scaleBits[layer*128+eid], and the component entry computing the same pointers before the call. The runtime entry adds only scoreLog[lid] = scoreRow[lid] before the body. Both entries compile with the same safe/precise options. Because the emitted source and its SHA change, stage-1 pure tests, the stage-1 component and the stage-2 4170-frame replay must be rerun before any old SHA-bound evidence is cited; part A's 102-case entry identity is additional, not a substitute."
+    },
+    {
+      "area": "default path",
+      "result": "PASS",
+      "detail": "Outside a scope the executor gains: one preflight call that returns after an optional nil check, one optional check at token start, one in router_topk, one in expert_matvec_chain, one in the logits path, one Bool term in the route-capture refusal, and routerCPUSelectionCount += 1. No clocks, syscalls, dispatches, command buffers, math or counter changes on the default path. E4R32 GU/ACT/DN MSL and g4_axpy MSL are untouched; runMoeBatchedRecordRouted reuses the installed pipelines, p arguments, chunk geometry, scratch, merge order and moe counters, changing only buffer 1 (constant const ulong* offs) and buffer 3 (constant const float& c) from setBytes to setBuffer at 256-aligned record offsets."
+    },
+    {
+      "area": "scope, refusals, poison, lifetime",
+      "result": "PASS with notes",
+      "detail": "Entry refuses nesting, overlap scope, route capture, instrumentation, dirty axes, width != 32, unpinned install, expert cache, non-IR geometry, an incomplete 7680-offset proof, a binding/table mismatch, bad scale tensors, and any alias of the record/score-log buffers with activation, scratch, KV, statistics, embed, logits, frequency, overlap or weight buffers; all before any dispatch. Preflight refuses raw, unprepared, control, overlap and non-modern executions inside the scope and device-routing preparations outside it. Each token clears magic and sets a flag sentinel on the CPU while idle, marks in flight, requires every layer selected and chained, and is accepted only after the finite-logits check and before any advance; any flag, unwritten record, throw or open segment poisons the scope and the token is never accepted or retried. Exit discards an open segment without throwing and the scope throws afterwards if poisoned, in flight, re-installed or dirty. Note: begin() clears a previous poison, so re-entering a scope after a failure is possible without a runner reset; the part-2 gate should require reset between scopes. Note: pristine(runner) predates deviceRoutingState and does not consider it."
+    },
+    {
+      "area": "part A entry identity and constant consumer",
+      "result": "PASS",
+      "detail": "Fixed 102 cases (4+48+16+16+8+2 = 94 ordinary, 8 declared refusals; each declared case construction checked: NaN/inf nonfinite, 2^-110 and leastNonzeroMagnitude tiny, -81 vs 9 range, nextDown near-tie, NaN and subnormal scale on the forced top slot). Records are decoded-equal plus padding-clean on both sides, ordinary cases must be unflagged and CPU-exact (any flag fails, no exclusion), refusals must carry the declared flag with zero ids and coefficients, the consumer reads GU/DN offsets and the coefficient through constant const ulong* and constant const float& setBuffer bindings in the same serial encoder, score logs and canaries are checked, completion is bounded with no waitUntilCompleted and nothing throws after commit. The host mirror is reported only."
+    },
+    {
+      "area": "part B real E4 layers",
+      "result": "PASS",
+      "detail": "Layers 0, 5, 29 on the runner's own mapping: control runs the unchanged runMoeBatchedRouted with the CPU decision and host setBytes; candidate runs the runtime selector plus runMoeBatchedRecordRouted; GU/ACT/DN scratch words and the accumulator must be bit-identical, the record must equal the CPU decision and the real table, score log exact, canaries intact, no flags. Synthetic scores are tie-free (73 is odd) and inside [-8, 0]. Real scale bytes are compared only in memory; results are Booleans. The synchronous flush is unbounded and owned by the supervisor, as declared."
+    },
+    {
+      "area": "pure tests",
+      "result": "PASS, 42 checks",
+      "detail": "Counts by function: layout 5, expectation 4, plan 7, source 5, verifier 10, report 7, cases 4. Expected final line: passed 42 failed 0. Arithmetic verified: 30 x 2816 = 84480; bindings 256/512/768+256*slot; score log 15360 and layer 7 base 3584; kernels 1349 + 30 = 1379 (matches the required expectation, not 1369); command buffers 37 - 30 = 7; occurrence counts of the three entries, three rs_select_body occurrences and single arithmetic lines; verifier mutations land on the intended words (coefficient word 320, padding byte 2800 outside coefficient7 at 2560..2564)."
+    },
+    {
+      "area": "protocol and report",
+      "result": "PASS",
+      "detail": "Gate tokens; GO before device, mapping and model; cached digest only; exclusive report with .withoutOverwriting, never trimmed; contract fields forced false on encode and after decode; NOT_ENDED exit 5 with END withheld; END only when part A is terminal and the runner quiescent; exit codes 0/3/4/5/1. The component bound is 1 MiB, stricter than the 16 MiB ceiling, and the report is far smaller."
+    }
+  ],
+  "requiredFixes": [
+    "Build verification (compile fails loudly if any is wrong; no runtime risk): routerOverlapPreflight must take candidate and prepared parameters and be throwing; GemmaForgeCandidate must be Equatable; GemmaPreparedExecution's memberwise init labels (runner, graph, configFingerprint, byID, statisticsPlan) and base.boundGraph; GemmaSSAIR instruction fields op, layer, attrs[\"topK\"] as Int?, tensors, inputs, output, and the executor helpers a(_:_:), vb(_:), byID[...].length; Gemma4Runner members q4RunnerDevice, beginSegment(), flushOpenSegment(), discardOpenSegment(), openEnc, openCmd, dispatch(_:grid:), dispatchPipeline(_:name:groups:threads:), gpuRouterResidentZero(y:n:), installMoeBaselineForVerification(region:schedule:expectedSourceSha256:), Q4LaunchArtifact.baselineMoeSourceSha256, RouterOverlapModelGate.installFailures(_:region:), weightsBuffer and residentWeightsBuffer being the same resident buffer, G4TensorRef.type having .float32, and the alias-list buffer names (bufX, bufH, bufT1..3, bufKV, bufGU, bufAct, bufExpertGU/Act/Acc, bufShared, bufRouter, bufEmbed, bufLogits, localFreqBuffer, globalFreqBuffer, rmsStatsInverseBuffer, kCaches, vCaches, routerOverlapState?.routerIn).",
+    "Semantic verification during part 2 (not part 1): the SSA scale op that produces the router projection must precede router_topk so the selector reads the scaled F32 scores the CPU path would have read; the existing context advance must occur after routerDeviceRoutingVerifyToken; the catch on a failed token must discard and reset; the control path's y zero must be a GPU kernel so kernels are exactly OFF + 30 (1379).",
+    "Run order before any GPU/model run: build; router-selection-pure-tests (source changed: any source-structure or SHA pin there must be re-examined, never relaxed); router-device-routing-pure-tests expecting passed 42 failed 0; then rerun the stage-1 component and the stage-2 replay to regenerate SHA-bound evidence; then the device-routing component. Passing component outcome: entry cases 102, ordinaryCases 94, declaredRefusalCases 8, entryIdenticalRecords 102, ordinaryCPUExact 94, empty mismatch/unexpected/missing lists, constantConsumerExactSlots 816, scoreLogExactCases 102, paddingCleanCases 102, guardsIntact true; real realOffsetsProven 7680, three layer results all passed, restoredPristine true, status componentPassed, exit 0. Any other outcome, including a single declined ordinary or real-layer case, is a recorded failure, not reseeded or excluded.",
+    "Conditional compile fix: only if the compiler rejects the ternary that mixes an unlabeled tuple with the labeled result of addingReportingOverflow in axpyRecordCoefficient, apply the single patch below (type annotation only, no logic change)."
+  ],
+  "patches": [
+    {
+      "file": "Sources/LeviathanCore/Gemma4.swift",
+      "condition": "apply only if the build reports a type error on this line",
+      "old": "        let (span, of2) = of1 ? (0, true) : n4.addingReportingOverflow(xOffset)\n",
+      "new": "        let (span, of2): (Int, Bool) = of1 ? (0, true) : n4.addingReportingOverflow(xOffset)\n"
+    }
+  ],
+  "limitations": [
+    "Text-only review of the supplied files and anchored patches; I compiled and executed nothing, and identifiers outside the anchors are unverified.",
+    "Part 1 proves record plumbing and three real layers; it is not the full numerical model gate. realE4GateComplete, gainQualified, installable and productionPerformanceClaim must remain false until part 2 passes all three fixtures with per-element 1e-4, 32 frozen IDs, 31 previous-argmax continuations, ON == OFF bit identity, zero flags and fallbacks, 1379 kernels and 7 command buffers per forward, and part 3 meets the 2 percent and 5 percent policy.",
+    "Entry identity is established on synthetic cases only; identity on all 4170 real routes under the new source awaits the part-2 replay.",
+    "No equivalence theorem: the 2^-42 certificate remains an estimate used only to decline.",
+    "Part B's synchronous flush has no internal bound; the external supervisor owns that deadline without signals or process enumeration."
+  ]
+}

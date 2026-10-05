@@ -1,0 +1,118 @@
+{
+  "actualTimestampSamplingPerformed" : false,
+  "commandBuffersCreated" : 0,
+  "counterSampleBuffersCreated" : 0,
+  "device" : {
+    "counterSampling" : {
+      "atBlitBoundary" : false,
+      "atDispatchBoundary" : false,
+      "atDrawBoundary" : false,
+      "atStageBoundary" : true,
+      "atTileDispatchBoundary" : false
+    },
+    "counterSetCount" : 1,
+    "counterSets" : [
+      {
+        "counterCount" : 1,
+        "counters" : [
+          {
+            "name" : "GPUTimestamp",
+            "nameEqualsCommonTimestamp" : true
+          }
+        ],
+        "name" : "timestamp",
+        "nameEqualsCommonStageUtilizationSet" : false,
+        "nameEqualsCommonStatisticSet" : false,
+        "nameEqualsCommonTimestampSet" : true
+      }
+    ],
+    "counterSetsReported" : true,
+    "currentAllocatedSize" : 65536,
+    "families" : [
+      {
+        "label" : "apple1",
+        "supported" : true
+      },
+      {
+        "label" : "apple2",
+        "supported" : true
+      },
+      {
+        "label" : "apple3",
+        "supported" : true
+      },
+      {
+        "label" : "apple4",
+        "supported" : true
+      },
+      {
+        "label" : "apple5",
+        "supported" : true
+      },
+      {
+        "label" : "apple6",
+        "supported" : true
+      },
+      {
+        "label" : "apple7",
+        "supported" : true
+      },
+      {
+        "label" : "apple8",
+        "supported" : false
+      },
+      {
+        "label" : "apple9",
+        "supported" : false
+      },
+      {
+        "label" : "mac2",
+        "supported" : true
+      },
+      {
+        "label" : "common1",
+        "supported" : true
+      },
+      {
+        "label" : "common2",
+        "supported" : true
+      },
+      {
+        "label" : "common3",
+        "supported" : true
+      },
+      {
+        "label" : "metal3",
+        "supported" : true
+      }
+    ],
+    "hasUnifiedMemory" : true,
+    "isHeadless" : false,
+    "isLowPower" : false,
+    "isRemovable" : false,
+    "maxBufferLength" : 20100448256,
+    "maxThreadgroupMemoryLength" : 32768,
+    "maxThreadsPerThreadgroup" : {
+      "depth" : 1024,
+      "height" : 1024,
+      "width" : 1024
+    },
+    "name" : "Apple M1 Max",
+    "recommendedMaxWorkingSetSize" : 26800603136,
+    "registryID" : 4294970104
+  },
+  "deviceFound" : true,
+  "gainQualified" : false,
+  "hardwareQueryOnly" : true,
+  "installable" : false,
+  "kind" : "metal-counter-capability-probe-v1",
+  "notes" : [
+    "Capability facts as reported by the Metal SDK on this machine; nothing is inferred from the device name.",
+    "No command queue, command buffer, counter sample buffer, pipeline or dispatch was created.",
+    "Timestamp calibration and own-kernel sampling are separate future work; this probe performs none.",
+    "Not a performance, gain or installability result."
+  ],
+  "productionPerformanceClaim" : false,
+  "schema" : 1,
+  "status" : "deviceQueried"
+}

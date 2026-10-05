@@ -1,0 +1,12 @@
+{
+  "method": "exact assistant instruction: append second fenced payload directly to first JSON fragment without separators",
+  "strictJSONDecode": true,
+  "noAuthoredSourceAlteration": true,
+  "correctedFiles": [
+    {
+      "file": "Sources/LeviathanCore/RouterDeviceRouting.swift",
+      "beforeSHA256": "e7827a4770a139481086e5c2e21bb85af1cb38313593b2ce3d3e721ac055a085",
+      "afterSHA256": "5b7259bc37d3bcda520bf754ab593f0966c1efcd8a4163975b90db11be10f3b2"
+    }
+  ]
+}

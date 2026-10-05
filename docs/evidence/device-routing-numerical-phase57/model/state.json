@@ -1,0 +1,190 @@
+{
+  "benchmark": {
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/router-device-routing-gate",
+      "--gguf",
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+      "--region",
+      "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+      "--graph",
+      "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+      "--fixtures",
+      "/tmp/leviathan-forge2-tooling/phase50-simd-model-integration/model-gate-fixtures.json",
+      "--component-report",
+      "/tmp/leviathan-forge2-tooling/phase57-device-routing-real-component-run/component-report.json",
+      "--component-executable",
+      "/tmp/leviathan-forge2-tooling/phase57-device-routing-real-component-run/qualified-router-device-routing-component",
+      "--selection-report",
+      "/tmp/leviathan-forge2-tooling/phase57-final-selection-gpu-run/component-report.json",
+      "--selection-executable",
+      "/tmp/leviathan-forge2-tooling/phase57-final-selection-gpu-run/qualified-router-selection-component",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase57-all-three-device-routing-model-gate-run/model-gate-report.json"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "child": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 84956,
+      "ppid": 84953,
+      "start_tvsec": 1791195989,
+      "start_tvusec": 402552,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 84956,
+        "ppid": 84953,
+        "start_tvsec": 1791195989,
+        "start_tvusec": 402552,
+        "uid": 501
+      },
+      "pid": 84956,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 84956,
+    "spawnedUTC": "2026-10-05T10:26:29.404832Z"
+  },
+  "cleanupResult": {
+    "lockReleaseEligible": true,
+    "lockReleaseError": null,
+    "lockReleased": true
+  },
+  "createdUTC": "2026-10-05T10:26:29.401191Z",
+  "kind": "owned_benchmark_supervisor_state",
+  "launchUUID": "a9f293d3-d42f-4667-9f4f-3877ef81af16",
+  "markers": {
+    "endObservedUTC": "2026-10-05T10:29:26.679928Z",
+    "goSentUTC": "2026-10-05T10:26:29.522326Z",
+    "readyObservedUTC": "2026-10-05T10:26:29.504635Z"
+  },
+  "outputDir": "/tmp/leviathan-forge2-tooling/phase57-all-three-device-routing-model-gate-run",
+  "phase": "finished",
+  "phaseHistory": [
+    {
+      "phase": "created",
+      "utc": "2026-10-05T10:26:29.401211Z"
+    },
+    {
+      "phase": "spawning_wrapper",
+      "utc": "2026-10-05T10:26:29.401663Z"
+    },
+    {
+      "phase": "wrapper_spawned",
+      "utc": "2026-10-05T10:26:29.404875Z"
+    },
+    {
+      "phase": "identity_recorded",
+      "utc": "2026-10-05T10:26:29.405828Z"
+    },
+    {
+      "phase": "start_released",
+      "utc": "2026-10-05T10:26:29.406464Z"
+    },
+    {
+      "phase": "ready_observed",
+      "utc": "2026-10-05T10:26:29.504843Z"
+    },
+    {
+      "phase": "pre_go_snapshot",
+      "utc": "2026-10-05T10:26:29.505594Z"
+    },
+    {
+      "phase": "sending_go",
+      "utc": "2026-10-05T10:26:29.521375Z"
+    },
+    {
+      "phase": "timed_window",
+      "utc": "2026-10-05T10:26:29.522332Z"
+    },
+    {
+      "phase": "window_ended",
+      "utc": "2026-10-05T10:29:26.680401Z"
+    },
+    {
+      "phase": "post_window",
+      "utc": "2026-10-05T10:29:26.869191Z"
+    },
+    {
+      "phase": "child_exited",
+      "utc": "2026-10-05T10:29:26.871677Z"
+    },
+    {
+      "phase": "finished",
+      "utc": "2026-10-05T10:29:26.875053Z"
+    }
+  ],
+  "phaseUTC": "2026-10-05T10:29:26.875053Z",
+  "progress": {
+    "lastLine": "report /tmp/leviathan-forge2-tooling/phase57-all-three-device-routing-model-gate-run/model-gate-report.json written: status qualificationPassed; diagnostic only, gainQualified false, not installable, no performance claim",
+    "lastLineUTC": "2026-10-05T10:29:26.870091Z",
+    "lineCount": 10,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "quietReadyFile": null,
+  "quietRequestFile": null,
+  "receiptWritten": true,
+  "schemaVersion": 1,
+  "supervisor": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 84953,
+      "ppid": 65294,
+      "start_tvsec": 1791195989,
+      "start_tvusec": 275870,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 84953,
+        "ppid": 65294,
+        "start_tvsec": 1791195989,
+        "start_tvusec": 275870,
+        "uid": 501
+      },
+      "pid": 84953,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 84953,
+    "uid": 501
+  },
+  "timeoutSeconds": 1200.0,
+  "wrapperArgv": [
+    "/opt/anaconda3/bin/python3",
+    "-I",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/tools/owned_benchmark_supervisor.py",
+    "_exec-wrapper",
+    "--",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/router-device-routing-gate",
+    "--gguf",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "--region",
+    "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+    "--graph",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "--fixtures",
+    "/tmp/leviathan-forge2-tooling/phase50-simd-model-integration/model-gate-fixtures.json",
+    "--component-report",
+    "/tmp/leviathan-forge2-tooling/phase57-device-routing-real-component-run/component-report.json",
+    "--component-executable",
+    "/tmp/leviathan-forge2-tooling/phase57-device-routing-real-component-run/qualified-router-device-routing-component",
+    "--selection-report",
+    "/tmp/leviathan-forge2-tooling/phase57-final-selection-gpu-run/component-report.json",
+    "--selection-executable",
+    "/tmp/leviathan-forge2-tooling/phase57-final-selection-gpu-run/qualified-router-selection-component",
+    "--report",
+    "/tmp/leviathan-forge2-tooling/phase57-all-three-device-routing-model-gate-run/model-gate-report.json"
+  ]
+}

@@ -1,0 +1,158 @@
+{
+  "benchmark": {
+    "argv": [
+      "/tmp/leviathan-forge2-tooling/phase57-metal-counter-capability-fable/metal-counter-capability-probe",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase57-metal-counter-capability-run/capability-report.json"
+    ],
+    "cwd": "/tmp/leviathan-forge2-tooling/phase57-metal-counter-capability-fable"
+  },
+  "child": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 39248,
+      "ppid": 39244,
+      "start_tvsec": 1791194270,
+      "start_tvusec": 466525,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 39248,
+        "ppid": 39244,
+        "start_tvsec": 1791194270,
+        "start_tvusec": 466525,
+        "uid": 501
+      },
+      "pid": 39248,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 39248,
+    "spawnedUTC": "2026-10-05T09:57:50.468850Z"
+  },
+  "cleanupResult": {
+    "lockReleaseEligible": true,
+    "lockReleaseError": null,
+    "lockReleased": true
+  },
+  "createdUTC": "2026-10-05T09:57:50.464503Z",
+  "kind": "owned_benchmark_supervisor_state",
+  "launchUUID": "1e2d79b3-69c2-4288-9d02-b0568ac02d93",
+  "markers": {
+    "endObservedUTC": "2026-10-05T09:57:50.662117Z",
+    "goSentUTC": "2026-10-05T09:57:50.574350Z",
+    "readyObservedUTC": "2026-10-05T09:57:50.551357Z"
+  },
+  "outputDir": "/tmp/leviathan-forge2-tooling/phase57-metal-counter-capability-run",
+  "phase": "finished",
+  "phaseHistory": [
+    {
+      "phase": "created",
+      "utc": "2026-10-05T09:57:50.464523Z"
+    },
+    {
+      "phase": "spawning_wrapper",
+      "utc": "2026-10-05T09:57:50.465803Z"
+    },
+    {
+      "phase": "wrapper_spawned",
+      "utc": "2026-10-05T09:57:50.468881Z"
+    },
+    {
+      "phase": "identity_recorded",
+      "utc": "2026-10-05T09:57:50.469756Z"
+    },
+    {
+      "phase": "start_released",
+      "utc": "2026-10-05T09:57:50.470773Z"
+    },
+    {
+      "phase": "ready_observed",
+      "utc": "2026-10-05T09:57:50.551546Z"
+    },
+    {
+      "phase": "pre_go_snapshot",
+      "utc": "2026-10-05T09:57:50.553760Z"
+    },
+    {
+      "phase": "sending_go",
+      "utc": "2026-10-05T09:57:50.573308Z"
+    },
+    {
+      "phase": "timed_window",
+      "utc": "2026-10-05T09:57:50.574361Z"
+    },
+    {
+      "phase": "window_ended",
+      "utc": "2026-10-05T09:57:50.662235Z"
+    },
+    {
+      "phase": "post_window",
+      "utc": "2026-10-05T09:57:50.683003Z"
+    },
+    {
+      "phase": "child_exited",
+      "utc": "2026-10-05T09:57:50.684572Z"
+    },
+    {
+      "phase": "finished",
+      "utc": "2026-10-05T09:57:50.686846Z"
+    }
+  ],
+  "phaseUTC": "2026-10-05T09:57:50.686846Z",
+  "progress": {
+    "lastLine": "report written: /tmp/leviathan-forge2-tooling/phase57-metal-counter-capability-run/capability-report.json (2903 bytes); status deviceQueried",
+    "lastLineUTC": "2026-10-05T09:57:50.683858Z",
+    "lineCount": 3,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "quietReadyFile": null,
+  "quietRequestFile": null,
+  "receiptWritten": true,
+  "schemaVersion": 1,
+  "supervisor": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 39244,
+      "ppid": 65294,
+      "start_tvsec": 1791194270,
+      "start_tvusec": 322413,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 39244,
+        "ppid": 65294,
+        "start_tvsec": 1791194270,
+        "start_tvusec": 322413,
+        "uid": 501
+      },
+      "pid": 39244,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 39244,
+    "uid": 501
+  },
+  "timeoutSeconds": 20.0,
+  "wrapperArgv": [
+    "/opt/anaconda3/bin/python3",
+    "-I",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/tools/owned_benchmark_supervisor.py",
+    "_exec-wrapper",
+    "--",
+    "/tmp/leviathan-forge2-tooling/phase57-metal-counter-capability-fable/metal-counter-capability-probe",
+    "--report",
+    "/tmp/leviathan-forge2-tooling/phase57-metal-counter-capability-run/capability-report.json"
+  ]
+}
