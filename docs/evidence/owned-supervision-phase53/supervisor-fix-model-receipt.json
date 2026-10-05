@@ -1,0 +1,11 @@
+{
+  "models": [
+    "claude-opus-5-5",
+    "claude-opus-5-5"
+  ],
+  "exit": {
+    "exit": 0,
+    "elapsedSeconds": 178.73001250019297,
+    "completedUtc": "2026-10-05T03:41:53.301754+00:00"
+  }
+}

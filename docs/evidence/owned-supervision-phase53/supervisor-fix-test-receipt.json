@@ -1,0 +1,15 @@
+{
+  "utc": "2026-10-05T03:43:00.813064+00:00",
+  "command": "python3 -m unittest discover -s tools -p test_owned_benchmark_supervisor.py -v",
+  "exit": 0,
+  "tests": 41,
+  "failures": 0,
+  "skipped": 0,
+  "reportedElapsedSeconds": 0.486,
+  "nativeSelfIdentityTest": "passed on actual Darwin, no process enumeration",
+  "GPUInference": false,
+  "sourceSHA256": {
+    "tools/owned_benchmark_supervisor.py": "54b7442bf349acea9b79dc00b8ece4b11e024965280194d18057479bddd0d682",
+    "tools/test_owned_benchmark_supervisor.py": "090331f7a1a827e29eae8a6a1fd3030ad8d09d9c6c14941f041c86e941888362"
+  }
+}

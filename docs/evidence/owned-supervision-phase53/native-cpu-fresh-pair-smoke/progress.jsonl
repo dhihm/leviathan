@@ -1,0 +1,3 @@
+{"elapsedSeconds": 0.092196, "line": "BENCHMARK_READY", "marker": "ready", "phase": "start_released", "seq": 1, "tpot": false, "utc": "2026-10-05T03:43:33.996250Z"}
+{"elapsedSeconds": 0.11011, "line": "CPU fresh-pair protocol smoke complete", "marker": null, "phase": "timed_window", "seq": 2, "tpot": false, "utc": "2026-10-05T03:43:34.014158Z"}
+{"elapsedSeconds": 0.110554, "line": "TIMED_WINDOW_END", "marker": "end", "phase": "timed_window", "seq": 3, "tpot": false, "utc": "2026-10-05T03:43:34.014602Z"}

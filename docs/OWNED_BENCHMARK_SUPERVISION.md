@@ -1,0 +1,19 @@
+# Recoverable local benchmark supervision
+
+The standalone Python supervisor records its own native process start identity, the Popen-owned child identity, exact benchmark arguments, working directory and launch UUID before releasing the child wrapper to execute. It records progress as lines arrive and writes a terminal receipt from its own child wait status. A read-only status command checks only those two recorded process identities. An absent or reused PID never establishes a successful exit.
+
+The helper uses the installed Apple SDK proc_bsdinfo layout and proc_pidinfo API. It never enumerates processes and never signals a PID loaded from disk. Graceful cleanup uses only its live Popen child handle. It sends no SIGKILL; an unconfirmed child leaves the local advisory lock in place. Existing output directories are refused. The helper does not manage the separate root GPU coordination lock or independently authorize a quiet window.
+
+A model benchmark must use fresh paired quiet-request and quiet-ready JSON files with matching scope. requestUTC and readyUTC must be explicit UTC timestamps; readyUTC must be at least requestUTC, and ready must be literal true. These fields preserve the actual parent acknowledgment; synthetic CPU test files are never a GPU quiet acknowledgment. The benchmark prints BENCHMARK_READY and waits for GO, then prints TIMED_WINDOW_END after its final measured run. Aggregate vm_stat and pmset snapshots occur before GO and after the end marker or confirmed child exit. They are not attributed to the benchmark.
+
+Atomic state rewrites and flushed progress logs have observation overhead; zero perturbation is not claimed. The helper records execution and does not qualify model correctness, stable timing, speed gains or production activation. Those remain separate gates.
+
+Validation: 48 Python tests passed with zero skips, including the real Mac self-process start-identity lookup. An actual Mac CPU-only wrapper run passed START/GO/end handling with both native identities persisted, a confirmed exit-zero receipt and lock release. Its paired request/ready files were explicitly synthetic CPU test fixtures. No GPU inference, model download or model-file rehash was performed. Original code and tests were authored by the existing authorized Opus 5.5 CLI; review and source receipts are preserved under docs/evidence/owned-supervision-phase53.
+
+Run the tests with python3 -m unittest discover -s tools -p test_owned_benchmark_supervisor.py -v. Use tools/owned_benchmark_supervisor.py --help for the run and status commands. Any future inference run still needs the root GPU coordination record and an actual fresh parent quiet acknowledgment.
+
+Independent Fable 5.1 review accepted the corrected implementation. A terminal receipt is persisted before any lock removal; a receipt-write failure keeps the lock and returns nonzero. A disconnected echo stream is disabled without stopping the healthy child. Tests verify these failure paths, inherited SIGCHLD-ignore handling and the native child start identity before and after exec. The final Mac CPU protocol smoke produced a confirmed exit-zero receipt, followed by recorded successful lock removal.
+
+Use Python 3.11 or later (tested on Python 3.11). This is a command-line supervisor; its signal setup must run on the main thread. SIGHUP is deliberately unhandled and can leave a live child with partial state; use the read-only status command for exact-identity recovery. It never performs cleanup from a stored PID.
+
+Resource snapshot command exit codes are not health certificates. The final CPU smoke's pmset stdout reported unavailable thermal/performance information even with command exit zero. Those readings are unknown, and no thermal eligibility or inference performance claim is inferred from this smoke.

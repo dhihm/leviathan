@@ -1,0 +1,121 @@
+{
+  "abortReason": null,
+  "benchmark": {
+    "argv": [
+      "python3",
+      "-c",
+      "import sys; print(\"BENCHMARK_READY\", flush=True); assert sys.stdin.readline().strip() == \"GO\"; print(\"CPU final protocol smoke complete\", flush=True); print(\"TIMED_WINDOW_END\", flush=True)"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "childPid": 31698,
+  "childStatus": "exited",
+  "cleanupAction": null,
+  "elapsedSeconds": 0.130244,
+  "endMarkerObserved": true,
+  "error": null,
+  "exitCode": 0,
+  "exitEvidenceSource": "supervisor_popen_wait_status",
+  "exitSignal": null,
+  "goSent": true,
+  "interruptedBy": null,
+  "kind": "owned_benchmark_supervisor_receipt",
+  "launchUUID": "189f3922-a012-4cc7-a3ce-3276b9126b61",
+  "lockPath": "/tmp/leviathan-forge2-tooling/phase53-supervisor-native-final-smoke/supervisor.lock",
+  "lockReleaseEligible": true,
+  "markers": {
+    "endObservedUTC": "2026-10-05T03:53:53.501290Z",
+    "goSentUTC": "2026-10-05T03:53:53.500403Z",
+    "readyObservedUTC": "2026-10-05T03:53:53.482834Z"
+  },
+  "notes": [],
+  "progress": {
+    "lastLine": "TIMED_WINDOW_END",
+    "lastLineUTC": "2026-10-05T03:53:53.501290Z",
+    "lineCount": 3,
+    "tpotLines": []
+  },
+  "quietAck": {
+    "checkedUTC": "2026-10-05T03:53:53.483673Z",
+    "detail": "readyUTC is not before requestUTC and scopes match",
+    "ready": {
+      "checkedUTC": "2026-10-05T03:53:53.483673Z",
+      "detail": "",
+      "path": "/tmp/leviathan-forge2-tooling/phase53-supervisor-final-smoke-input/ready.json",
+      "readyUTC": "2026-10-05T03:53:53.310756+00:00",
+      "scope": "phase53 final CPU-only supervision smoke; no inference",
+      "source": "synthetic CPU test fixture; not parent GPU acknowledgment",
+      "status": "ready"
+    },
+    "request": {
+      "checkedUTC": "2026-10-05T03:53:53.483673Z",
+      "detail": "",
+      "path": "/tmp/leviathan-forge2-tooling/phase53-supervisor-final-smoke-input/request.json",
+      "requestUTC": "2026-10-05T03:53:53.310756+00:00",
+      "scope": "phase53 final CPU-only supervision smoke; no inference",
+      "source": "synthetic CPU test fixture; not parent GPU acknowledgment",
+      "status": "present"
+    },
+    "status": "ready"
+  },
+  "readyObserved": true,
+  "receiptUTC": "2026-10-05T03:53:53.515939Z",
+  "resources": {
+    "postWindow": {
+      "commands": {
+        "pmset_therm": {
+          "argv": [
+            "/usr/bin/pmset",
+            "-g",
+            "therm"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Error:Failed to get thermal warning level with error code 0xe00002bc\nError: Failed to get performance warning level with error code 0xe00002bc\nError: No CPU power status with error code 0xe00002bc\n"
+        },
+        "vm_stat": {
+          "argv": [
+            "/usr/bin/vm_stat"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                5683.\nPages active:                            572943.\nPages inactive:                          547053.\nPages speculative:                        25118.\nPages throttled:                              0.\nPages wired down:                        736012.\nPages purgeable:                           1316.\n\"Translation faults\":              204895150335.\nPages copy-on-write:                46456480293.\nPages zero filled:                  42106810805.\nPages reactivated:                  21625373146.\nPages purged:                         751463699.\nFile-backed pages:                       335999.\nAnonymous pages:                         809115.\nPages stored in compressor:             2692916.\nPages occupied by compressor:            153679.\nDecompressions:                     17845462085.\nCompressions:                       18717422440.\nPageins:                             3497913842.\nPageouts:                              13446228.\nSwapins:                              320062028.\nSwapouts:                             439575486.\n"
+        }
+      },
+      "label": "post_end",
+      "utc": "2026-10-05T03:53:53.501805Z"
+    },
+    "postWindowSkippedReason": null,
+    "preGo": {
+      "commands": {
+        "pmset_therm": {
+          "argv": [
+            "/usr/bin/pmset",
+            "-g",
+            "therm"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Error:Failed to get thermal warning level with error code 0xe00002bc\nError: Failed to get performance warning level with error code 0xe00002bc\nError: No CPU power status with error code 0xe00002bc\n"
+        },
+        "vm_stat": {
+          "argv": [
+            "/usr/bin/vm_stat"
+          ],
+          "returncode": 0,
+          "stderr": "",
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                6757.\nPages active:                            572095.\nPages inactive:                          546973.\nPages speculative:                        24799.\nPages throttled:                              0.\nPages wired down:                        736158.\nPages purgeable:                           1314.\n\"Translation faults\":              204895145449.\nPages copy-on-write:                46456479195.\nPages zero filled:                  42106809781.\nPages reactivated:                  21625373146.\nPages purged:                         751463699.\nFile-backed pages:                       335649.\nAnonymous pages:                         808218.\nPages stored in compressor:             2692916.\nPages occupied by compressor:            153679.\nDecompressions:                     17845462085.\nCompressions:                       18717422440.\nPageins:                             3497913739.\nPageouts:                              13446228.\nSwapins:                              320062028.\nSwapouts:                             439575486.\n"
+        }
+      },
+      "label": "pre_go",
+      "utc": "2026-10-05T03:53:53.485036Z"
+    }
+  },
+  "result": "success",
+  "schemaVersion": 1,
+  "signalsReceived": [],
+  "startReleased": true,
+  "supervisorPid": 31671,
+  "timedOut": false,
+  "windowElapsedSeconds": 0.000888
+}

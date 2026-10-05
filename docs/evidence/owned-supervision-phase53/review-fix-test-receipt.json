@@ -1,0 +1,17 @@
+{
+  "utc": "2026-10-05T03:52:55.076988+00:00",
+  "command": "python3 -m unittest discover -s tools -p test_owned_benchmark_supervisor.py -v",
+  "observedResult": "OK",
+  "tests": 48,
+  "failures": 0,
+  "skipped": 0,
+  "reportedElapsedSeconds": 0.799,
+  "GPUInference": false,
+  "nativeOwnedWrapperStartIdentityAcrossExec": "passed on Darwin",
+  "realOwnCPUChildEchoDisconnect": "passed; no child termination",
+  "inheritedSIGCHLDIgnoredExitStatus": "passed; actual child exit3 preserved and priorSIGCHLD restored",
+  "sourceSHA256": {
+    "tools/owned_benchmark_supervisor.py": "6ad8505847f4a6b4687658ee85b1d158d922650d5bc556c4a631ab91b95e5f90",
+    "tools/test_owned_benchmark_supervisor.py": "ed658963f2ddd33fe7ffa92c6bf9af737761c2e3eee66cea1a01767320491eeb"
+  }
+}

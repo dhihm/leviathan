@@ -1,0 +1,184 @@
+{
+  "benchmark": {
+    "argv": [
+      "python3",
+      "-c",
+      "import sys; print(\"BENCHMARK_READY\", flush=True); assert sys.stdin.readline().strip() == \"GO\"; print(\"CPU final protocol smoke complete\", flush=True); print(\"TIMED_WINDOW_END\", flush=True)"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "child": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 31698,
+      "ppid": 31671,
+      "start_tvsec": 1791172433,
+      "start_tvusec": 381932,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 31698,
+        "ppid": 31671,
+        "start_tvsec": 1791172433,
+        "start_tvusec": 381932,
+        "uid": 501
+      },
+      "pid": 31698,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 31698,
+    "spawnedUTC": "2026-10-05T03:53:53.385025Z"
+  },
+  "cleanupResult": {
+    "lockReleaseEligible": true,
+    "lockReleaseError": null,
+    "lockReleased": true
+  },
+  "createdUTC": "2026-10-05T03:53:53.380897Z",
+  "kind": "owned_benchmark_supervisor_state",
+  "launchUUID": "189f3922-a012-4cc7-a3ce-3276b9126b61",
+  "markers": {
+    "endObservedUTC": "2026-10-05T03:53:53.501290Z",
+    "goSentUTC": "2026-10-05T03:53:53.500403Z",
+    "readyObservedUTC": "2026-10-05T03:53:53.482834Z"
+  },
+  "outputDir": "/tmp/leviathan-forge2-tooling/phase53-supervisor-native-final-smoke",
+  "phase": "finished",
+  "phaseHistory": [
+    {
+      "phase": "created",
+      "utc": "2026-10-05T03:53:53.380913Z"
+    },
+    {
+      "phase": "spawning_wrapper",
+      "utc": "2026-10-05T03:53:53.381316Z"
+    },
+    {
+      "phase": "wrapper_spawned",
+      "utc": "2026-10-05T03:53:53.385055Z"
+    },
+    {
+      "phase": "identity_recorded",
+      "utc": "2026-10-05T03:53:53.386128Z"
+    },
+    {
+      "phase": "start_released",
+      "utc": "2026-10-05T03:53:53.386631Z"
+    },
+    {
+      "phase": "awaiting_quiet_ack",
+      "utc": "2026-10-05T03:53:53.483023Z"
+    },
+    {
+      "phase": "quiet_ack_verified",
+      "utc": "2026-10-05T03:53:53.483837Z"
+    },
+    {
+      "phase": "pre_go_snapshot",
+      "utc": "2026-10-05T03:53:53.484465Z"
+    },
+    {
+      "phase": "sending_go",
+      "utc": "2026-10-05T03:53:53.499537Z"
+    },
+    {
+      "phase": "timed_window",
+      "utc": "2026-10-05T03:53:53.500410Z"
+    },
+    {
+      "phase": "window_ended",
+      "utc": "2026-10-05T03:53:53.501323Z"
+    },
+    {
+      "phase": "post_window",
+      "utc": "2026-10-05T03:53:53.514359Z"
+    },
+    {
+      "phase": "child_exited",
+      "utc": "2026-10-05T03:53:53.515269Z"
+    },
+    {
+      "phase": "finished",
+      "utc": "2026-10-05T03:53:53.516984Z"
+    }
+  ],
+  "phaseUTC": "2026-10-05T03:53:53.516984Z",
+  "progress": {
+    "lastLine": "TIMED_WINDOW_END",
+    "lastLineUTC": "2026-10-05T03:53:53.501290Z",
+    "lineCount": 3,
+    "tpotLines": []
+  },
+  "quietAck": {
+    "checkedUTC": "2026-10-05T03:53:53.483673Z",
+    "detail": "readyUTC is not before requestUTC and scopes match",
+    "ready": {
+      "checkedUTC": "2026-10-05T03:53:53.483673Z",
+      "detail": "",
+      "path": "/tmp/leviathan-forge2-tooling/phase53-supervisor-final-smoke-input/ready.json",
+      "readyUTC": "2026-10-05T03:53:53.310756+00:00",
+      "scope": "phase53 final CPU-only supervision smoke; no inference",
+      "source": "synthetic CPU test fixture; not parent GPU acknowledgment",
+      "status": "ready"
+    },
+    "request": {
+      "checkedUTC": "2026-10-05T03:53:53.483673Z",
+      "detail": "",
+      "path": "/tmp/leviathan-forge2-tooling/phase53-supervisor-final-smoke-input/request.json",
+      "requestUTC": "2026-10-05T03:53:53.310756+00:00",
+      "scope": "phase53 final CPU-only supervision smoke; no inference",
+      "source": "synthetic CPU test fixture; not parent GPU acknowledgment",
+      "status": "present"
+    },
+    "status": "ready"
+  },
+  "quietReadyFile": "/tmp/leviathan-forge2-tooling/phase53-supervisor-final-smoke-input/ready.json",
+  "quietRequestFile": "/tmp/leviathan-forge2-tooling/phase53-supervisor-final-smoke-input/request.json",
+  "receiptWritten": true,
+  "schemaVersion": 1,
+  "supervisor": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 31671,
+      "ppid": 31620,
+      "start_tvsec": 1791172433,
+      "start_tvusec": 318489,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 31671,
+        "ppid": 31620,
+        "start_tvsec": 1791172433,
+        "start_tvusec": 318489,
+        "uid": 501
+      },
+      "pid": 31671,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 31671,
+    "uid": 501
+  },
+  "timeoutSeconds": 20.0,
+  "wrapperArgv": [
+    "/opt/anaconda3/bin/python3",
+    "-I",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/tools/owned_benchmark_supervisor.py",
+    "_exec-wrapper",
+    "--",
+    "python3",
+    "-c",
+    "import sys; print(\"BENCHMARK_READY\", flush=True); assert sys.stdin.readline().strip() == \"GO\"; print(\"CPU final protocol smoke complete\", flush=True); print(\"TIMED_WINDOW_END\", flush=True)"
+  ]
+}
