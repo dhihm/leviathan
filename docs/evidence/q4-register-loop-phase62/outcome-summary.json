@@ -1,0 +1,14 @@
+{
+  "status": "correctnessFailed",
+  "supportedRows": 2447,
+  "mismatchRows": 1858,
+  "supportedCases": 17,
+  "failingCases": 17,
+  "allFinite": true,
+  "allFP64": true,
+  "allGuards": true,
+  "commandBuffersCommitted": 35,
+  "candidateSourceSha256": "46838c6be770eb74464e69f8e1eb6955733e0ae756da78a91bdb876aae490ba5",
+  "timing": [],
+  "executableSHA256": "f090d5336cb0c8bdc89939efa97c72f72672892d28bdc2f36bc7e067960c7ca8"
+}

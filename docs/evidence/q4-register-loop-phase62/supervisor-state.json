@@ -1,0 +1,162 @@
+{
+  "benchmark": {
+    "argv": [
+      ".build/release/q4-register-loop-component",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase62-register-loop-component-run/component-report.json",
+      "--gguf",
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "child": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 79041,
+      "ppid": 79040,
+      "start_tvsec": 1791206146,
+      "start_tvusec": 230385,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 79041,
+        "ppid": 79040,
+        "start_tvsec": 1791206146,
+        "start_tvusec": 230385,
+        "uid": 501
+      },
+      "pid": 79041,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 79041,
+    "spawnedUTC": "2026-10-05T13:15:46.232313Z"
+  },
+  "cleanupResult": {
+    "lockReleaseEligible": true,
+    "lockReleaseError": null,
+    "lockReleased": true
+  },
+  "createdUTC": "2026-10-05T13:15:46.229141Z",
+  "kind": "owned_benchmark_supervisor_state",
+  "launchUUID": "9860596e-b6d7-4bc9-bc5d-d5a7cca95717",
+  "markers": {
+    "endObservedUTC": "2026-10-05T13:15:46.840650Z",
+    "goSentUTC": "2026-10-05T13:15:46.318458Z",
+    "readyObservedUTC": "2026-10-05T13:15:46.299476Z"
+  },
+  "outputDir": "/tmp/leviathan-forge2-tooling/phase62-register-loop-component-run",
+  "phase": "finished",
+  "phaseHistory": [
+    {
+      "phase": "created",
+      "utc": "2026-10-05T13:15:46.229161Z"
+    },
+    {
+      "phase": "spawning_wrapper",
+      "utc": "2026-10-05T13:15:46.229647Z"
+    },
+    {
+      "phase": "wrapper_spawned",
+      "utc": "2026-10-05T13:15:46.232344Z"
+    },
+    {
+      "phase": "identity_recorded",
+      "utc": "2026-10-05T13:15:46.233222Z"
+    },
+    {
+      "phase": "start_released",
+      "utc": "2026-10-05T13:15:46.233700Z"
+    },
+    {
+      "phase": "ready_observed",
+      "utc": "2026-10-05T13:15:46.299646Z"
+    },
+    {
+      "phase": "pre_go_snapshot",
+      "utc": "2026-10-05T13:15:46.300210Z"
+    },
+    {
+      "phase": "sending_go",
+      "utc": "2026-10-05T13:15:46.317633Z"
+    },
+    {
+      "phase": "timed_window",
+      "utc": "2026-10-05T13:15:46.318469Z"
+    },
+    {
+      "phase": "window_ended",
+      "utc": "2026-10-05T13:15:46.840685Z"
+    },
+    {
+      "phase": "post_window",
+      "utc": "2026-10-05T13:15:46.855321Z"
+    },
+    {
+      "phase": "child_exited",
+      "utc": "2026-10-05T13:15:46.856619Z"
+    },
+    {
+      "phase": "finished",
+      "utc": "2026-10-05T13:15:46.857971Z"
+    }
+  ],
+  "phaseUTC": "2026-10-05T13:15:46.857971Z",
+  "progress": {
+    "lastLine": "report /tmp/leviathan-forge2-tooling/phase62-register-loop-component-run/component-report.json written: status correctnessFailed; component only, raw stage ticks are not busy time, no gain, install or production claim",
+    "lastLineUTC": "2026-10-05T13:15:46.856162Z",
+    "lineCount": 5,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "quietReadyFile": null,
+  "quietRequestFile": null,
+  "receiptWritten": true,
+  "schemaVersion": 1,
+  "supervisor": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 79040,
+      "ppid": 65294,
+      "start_tvsec": 1791206146,
+      "start_tvusec": 162975,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 79040,
+        "ppid": 65294,
+        "start_tvsec": 1791206146,
+        "start_tvusec": 162975,
+        "uid": 501
+      },
+      "pid": 79040,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 79040,
+    "uid": 501
+  },
+  "timeoutSeconds": 600.0,
+  "wrapperArgv": [
+    "/opt/anaconda3/bin/python3",
+    "-I",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/tools/owned_benchmark_supervisor.py",
+    "_exec-wrapper",
+    "--",
+    ".build/release/q4-register-loop-component",
+    "--report",
+    "/tmp/leviathan-forge2-tooling/phase62-register-loop-component-run/component-report.json",
+    "--gguf",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf"
+  ]
+}

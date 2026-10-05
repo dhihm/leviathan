@@ -1,0 +1,76 @@
+{
+  "verdict": "APPROVE_WITH_REQUIRED_PATCHES_BEFORE_FIRST_GPU_RUN. The kernel is correct: odd-block funnel and byte extraction, the production loop shape and term text, scalar x, compile options nil, and aligned in-payload loads. Plans, gates, timing reuse and protocol are correct. Required: (1) an emitted MSL comment contains 'threadgroup' and 'barrier', so the author's emitter pure test fails; (2) the source states the phase-61 result as '17 of 17 multi-row cases'. The actual record is 16 of 17 supported cases failing bit identity, 1368 of 2447 rows, with every case finite, in FP64 contract and guard-intact, and timing withheld; this must be corrected in the header comment, closedPredecessors and the rationale note. Corrected test expectations (testCommands text, not source): q4-register-loop-pure-tests has 22 checks, so expect 'passed 22 failed 0', not 20. q4-packed-word-pure-tests is unchanged at the actual 29, not 24. q4-weight-stage-pure-tests stays at 40.",
+  "analysis": [
+    "Even-block byte reconstruction (verified).",
+    "- A block of parity 0 starts at pair byte 0, so b0..b4 = pair words 0..4.",
+    "- Block byte i lives at word i/4, shift 8(i%4). Bytes 18 and 19 in b4 belong to the next block and are never selected, because bi ranges over 2..17.",
+    "Odd-block byte reconstruction (verified).",
+    "- A parity-1 block starts at pair byte 18 = word 4, shift 16.",
+    "- b0 = (t4 >> 16) | (t5 << 16) gives pair bytes 18..21 = block bytes 0..3; similarly b1..b3.",
+    "- b4 = t8 >> 16 gives pair bytes 34..35 = block bytes 16..17; its upper half is zero and never selected.",
+    "- Hence dbits = b0 & 0xFFFF equals the control's ushort(blk[0]) | (ushort(blk[1]) << 8u) for both parities.",
+    "- q = byte (2 + l) is selected by word bi >> 2 and shift (bi & 3) x 8, so it equals blk[2u + l].",
+    "- The host mirror (blockWords, blockBytes) implements the same mapping and is tested on both parities against pairWords of known bytes.",
+    "Loop shape and arithmetic text (verified).",
+    "- for (uint b = 0; b < blocksPerRow; b++) with the per-block dbits/d decode, then for (uint l = 0; l < 16u; l++) with the two production sum lines and indices x[b * 32u + l] and x[b * 32u + 16u + l]: identical text and order to g4_q4_matvec.",
+    "- No pair unrolling, constant x indices, threadgroup memory, barriers, SIMD, float4 or explicit fma. Compile options are nil for both arms.",
+    "- Compiled bit identity remains empirical and is gated on every row of every case.",
+    "Loads and bounds (verified).",
+    "- Row base = (wbase + wOff) as uint* + row x pairsPerRow x 9 (ulong); pw = base + (b >> 1) x 9 (ulong).",
+    "- Even blocks read pw[0..4]; odd blocks read pw[4..8]. Both stay inside the row's own 9-word pair, so even if the compiler speculatively hoists both branches' loads, no read leaves the pair.",
+    "- The 18-byte alternating misalignment is handled entirely by integer shifts on 4-aligned words. wOff = 256 and rowBytes is a multiple of 36, so every uint load is 4-aligned.",
+    "- Integer arithmetic: b x 32u + 16u + l < inDim <= ModelWorkloadLimits.maxQ4InputDim (4,194,304), and dims are checked to be <= UInt32.max. Byte offsets are in ulong. There is no overflow path.",
+    "- The in-loop word select may compile to a select chain or dynamic register indexing; either is integer-only and does not change float operands.",
+    "Plan and metadata (verified).",
+    "- Q4RegisterLoopPlan delegates to the reviewed phase-61 Q4PackedWordPlan. That plan declines, before any dispatch: even-block-count violations, misaligned offsets, a span beyond guard + payload (the driver passes the payload bound in both the case and timing paths), compiled width other than 32, a pipeline maximum below 32, non-zero static threadgroup memory, and unbounded group counts.",
+    "- The descriptor is canonical: width 32 via pairLayout, a 5-word fetch, 9-word pairs, a 16-bit shift. Tampering fails validate().",
+    "- The report records staticThreadgroupBytes, pipeline width and maximum, kernel name, candidate and control source SHA, hardware, executable digest and the cached model SHA. It contains no weight bytes.",
+    "Gates, corpus and timing (verified).",
+    "- Unchanged phase-60 corpus, seeds, thresholds and FP64 oracle; per-case control run; a control FP64 failure is retained.",
+    "- Candidate: finite, within the 1e-4 contract, bit-identical on every row, guards intact; predeclared odd-block decline before dispatch.",
+    "- Timing uses the reused timedShapeCore: two sequential command buffers per pair, the second committed after the first is observed terminal through the 10 s semaphore, samples 0/1 then 2/3 resolved twice after both complete. A nil shape withholds END and gives NOT_ENDED with exit 5. No sample buffer gives unsupported, never a timing pass.",
+    "- CommitCounter carries the committed count.",
+    "Protocol (verified): before GO only parsing, the exclusive report path, the cached explicit-refresh SHA record (never hashed) and the executable digest. Exactly GO is required; EOF exits 1 before any device or GGUF read. The report is exclusive, bounded at 16 MiB and never trimmed. All five claim flags are re-asserted false on encode. No default, production or full-model change.",
+    "Pure tests: actual count is 3 (descriptor) + 4 (plan) + 4 (fetch mirror) + 5 (emitter) + 6 (contract) = 22.",
+    "- Without patch 1, the 'no threadgroup memory, barrier, SIMD, vector load, explicit fma or unrolled constant indices' check fails on the comment line '... No threadgroup memory, barrier, SIMD, vector load or reassociation.'.",
+    "- Every other check holds for the emitted text as written.",
+    "Factual corrections: phase 61 actually had 17 supported cases. 16 failed bit identity (every multi-row case, 1368 of 2447 rows) and only the single-row min-1x64 case matched. Finite, FP64-contract and guard checks passed everywhere, and timing was withheld. No instruction-level cause was measured. The candidate's rationale (keep the production loop shape that phase 60 preserved, change only the byte source) is an inference from these two outcomes, not a demonstrated mechanism."
+  ],
+  "requiredPatches": [
+    {
+      "file": "Sources/LeviathanCore/Q4RegisterLoop.swift",
+      "old": "            \"// extracted inside the inner loop. No threadgroup memory, barrier, SIMD, vector load or reassociation.\",\n",
+      "new": "            \"// extracted inside the inner loop. No on-chip shared staging, synchronization, vector load or reassociation.\",\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/Q4RegisterLoop.swift",
+      "old": "// Diagnosis carried forward: phase 61 (fully unrolled 36-byte pair body, constant x indices) was in FP64 contract\n// but not bit-identical on 17 of 17 multi-row cases, while phase 60 (production block loop + inner l loop with a\n// different byte SOURCE) was bit-identical everywhere. This candidate therefore keeps the compiler-visible production\n",
+      "new": "// Evidence carried forward (no instruction-level cause was measured): phase 61 (fully unrolled 36-byte pair body,\n// constant x indices) stayed finite, in FP64 contract and guard-intact on all 17 supported cases but failed Float\n// bit identity on 16 of them (every multi-row case; 1368 of 2447 rows; only the single-row min-1x64 case matched),\n// so its timing was withheld; phase 60 (production block loop + inner l loop with a different byte SOURCE) was\n// bit-identical everywhere. This candidate therefore keeps the compiler-visible production\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/Q4RegisterLoop.swift",
+      "old": "        \"q4-packed-word-register-decode-component-v1: FP64 in contract, correctness-rejected (Float bits differ on 17 of 17 multi-row cases)\",\n",
+      "new": "        \"q4-packed-word-register-decode-component-v1: finite, FP64 in contract and guards intact, correctness-rejected (Float bits differ on 16 of 17 supported cases, 1368 of 2447 rows; timing withheld)\",\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/Q4RegisterLoop.swift",
+      "old": "            + \"unrolled the pair body and lost bit identity on every multi-row case. Compiled bits remain empirical.\",\n",
+      "new": "            + \"unrolled the pair body and lost bit identity on every multi-row case (16 of 17 supported cases, 1368 of \"\n            + \"2447 rows). No instruction-level cause was measured; compiled bits remain empirical.\",\n"
+    }
+  ],
+  "conditionalCompilePatches": [],
+  "limitations": [
+    "Not compiled or run by the reviewer. Expected pure-test lines after the patches:",
+    "- q4-register-loop-pure-tests: passed 22, failed 0.",
+    "- q4-packed-word-pure-tests: passed 29, failed 0.",
+    "- q4-weight-stage-pure-tests: passed 40, failed 0.",
+    "Any other actual result is the result.",
+    "Bit identity is empirical: identical loop shape and expression text under options nil (fast math on for both arms) does not pin contraction, scheduling or unrolling. Changing the byte source from device uchar loads to a register word select may still alter the compiled float sequence. Any mismatching row rejects the candidate, with no tolerance, reseed or retune.",
+    "The rationale (the phase-60 loop shape preserved bits; the phase-61 unrolled body did not) is inferential. No instruction-level cause was measured for phase 61, and none is measured here.",
+    "Each block issues 5 word loads, and pw[4] is loaded by both blocks of a pair. Whether this costs fewer ticks than the control's 18 byte loads per block is measured only as single-kernel raw stage ticks with per-order ratios over 3 pairs each. That implies no busy time, bandwidth attribution or full-model gain.",
+    "The compiler may lower the in-loop word select through dynamic register indexing or unroll it. The component controls neither and reports only outputs and ticks.",
+    "Shape coverage: odd block counts and misaligned offsets are declined through the phase-61 pair contract. Expert 3-D families are not sampled.",
+    "Exit code 2 covers both a candidate compile failure and missing counter support. Read compileError and hardware in the report.",
+    "Phases 60 and 61 remain closed with their recorded results and are not rerun."
+  ]
+}

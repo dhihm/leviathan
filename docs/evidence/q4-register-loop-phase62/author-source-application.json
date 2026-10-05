@@ -1,0 +1,22 @@
+[
+  {
+    "file": "Package.swift",
+    "beforeSHA256": "aa7cb0d71d5c29517a67705b41277a70ca5595f9fe27b9ca801ae2e96b8e1a78",
+    "afterSHA256": "8ed1856ec6d4bb38d21c2f1fe40ed66771bc613534d748e0197e461dcb838eeb"
+  },
+  {
+    "file": "Sources/LeviathanCore/Q4RegisterLoop.swift",
+    "beforeSHA256": null,
+    "afterSHA256": "f63abf43dc44ef0487ea924ec432b304f4af57655fc5e8a6ac8a2100313c8ecc"
+  },
+  {
+    "file": "tools/q4_register_loop_component/main.swift",
+    "beforeSHA256": null,
+    "afterSHA256": "422d41a40bfba20b6b141cd9dcd2de0c2df3cedb433e31f1b19c36b2ed8443d2"
+  },
+  {
+    "file": "tools/q4_register_loop_pure_tests/main.swift",
+    "beforeSHA256": null,
+    "afterSHA256": "07463102afb05b4bf8254b54e2ecfe49ee5657c0856b163c65d352708159140f"
+  }
+]

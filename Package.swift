@@ -120,6 +120,16 @@ let package = Package(
             path: "tools/q4_packed_word_pure_tests"
         ),
         .executableTarget(
+            name: "q4-register-loop-component",
+            dependencies: ["LeviathanCore"],
+            path: "tools/q4_register_loop_component"
+        ),
+        .executableTarget(
+            name: "q4-register-loop-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/q4_register_loop_pure_tests"
+        ),
+        .executableTarget(
             name: "leviathan-forge-helper",
             dependencies: ["LeviathanCore"],
             path: "Sources/leviathan-forge-helper"

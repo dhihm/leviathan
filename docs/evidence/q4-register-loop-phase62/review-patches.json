@@ -1,0 +1,8 @@
+[
+  {
+    "file": "Sources/LeviathanCore/Q4RegisterLoop.swift",
+    "beforeSHA256": "f63abf43dc44ef0487ea924ec432b304f4af57655fc5e8a6ac8a2100313c8ecc",
+    "afterSHA256": "e9fe6e7b97a728d1b6158b7c80d04a53374cb31c9d215d14117e217621046c5f",
+    "requiredPatches": 4
+  }
+]
