@@ -1,0 +1,178 @@
+{
+  "benchmark": {
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/router-route-replay",
+      "--gguf",
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+      "--region",
+      "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+      "--graph",
+      "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+      "--fixtures",
+      "/tmp/leviathan-forge2-tooling/phase50-simd-model-integration/model-gate-fixtures.json",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase56-all-three-real-router-replay-run/replay-report.json"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "child": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 57575,
+      "ppid": 57573,
+      "start_tvsec": 1791192280,
+      "start_tvusec": 736054,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 57575,
+        "ppid": 57573,
+        "start_tvsec": 1791192280,
+        "start_tvusec": 736054,
+        "uid": 501
+      },
+      "pid": 57575,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 57575,
+    "spawnedUTC": "2026-10-05T09:24:40.737722Z"
+  },
+  "cleanupResult": {
+    "lockReleaseEligible": true,
+    "lockReleaseError": null,
+    "lockReleased": true
+  },
+  "createdUTC": "2026-10-05T09:24:40.735054Z",
+  "kind": "owned_benchmark_supervisor_state",
+  "launchUUID": "8244fcd1-df92-4299-8314-85b4c1c3b2b0",
+  "markers": {
+    "endObservedUTC": "2026-10-05T09:27:37.632527Z",
+    "goSentUTC": "2026-10-05T09:24:40.822664Z",
+    "readyObservedUTC": "2026-10-05T09:24:40.806533Z"
+  },
+  "outputDir": "/tmp/leviathan-forge2-tooling/phase56-all-three-real-router-replay-run",
+  "phase": "finished",
+  "phaseHistory": [
+    {
+      "phase": "created",
+      "utc": "2026-10-05T09:24:40.735068Z"
+    },
+    {
+      "phase": "spawning_wrapper",
+      "utc": "2026-10-05T09:24:40.735460Z"
+    },
+    {
+      "phase": "wrapper_spawned",
+      "utc": "2026-10-05T09:24:40.737750Z"
+    },
+    {
+      "phase": "identity_recorded",
+      "utc": "2026-10-05T09:24:40.738388Z"
+    },
+    {
+      "phase": "start_released",
+      "utc": "2026-10-05T09:24:40.738816Z"
+    },
+    {
+      "phase": "ready_observed",
+      "utc": "2026-10-05T09:24:40.806718Z"
+    },
+    {
+      "phase": "pre_go_snapshot",
+      "utc": "2026-10-05T09:24:40.807310Z"
+    },
+    {
+      "phase": "sending_go",
+      "utc": "2026-10-05T09:24:40.821989Z"
+    },
+    {
+      "phase": "timed_window",
+      "utc": "2026-10-05T09:24:40.822671Z"
+    },
+    {
+      "phase": "window_ended",
+      "utc": "2026-10-05T09:27:37.632578Z"
+    },
+    {
+      "phase": "post_window",
+      "utc": "2026-10-05T09:27:37.671171Z"
+    },
+    {
+      "phase": "stdout_closed",
+      "utc": "2026-10-05T09:27:37.766796Z"
+    },
+    {
+      "phase": "child_exited",
+      "utc": "2026-10-05T09:27:37.767430Z"
+    },
+    {
+      "phase": "finished",
+      "utc": "2026-10-05T09:27:37.769244Z"
+    }
+  ],
+  "phaseUTC": "2026-10-05T09:27:37.769244Z",
+  "progress": {
+    "lastLine": "report /tmp/leviathan-forge2-tooling/phase56-all-three-real-router-replay-run/replay-report.json written: status replayExact; diagnostic only, gainQualified false, not installable, realE4GateComplete false",
+    "lastLineUTC": "2026-10-05T09:27:37.671979Z",
+    "lineCount": 9,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "quietReadyFile": null,
+  "quietRequestFile": null,
+  "receiptWritten": true,
+  "schemaVersion": 1,
+  "supervisor": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 57573,
+      "ppid": 65294,
+      "start_tvsec": 1791192280,
+      "start_tvusec": 620752,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 57573,
+        "ppid": 65294,
+        "start_tvsec": 1791192280,
+        "start_tvusec": 620752,
+        "uid": 501
+      },
+      "pid": 57573,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 57573,
+    "uid": 501
+  },
+  "timeoutSeconds": 1200.0,
+  "wrapperArgv": [
+    "/opt/anaconda3/bin/python3",
+    "-I",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/tools/owned_benchmark_supervisor.py",
+    "_exec-wrapper",
+    "--",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/router-route-replay",
+    "--gguf",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "--region",
+    "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+    "--graph",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "--fixtures",
+    "/tmp/leviathan-forge2-tooling/phase50-simd-model-integration/model-gate-fixtures.json",
+    "--report",
+    "/tmp/leviathan-forge2-tooling/phase56-all-three-real-router-replay-run/replay-report.json"
+  ]
+}

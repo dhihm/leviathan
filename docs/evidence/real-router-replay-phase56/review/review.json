@@ -1,0 +1,62 @@
+{
+  "verdict": "ACCEPT for build and pure-test execution, then the single approved GPU/model run. No blocking defect was found in the supplied stage-2 text. No numeric gate, count, seed or exclusion is changed, no default path changes beyond one optional nil check and one Bool read, and every failure path restores and fails closed. Three identifier dependencies on code not shown in the patch anchors must be confirmed by the ordinary build before the run (listed under requiredFixes as verification items, not source changes). No patches are issued.",
+  "findings": [
+    {
+      "area": "default path",
+      "result": "PASS",
+      "detail": "GemmaForge patch 1 adds one optional load (routeCaptureSlot.active) after the unchanged math and after breakdownRouterSelectionEnd; patch 2 adds one Bool read in routerOverlapPreflight. No clocks, syscalls, copies, kernels, command buffers or counters are added when inactive. Gemma4.swift adds a default-inactive let slot. The emitted MSL and its digest are unchanged; the private->internal change on device/queue/selectPipeline/used is module-internal only, no public API or ABI change, and runSelector still enforces single use."
+    },
+    {
+      "area": "scope and refusals",
+      "result": "PASS with a narrowness note",
+      "detail": "withRouteCapture refuses shape mismatch, an active overlap scope, breakdown/timeline instrumentation and probes; the slot refuses nesting and clears on every return and throw (defer). Preflight refuses prepared == nil and overlap-prepared executions while the slot is active, so unprepared and ON-binding runs cannot execute inside the capture. Not refused by the slot itself: a control preparation of a non-modern candidate and the direct Gemma4Runner.forward path. In this tool both are excluded by construction (modernCandidate only, executeGraph only) and would be caught by the exact counters, derived-equality check and the strict frame-sequence check (count and layer/position order). Treat the author note 'refuses raw' as 'refuses unprepared and overlap-prepared'; tighten in a later patch if other callers appear."
+    },
+    {
+      "area": "restore on errors",
+      "result": "PASS",
+      "detail": "A rejected frame throws inside router_topk after the segment was flushed for the readback; greedy records the error, the slot's defer clears, captureFixture calls reset. captureAll's defer uninstalls and resets on throw; run() repeats uninstall/reset, recomputes pristine/instrumentation/axis/slot state into restoredPristine, and finalStatus returns runnerNotRestored (exit 1) before any replay classification. The replay never touches the runner except read-only access to scales, tensor refs and the resident buffer length; main withholds END if the runner is not quiescent."
+    },
+    {
+      "area": "capture correctness vs incumbent",
+      "result": "PASS",
+      "detail": "Quotient bits use Float(probs[i] / probSum) (Double division then Float rounding), the same expression as the anchored incumbent coefficient line; coefficient bits are the actual weights; GU/DN offsets come from the same installed.binding.offsets(forLayer:expertIds:) call the consumer uses, with no lowering or expert cache leading to an empty offset vector that is rejected. Per fixture the captured run must equal the plain run at every logit bit, match the 32 frozen IDs with the previous-argmax continuation, be within the 1e-4 vector and strict per-element bounds of a fresh direct reference, have exact derived counters with every fallback 0, and equal kernel and command-buffer totals (extraBuffersPerForward 0). Frames must be exactly forwards x 30 in layer/position order."
+    },
+    {
+      "area": "GPU replay classification",
+      "result": "PASS",
+      "detail": "Every frame is replayed (no sampling, no exclusion). Per frame: selector flags must be 0 (any flag is REFUSED and the stage ends replayRefused, exit 3); ids, quotient bits and coefficient bits must equal the captured incumbent bits (not the mirror); selector GU/DN offsets must equal the captured actual offsets; host cross-checks require captured offsets == validated real table and public cpuReference == captured decision, which also validates that runner.expertScales is the same scale source the executor used. Record magic/layer/padding and canary guards are checked. finalStatus requires exactFrames == frames.count == expectedTotalFrames and all mismatch counters 0."
+    },
+    {
+      "area": "weights, scales, privacy",
+      "result": "PASS",
+      "detail": "The real selector pass writes offsets and dereferences nothing; the consumer pass uses synthetic payloads. Scales are an in-process [[Float]] handed to private GPU staging; never serialized, hashed or reported. RouterRouteFrame is not Codable; frameDigest excludes coefficient bits (tested); report frame records carry ids, quotient bits, flags and verdict only (tested). Model SHA-256 comes from the cache record; nothing rehashes the model."
+    },
+    {
+      "area": "protocol and report",
+      "result": "PASS",
+      "detail": "Tokens are the gate constants; GO is exact-match only, EOF refused; model mapping, runner and every Metal device/component are created after GO. END is printed only when the runner is quiescent and replayTerminal holds; a per-chunk 10 s unobserved completion yields NOT_ENDED, exit 5, no END. Report path is rejected if it exists, written withoutOverwriting, bounded at 16 MiB and never trimmed (over-bound means not written, exit 1). Contract fields are re-asserted false on every encode, including decoded tampered reports (tested)."
+    },
+    {
+      "area": "pure tests",
+      "result": "PASS, 64 checks",
+      "detail": "Check count by function: slot 5, shape/frames 26 (5 shape rejections + 2 accept + 16 malformed + 3 capacity/reset/reuse), incumbent expression 1, sequence 8, chunks/digest 9, report 5, status 10. Expected final line: passed 64 failed 0. Arithmetic verified: forwards 21+31=52, 23+31=54, 2+31=33, sum 139, 139x30=4170; chunks 4x1024+74=4170; byte-aligned table proof 128+128=256; status transitions match finalStatus ordering (notEnded before runnerNotRestored before aborted before captureFailed before gpuError before replayRefused before replayMismatch). Minor: checkIncumbentExpression compares two copies of the same expression, so it is a regression lock, not independent evidence; the model-run CPU_REFERENCE cross-check supplies the real evidence."
+    },
+    {
+      "area": "non-blocking observations",
+      "result": "NOTE",
+      "detail": "Ten emitted-library compilations occur (two components per chunk, five chunks); harmless but slow. A component construction throw before commit is classified NOT_COMMITTED and mapped to gpuError (exit 4); acceptable but slightly mislabeled. The real-fixture flag rate remains unmeasured; a RANGE decline from the all-128 range check on any of the 4170 frames correctly fails the stage and must be reported as refused, never reseeded or excluded."
+    }
+  ],
+  "requiredFixes": [
+    "None blocking. Before the GPU/model run, the ordinary build must succeed; the following names used by the new code are not visible in the supplied anchors and will fail loudly at compile time if wrong (safe failure, no runtime risk): (1) in GemmaForge router_topk the identifiers scores ([Float], 128 entries), position (sequence position starting at 0 after reset), probs ([Double]) and probSum (Double) at the patch anchor; (2) routerOverlapPreflight must be throwing, take runner and prepared, and be invoked on every executor entry including prepared == nil; (3) Gemma4Runner members moeGenerated, expertCache, residentWeightsBuffer, tensorRef(_:), expertScales ([[Float]] indexed layer then expert), routerOverlapScopeActive, layerProbe, moeInputProbe, q4LaunchWidth, and G4TensorRef fields type/.q4_0, experts, inDim, outDim, offset, end, and the binding.offsets result labels gu/dn ([Int]).",
+    "Run router-route-replay-pure-tests and require exactly passed 64 failed 0 before the model run.",
+    "For the model run, the only passing outcome is status replayExact with: capturedTotalFrames 4170 (1560/1620/990 per fixture), rejectedFrames 0 per fixture, chunks [1024,1024,1024,1024,74] all COMPLETED with guards intact, realOffsetsProven 7680, realOffsetAlignment 1, exactFrames 4170, refused/mismatched/offset/record/consumer/hostOffset/cpuReference counters all 0, restoredPristine true, END printed, exit 0. Any other outcome is a recorded failure of this stage, not a partial pass."
+  ],
+  "patches": [],
+  "limitations": [
+    "Text-only review of the supplied files and anchored patches; no build, test or GPU execution was performed by me, and identifiers outside the anchors are unverified (listed above).",
+    "The synthetic consumer pass proves record plumbing only; the real selector pass writes offsets without dereferencing; the E4R32 GU/DN kernels and g4_axpy are not fed GPU-written records, so realE4GateComplete, gainQualified, installable and productionPerformanceClaim remain false and nothing here is a performance or gain result.",
+    "Exactness, if achieved, covers the 4170 captured frames of the three pinned fixtures only; it is not an equivalence theorem, and the 2^-42 boundary budget remains an estimate.",
+    "Command-buffer intervals reported as gpuMicros are not busy time; the measured wait residual is not a gain bound."
+  ]
+}

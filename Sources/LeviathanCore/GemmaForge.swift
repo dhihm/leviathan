@@ -1005,6 +1005,10 @@ public enum GemmaForge {
                                                prepared: GemmaPreparedExecution?,
                                                candidate: GemmaForgeCandidate) throws
             -> RouterOverlapPreparedBinding? {
+        if runner.routeCaptureSlot.isActive, prepared == nil || prepared?.routerOverlap != nil {
+            throw GemmaForgeError.executionFailed(
+                "route capture: only a control prepared execution may run inside the capture scope")
+        }
         guard let binding = prepared?.routerOverlap else {
             try runner.routerOverlapRefuseInScope("raw, non-prepared or control execution")
             return nil
@@ -1368,6 +1372,13 @@ public enum GemmaForge {
                 let weights = topIdx.map { Float(probs[$0] / probSum) * scales[$0] }
                 routerState[layer] = (topIdx, weights)
                 runner.breakdownRouterSelectionEnd(routerSelectionT0)
+                // Default-off diagnostic route capture (phase 56): records the unchanged decision
+                // above; inactive outside Gemma4Runner.withRouteCapture.
+                if let routeCapture = runner.routeCaptureSlot.active {
+                    try runner.routeCaptureRecord(routeCapture, layer: layer, position: position,
+                                                  scores: scores, probs: probs, probSum: probSum,
+                                                  topIdx: topIdx, weights: weights)
+                }
             case "expert_matvec_chain":
                 guard let layer = inst.layer, layer >= 0,
                       layer < config.layerCount,

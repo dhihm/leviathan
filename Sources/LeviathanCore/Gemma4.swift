@@ -697,6 +697,9 @@ public final class Gemma4Runner {
     /// retained with its dedicated event, routerIn buffer and ticket ledger.
     /// While no ticket is pending, every helper below runs its unchanged body.
     internal var routerOverlapState: RouterOverlapRuntimeState? = nil
+    /// Default-off phase-56 route capture slot (RouterRouteReplay.swift): inactive unless
+    /// withRouteCapture is running; the SSA router_topk case only checks this one optional.
+    internal let routeCaptureSlot = RouterRouteCaptureSlot()
     /// Diagnostic sum of async router overlap ticket command-buffer intervals
     /// (gpuEndTime - gpuStartTime, microseconds) for successfully completed
     /// tickets. NOT busy time and NOT utilization: an interval may include

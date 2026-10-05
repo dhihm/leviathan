@@ -1,0 +1,12 @@
+family allEqual cases 5 flagged 0 mismatches 0
+family dominant cases 64 flagged 0 mismatches 0
+family rangeEdge cases 2 flagged 0 mismatches 0
+family rangeSweep cases 128 flagged 0 mismatches 0
+family ties cases 96 flagged 0 mismatches 0
+family uniform cases 256 flagged 0 mismatches 0
+family unselectedBadScale cases 4 flagged 0 mismatches 0
+family wideRange cases 96 flagged 0 mismatches 0
+error sample: coefficients 5208 max relative 1.2596530774726912e-14 log2 -46.1739668743213 budget/4 5.684341886080802e-14 provesUniversalBound false
+round-boundary score bits 0xbe88c178
+near-tie: CPU FP64 order starts with expert 0, Float d order starts with expert 1 (exp collapse observed)
+router-selection-pure-tests passed 126 failed 0

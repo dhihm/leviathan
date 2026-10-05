@@ -762,11 +762,11 @@ public final class RouterSelectionGPUComponent {
     public let source: String
     public let sourceSHA256: String
     public let hardware: RouterSelectionHardware
-    private let device: any MTLDevice
-    private let queue: any MTLCommandQueue
-    private let selectPipeline: any MTLComputePipelineState
+    let device: any MTLDevice
+    let queue: any MTLCommandQueue
+    let selectPipeline: any MTLComputePipelineState
     private let consumePipeline: any MTLComputePipelineState
-    private var used = false
+    var used = false
 
     public init(ir: RouterSelectionIR) throws {
         try ir.validate()

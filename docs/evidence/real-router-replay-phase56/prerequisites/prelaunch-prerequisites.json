@@ -1,0 +1,16 @@
+{
+  "releaseBuildExit": 0,
+  "purePassed": 64,
+  "pureFailed": 0,
+  "defaultRegressionPassed": 2056,
+  "defaultRegressionFailed": 0,
+  "EOFExit": 1,
+  "EOFReadyObserved": true,
+  "noGOModelMapped": false,
+  "independentReview": "ACCEPT",
+  "prerequisitesMetUtc": "2026-10-05T09:24:40.664816+00:00",
+  "executableSHA256": "0dc1fb4f0194978b4ce8e25ff336caa1b3a808c892b65fe20a8c2ea657bb9271",
+  "sourceSHA256": "7ca6d2a564351730551c9567f4b641df3ac2e1fe37c9d441074c027a09cb44ec",
+  "weightsRehashed": false,
+  "modelsDownloaded": false
+}

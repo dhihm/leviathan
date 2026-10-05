@@ -50,6 +50,16 @@ let package = Package(
             path: "tools/router_selection_component"
         ),
         .executableTarget(
+            name: "router-route-replay",
+            dependencies: ["LeviathanCore"],
+            path: "tools/router_route_replay"
+        ),
+        .executableTarget(
+            name: "router-route-replay-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/router_route_replay_pure_tests"
+        ),
+        .executableTarget(
             name: "leviathan-forge-helper",
             dependencies: ["LeviathanCore"],
             path: "Sources/leviathan-forge-helper"

@@ -1,0 +1,173 @@
+ok   signals are monotonic from the retained counter: 1, 2
+ok   signal encoded before each single commit: ["signal:1", "commit:R", "signal:2", "commit:S"]
+ok   each ticket committed exactly once
+ok   two pending, router writes pending
+ok   waitR drains through R only
+ok   S stays pending after waitR
+ok   router readable state after R
+ok   repeat wait drains nothing
+ok   repeat wait does not double-sum
+ok   drain-all accounts S once
+ok   successful drains never poison
+ok   all drained, none pending
+ok   each ticket waited exactly once
+ok   no unblock without a failure
+ok   ledger counters consistent after ordered drains
+ok   failed ticket reported: router ticket 1: fake failure R1
+ok   failure drains every committed ticket
+ok   unblock through the highest committed signal, re-raised after the last wait
+ok   commit-order waits with unblock before later waits and after the last: ["wait:R1", "unblock:3", "wait:S1", "wait:R2", "unblock:3"]
+ok   failed ticket interval is never accounted
+ok   failure counted once
+ok   ledger counters consistent after failure
+ok   read before completion rejects: router ticket 1 has not completed successfully
+ok   read after successful R accepted
+ok   foreign buffer rejects: foreign buffer: only the router score buffer is readable here
+ok   other router signal rejects: router ticket 2 has not completed successfully
+ok   count beyond buffer rejects: score read exceeds the router buffer
+ok   zero count rejects: score count must be positive
+ok   byte overflow rejects: score read exceeds the router buffer
+ok   failed router ticket is never readable: router ticket 1 has not completed successfully
+ok   last representable signal commits
+     -> router overlap runtime rejected: event signal sequence exhausted at 18446744073709551615; nothing committed
+ok   overflow fails before commit
+ok   overflow fails before signal encode
+ok   counter never wraps or resets
+ok   ledger consistent after overflow refusal
+ok   double commit of one pending handle rejected
+ok   entry: qualified snapshot accepted
+ok   entry: default Q4 width accepted
+ok   entry: open encoder rejected: a deferred encoder is open
+ok   entry: pending ticket rejected: 1 tickets still pending
+ok   entry: expert cache rejected: expert-cache (SSD) mode is not supported
+ok   entry: no resident mapping rejected: resident weight mapping missing
+ok   entry: no MoE lowering rejected: installed routed lowering must be v1 E4_R32
+ok   entry: MoE E8 rejected: installed routed lowering must be v1 E4_R32
+ok   entry: MoE R64 rejected: installed routed lowering must be v1 E4_R32
+ok   entry: install identity rejected: installed lowering identity not verified
+ok   entry: Q4 width 64 rejected: Q4 launch width 64 is not the standard 32
+ok   entry: generated RMS rejected: generated RMS kernel would pre-empt statistics reuse
+ok   entry: axis flags rejected: runner axis flags are not at their defaults
+ok   entry: layerProbe rejected: layerProbe must be nil
+ok   entry: moeInputProbe rejected: moeInputProbe must be nil
+ok   entry: traceLayers rejected: traceLayers must be off
+ok   entry: breakdown rejected: breakdown instrumentation must be off
+ok   entry: timeline rejected: command timeline must be off
+ok   entry: attention diagnostic rejected: attention diagnostic must not be installed
+ok   token: qualified snapshot accepted
+ok   token: default Q4 width accepted
+ok   token: open encoder rejected: a deferred encoder is open
+ok   token: pending ticket rejected: 1 tickets still pending
+ok   token: expert cache rejected: expert-cache (SSD) mode is not supported
+ok   token: no resident mapping rejected: resident weight mapping missing
+ok   token: no MoE lowering rejected: installed routed lowering must be v1 E4_R32
+ok   token: MoE E8 rejected: installed routed lowering must be v1 E4_R32
+ok   token: MoE R64 rejected: installed routed lowering must be v1 E4_R32
+ok   token: install identity rejected: installed lowering identity not verified
+ok   token: Q4 width 64 rejected: Q4 launch width 64 is not the standard 32
+ok   token: generated RMS rejected: generated RMS kernel would pre-empt statistics reuse
+ok   token: axis flags rejected: runner axis flags are not at their defaults
+ok   token: layerProbe rejected: layerProbe must be nil
+ok   token: moeInputProbe rejected: moeInputProbe must be nil
+ok   token: traceLayers rejected: traceLayers must be off
+ok   token: breakdown rejected: breakdown instrumentation must be off
+ok   token: timeline rejected: command timeline must be off
+ok   token: attention diagnostic rejected: attention diagnostic must not be installed
+ok   entry: nesting rejected: nested router overlap scope refused
+ok   token: inactive scope rejected: no active router overlap scope
+ok   token: missing event rejected: dedicated event/routerIn not allocated
+ok   legal candidate set unchanged (32 unique)
+ok   every legal candidate still validates
+ok   exactly the five router-residency candidates are overlap-eligible
+ok   every allowed launch divisor is eligible
+ok   full modern v1 candidate accepted
+ok   candidate top5 diagnostic rejected: candidate is not in the legal set
+ok   candidate no segment batching rejected: candidate is not in the legal set
+ok   candidate tiled Q6 rejected: candidate is not in the legal set
+ok   candidate divisor 3 rejected: candidate is not in the legal set
+ok   candidate no router residency rejected: candidate is not the full modern v1 flag set
+ok   qualified binding accepted
+ok   binding analysis version rejected: plan analysis 2 != 1
+ok   binding plan digest rejected: plan digest does not verify
+ok   binding canonical schedule rejected: plan schedule is not the prepared SSA
+ok   binding schedule digest rejected: plan schedule digest mismatch
+ok   binding statistics digest rejected: statistics plan digest mismatch
+ok   binding statistics analysis rejected: statistics analysis version mismatch
+ok   binding plan epsilon rejected: epsilon bits differ between plan, statistics and runner
+ok   binding statistics epsilon rejected: epsilon bits differ between plan, statistics and runner
+ok   binding runner epsilon rejected: epsilon bits differ between plan, statistics and runner
+ok   binding config rejected: graph config mismatch
+ok   binding window count rejected: window count 29 != layer count 30
+ok   binding layer count rejected: window count 30 != layer count 31
+ok   binding permutation length rejected: permutation length 933 != 934
+ok   binding remapped count rejected: remapped value set is not exactly two values per window
+ok   binding remapped duplicates rejected: remapped value set is not exactly two values per window
+ok   binding remapped vs windows rejected: remapped value set is not exactly two values per window
+ok   binding control index rejected: control replay rejection index is not the first shared gate
+ok   binding statistics groups rejected: statistics shape is not one group and two reuses per window
+ok   binding statistics reuses rejected: statistics shape is not one group and two reuses per window
+ok   steps at i8 (R), i5 (S), i9 (await)
+ok   only six planned steps
+ok   canonical order is not the overlap order: router overlap runtime rejected: steps: layer 0 order is not i0, i6, i7, i8, i1..i5, i9, i10, i11
+ok   duplicate layer rejected: router overlap runtime rejected: steps: duplicate layer 0
+ok   non-contiguous window rejected: router overlap runtime rejected: steps: layer 0 window is not 12 contiguous in-range indices
+ok   out-of-range window rejected: router overlap runtime rejected: steps: layer 0 window is not 12 contiguous in-range indices
+ok   non-permutation rejected: router overlap runtime rejected: steps: order is not a permutation of 30 instructions
+ok   permuted position outside windows rejected: router overlap runtime rejected: steps: position 0 outside every window is permuted
+ok   overlapping windows rejected: router overlap runtime rejected: steps: windows overlap at 10
+ok   distinct buffers accepted
+ok   same object rejected: routerIn is the same object as h
+ok   overlapping range rejected: routerIn overlaps h
+ok   adjacent range accepted
+ok   wrapping range rejected: h address range is invalid
+ok   undersized routerIn rejected: routerIn holds 11264 bytes, needs 11268
+ok   one qualified token accepted (deltas over a nonzero baseline)
+ok   token applied 29 rejected: applied windows: 29 != 30
+ok   token async 119 rejected: async commits: 59 != 60
+ok   token drained 119 rejected: drained tickets: 59 != 60
+ok   token failed drain rejected: failed drains: 1 != 0
+ok   token pending left rejected: pending tickets at token end: 1 != 0
+ok   token statistics compute rejected: statistics computes: 31 != 30
+ok   token statistics reuse rejected: statistics reuses: 59 != 60
+ok   token statistics fallback rejected: statistics fallbacks: 1 != 0
+ok   token router scale fallback rejected: router scale fallbacks: 1 != 0
+ok   token resident zero fallback rejected: resident zero fallbacks: 1 != 0
+ok   token router launch fallback rejected: router launch fallbacks: 1 != 0
+ok   token MoE fallback rejected: MoE resident fallbacks: 1 != 0
+ok   zero windows rejected: window count invalid
+ok   not poisoned before any drain
+ok   failed ticket poisons the ledger
+ok   every already committed ticket drained before reuse
+ok   unblock before later waits and after the last: [2, 2]
+     -> router overlap runtime rejected: ledger poisoned by a failed ticket (router ticket 1: fake failure R); nothing committed
+ok   poisoned ledger refuses commit before encode
+ok   refusal leaves the counter unchanged
+ok   cleanup drain still works while poisoned; poison persists
+ok   no extra unblock without a new failure
+ok   poisoned ledger counters consistent
+ok   no state allocates: allocate
+ok   no state allocates regardless of the poison flag: allocate
+ok   clean drained state is reused: reuse
+ok   poisoned drained state is reallocated (old event not reused): reallocate
+ok   pending tickets refuse entry: refuse
+ok   poisoned with pending tickets refuses entry: refuse
+ok   diagnostic preparation outside the scope refused: a diagnostic preparation executes only inside the router overlap scope
+ok   diagnostic execution refused while poisoned (scope stays active): router overlap scope is poisoned by a failed ticket; no further overlap execution
+ok   diagnostic execution accepted in a clean active scope
+ok   direct forward refused in an active scope: direct forward refused inside the router overlap diagnostic scope
+ok   direct forward refused in a poisoned active scope: direct forward refused inside the router overlap diagnostic scope (scope poisoned)
+ok   direct forward allowed outside the scope
+ok   direct forward allowed outside the scope with a retained poisoned state
+ok   engineIdentity refused in an active scope: engineIdentity refused inside the router overlap diagnostic scope
+ok   engineIdentity refused in a poisoned active scope: engineIdentity refused inside the router overlap diagnostic scope (scope poisoned)
+ok   engineIdentity allowed outside the scope
+ok   engineIdentity allowed outside the scope with a retained poisoned state
+ok   forge refused in an active scope: forge refused inside the router overlap diagnostic scope
+ok   forge refused in a poisoned active scope: forge refused inside the router overlap diagnostic scope (scope poisoned)
+ok   forge allowed outside the scope
+ok   forge allowed outside the scope with a retained poisoned state
+ok   raw, non-prepared or control execution refused in an active scope: raw, non-prepared or control execution refused inside the router overlap diagnostic scope
+ok   raw, non-prepared or control execution refused in a poisoned active scope: raw, non-prepared or control execution refused inside the router overlap diagnostic scope (scope poisoned)
+ok   raw, non-prepared or control execution allowed outside the scope
+ok   raw, non-prepared or control execution allowed outside the scope with a retained poisoned state
+router overlap runtime pure tests: 170 passed, 0 failed

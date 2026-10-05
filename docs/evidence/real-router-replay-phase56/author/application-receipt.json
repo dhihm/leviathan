@@ -1,0 +1,37 @@
+[
+  {
+    "file": "Package.swift",
+    "before": "e13825b57cc13236c33fe0b15b9a943187c5af23ea6a2f23882847e08e9a93fe",
+    "after": "5f0785dc3283c3e4750bf9ca823b8017e7d385b192dc62c8a2a68133f229c875"
+  },
+  {
+    "file": "Sources/LeviathanCore/Gemma4.swift",
+    "before": "2e1fa49aee5b7309e45e783947fae9daa14bbf5802ca3f47bb41cd0ae82d7fac",
+    "after": "508fd263e16f8cf24c6e139822a5d9948a7eac32187a7fea7c4cd423a12e4669"
+  },
+  {
+    "file": "Sources/LeviathanCore/GemmaForge.swift",
+    "before": "ab66746e3705167972adc19832a4137eff801ea0044f1b2556e540983488919f",
+    "after": "3008812896c39f5f5f3565ec27a3514da1bb4216dca0290ab9fbb5b6cba9f808"
+  },
+  {
+    "file": "Sources/LeviathanCore/RouterSelectionKernel.swift",
+    "before": "c3a9cdd6b77a76db9012c798e3dd7b8fe11958a10acde7e0fd898878779c30d2",
+    "after": "e1acbbaea06fc2fc76bcf202f0be00e97eb49ce8551107c4c6d5002012b1f44a"
+  },
+  {
+    "file": "Sources/LeviathanCore/RouterRouteReplay.swift",
+    "before": null,
+    "after": "7ca6d2a564351730551c9567f4b641df3ac2e1fe37c9d441074c027a09cb44ec"
+  },
+  {
+    "file": "tools/router_route_replay/main.swift",
+    "before": null,
+    "after": "3748836cce47c83523845dfbb774817e72daa09c354bc9f296f9918a7ddc9cad"
+  },
+  {
+    "file": "tools/router_route_replay_pure_tests/main.swift",
+    "before": null,
+    "after": "b0f54ad86486cc0b5f537d895d65e3f53ca3d56514ca6acba03646e4536789a6"
+  }
+]
