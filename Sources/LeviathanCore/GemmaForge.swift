@@ -355,12 +355,23 @@ public struct GemmaPreparedExecution {
     /// hashes the executable or kernel source per token.
     let boundMoeArtifactDigest: String?
     let boundQ4LaunchWidth: Int?
+    /// Default-off router overlap diagnostic binding: nil for every normal
+    /// prepare; set only by prepareRouterOverlapDiagnostic. A control (nil)
+    /// and a diagnostic preparation of the same graph are separate objects
+    /// even when their SSA, statistics and install binding agree.
+    let routerOverlap: RouterOverlapPreparedBinding?
+
+    /// The validated router overlap plan of a diagnostic preparation (nil
+    /// for normal preparations).
+    public var routerOverlapPlan: RouterOverlapPlan? { routerOverlap?.plan }
 
     private init(ssa: GemmaSSAIR, runner: Gemma4Runner, graph: GemmaGraphIR,
                  configFingerprint: GemmaConfigFingerprint,
                  byID: [String: GemmaSSAIR.Value],
-                 statisticsPlan: RMSStatisticsPlan) {
+                 statisticsPlan: RMSStatisticsPlan,
+                 routerOverlap: RouterOverlapPreparedBinding? = nil) {
         self.ssa = ssa
+        self.routerOverlap = routerOverlap
         self.runner = runner
         self.boundGraph = graph
         self.configFingerprint = configFingerprint
@@ -386,6 +397,30 @@ public struct GemmaPreparedExecution {
             ssa: ssa, runner: runner, graph: graph,
             configFingerprint: GemmaConfigFingerprint(runner.config),
             byID: valueTable(ssa), statisticsPlan: statisticsPlan)
+    }
+
+    /// DIAGNOSTIC router overlap preparation: the ordinary `prepare`
+    /// (GGUF validation, canonical lowering, SSA dataflow, statistics plan)
+    /// followed by ONE pure RouterOverlapPlan analysis of that schedule and
+    /// a prepare-time binding check (plan version and digest, canonical
+    /// schedule equality and digest, statistics digest/version/epsilon,
+    /// config, window/permutation/remap shape). Works outside the scope;
+    /// executes only inside Gemma4Runner.withRouterOverlapDiagnosticScope.
+    /// Nothing here is persisted, serialized or production-selectable.
+    public static func prepareRouterOverlapDiagnostic(graph: GemmaGraphIR,
+                                                      runner: Gemma4Runner) throws
+            -> GemmaPreparedExecution {
+        let base = try prepare(graph: graph, runner: runner)
+        let plan = try RouterOverlapPlan.analyze(
+            graph: graph, ssa: base.ssa, statisticsPlan: base.statisticsPlan,
+            epsilon: runner.config.rmsNormEps)
+        let binding = try RouterOverlapPreparedBinding.make(
+            plan: plan, ssa: base.ssa, statisticsPlan: base.statisticsPlan,
+            config: graph.config, runnerEpsilon: runner.config.rmsNormEps)
+        return GemmaPreparedExecution(
+            ssa: base.ssa, runner: runner, graph: base.boundGraph,
+            configFingerprint: base.configFingerprint, byID: base.byID,
+            statisticsPlan: base.statisticsPlan, routerOverlap: binding)
     }
 
     /// Builds the id -> value dictionary for a schedule (shared by the
@@ -849,6 +884,8 @@ public enum GemmaForge {
         // Axis legality is enforced BEFORE any runner reset or GPU
         // work: an incompatible statistics candidate is rejected here.
         try validateCandidate(candidate)
+        let overlap = try routerOverlapPreflight(runner: runner, prepared: prepared,
+                                                 candidate: candidate)
         let gpuBefore = runner.gpuMicrosTotal
         let dispatchBefore = runner.dispatchCountTotal
         let buffersBefore = runner.submittedBuffers
@@ -865,7 +902,8 @@ public enum GemmaForge {
                 argmax = try executeToken(ssa, byID: byID, runner,
                                           token: token, position: pos,
                                           candidate: candidate,
-                                          statisticsPlan: statisticsPlan)
+                                          statisticsPlan: statisticsPlan,
+                                          overlap: overlap)
                 runner.advancePosition()
                 logits = try runner.read(runner.bufLogits, runner.config.vocabSize)
             }
@@ -929,6 +967,8 @@ public enum GemmaForge {
         // Axis legality is enforced BEFORE any GPU work: an
         // incompatible statistics candidate is rejected here.
         try validateCandidate(candidate)
+        let overlap = try routerOverlapPreflight(runner: runner, prepared: prepared,
+                                                 candidate: candidate)
         guard token >= 0, token < runner.config.vocabSize,
               runner.contextPosition() < runner.maxContext else {
             throw GemmaForgeError.executionFailed("token/position out of bounds")
@@ -941,7 +981,8 @@ public enum GemmaForge {
             let argmax = try executeToken(ssa, byID: byID, runner,
                                           token: token, position: position,
                                           candidate: candidate,
-                                          statisticsPlan: statisticsPlan)
+                                          statisticsPlan: statisticsPlan,
+                                          overlap: overlap)
             runner.advancePosition()
             let logits = try runner.read(runner.bufLogits, runner.config.vocabSize)
             return (argmax, logits, runner.gpuMicrosTotal - gpuBefore,
@@ -954,6 +995,25 @@ public enum GemmaForge {
         }
     }
 
+    /// Router overlap diagnostic gate, evaluated before any runner reset or
+    /// GPU work: a diagnostic preparation requires an active scope, the
+    /// full modern candidate and every scope/alias guard; inside an active
+    /// scope a raw, non-prepared or control (nil-plan) execution is refused.
+    private static func routerOverlapPreflight(runner: Gemma4Runner,
+                                               prepared: GemmaPreparedExecution?,
+                                               candidate: GemmaForgeCandidate) throws
+            -> RouterOverlapPreparedBinding? {
+        guard let binding = prepared?.routerOverlap else {
+            try runner.routerOverlapRefuseInScope("raw, non-prepared or control execution")
+            return nil
+        }
+        if let reason = RouterOverlapScope.candidateRejection(candidate) {
+            throw GemmaForgeError.executionFailed("router overlap candidate rejected: " + reason)
+        }
+        try runner.routerOverlapTokenPreflight(binding: binding)
+        return binding
+    }
+
     /// Executes one token from the SSA operands. The value table
     /// (`byID`) is supplied by the caller: either the immutable table
     /// retained by a GemmaPreparedExecution, or one built once per
@@ -963,7 +1023,8 @@ public enum GemmaForge {
                                      _ runner: Gemma4Runner,
                                      token: Int, position: Int,
                                      candidate: GemmaForgeCandidate,
-                                     statisticsPlan: RMSStatisticsPlan?) throws -> Int {
+                                     statisticsPlan: RMSStatisticsPlan?,
+                                     overlap: RouterOverlapPreparedBinding? = nil) throws -> Int {
         let config = runner.config
         // The schedule was lowered, validated, and turned into a value
         // table ONCE by the caller; the executor dispatches kernels from
@@ -973,6 +1034,12 @@ public enum GemmaForge {
         // input's buffer, and the final logits are read from the FINAL
         // ARTIFACT OUTPUT VALUE, not a fixed buffer.
         func vb(_ id: String) throws -> MTLBuffer {
+            // Router overlap: ONLY the plan-remapped router_norm /
+            // router_scale versions bind the dedicated routerIn buffer;
+            // every other value keeps the exact shared physical mapping.
+            if let overlap, overlap.remappedValueIDs.contains(id) {
+                return try runner.routerOverlapRouterIn()
+            }
             guard let value = byID[id], value.kind == .vector else {
                 throw GemmaForgeError.executionFailed(
                     "operand \(id) is not a buffer-resident vector value")
@@ -1037,7 +1104,8 @@ public enum GemmaForge {
         // token, before a reset, or across a failed run is NEVER reused.
         var readySlots = [Bool](repeating: false, count: statisticsPlan?.groupCount ?? 0)
 
-        for (index, inst) in ssa.instructions.enumerated() {
+        func run(_ index: Int) throws {
+            let inst = ssa.instructions[index]
             switch inst.op {
             case "embed_row":
                 guard inst.tensors.first == "token_embd.weight" else {
@@ -1166,6 +1234,10 @@ public enum GemmaForge {
                     // path); otherwise the ORIGINAL CPU element multiply
                     // runs unchanged.
                     if !(try runner.gpuRouterSecondScale(layer: layer, n: n, x: outBuf)) {
+                        if overlap != nil {
+                            throw GemmaForgeError.executionFailed(
+                                "router overlap: GPU router scale declined; no CPU fallback in scope")
+                        }
                         var routerIn = try runner.read(outBuf, n)
                         let scale = runner.routerScales[layer]
                         for i in 0..<n { routerIn[i] *= scale[i] }
@@ -1256,8 +1328,22 @@ public enum GemmaForge {
                       layer < config.layerCount else {
                     throw GemmaForgeError.executionFailed("router layer invalid")
                 }
-                try runner.flushOpenSegment()
-                let scores = try runner.read(try vb(inst.inputs[0]), config.expertCount)
+                let scores: [Float]
+                if let overlap {
+                    // Wait for the router ticket R only (commit order),
+                    // leaving S pending; copy the completed scores without
+                    // a flush. The CPU FP64 routing below is unchanged.
+                    guard case .awaitRouter(let planned) = overlap.step(at: index),
+                          planned == layer else {
+                        throw GemmaForgeError.executionFailed(
+                            "router overlap: router_topk at \(index) is not a planned await")
+                    }
+                    scores = try runner.routerOverlapRouterScores(
+                        buffer: try vb(inst.inputs[0]), count: config.expertCount)
+                } else {
+                    try runner.flushOpenSegment()
+                    scores = try runner.read(try vb(inst.inputs[0]), config.expertCount)
+                }
                 guard scores.allSatisfy({ $0.isFinite }) else {
                     throw GemmaForgeError.executionFailed("router scores nonfinite")
                 }
@@ -1377,6 +1463,20 @@ public enum GemmaForge {
                     "unsupported ssa op at execution: \(inst.op)")
             }
         }
+        // Router overlap (diagnostic preparations only): run the validated
+        // plan permutation with ticket commits after router_proj (R) and
+        // shared_post1 (S); otherwise the original order 0..<n.
+        let overlapBefore = overlap.map { _ in runner.routerOverlapCounterSnapshot() }
+        if let overlap {
+            for index in overlap.permutation {
+                try run(index)
+                try runner.routerOverlapAfterInstruction(overlap.step(at: index))
+            }
+        } else {
+            for index in ssa.instructions.indices {
+                try run(index)
+            }
+        }
         // Final logits come from the FINAL ARTIFACT OUTPUT VALUE.
         guard let finalInst = ssa.instructions.last,
               finalInst.op == "softcap",
@@ -1388,6 +1488,9 @@ public enum GemmaForge {
         let logits = try runner.read(try vb(finalInst.output), finalValue.length)
         guard logits.allSatisfy({ $0.isFinite }) else {
             throw GemmaForgeError.executionFailed("nonfinite logits")
+        }
+        if let overlap, let overlapBefore {
+            try runner.routerOverlapVerifyToken(binding: overlap, since: overlapBefore)
         }
         if candidate.top5Diagnostic {
             _ = logits.enumerated().sorted { $0.element > $1.element }.prefix(5)
@@ -1406,6 +1509,7 @@ public enum GemmaForge {
                              hardware: ForgeHardwareProfile) throws
             -> (plan: GemmaForgePlan, results: [GemmaForgeCandidateResult],
                 selected: GemmaForgeCandidate) {
+        try runner.routerOverlapRefuseInScope("forge")
         guard prompt.allSatisfy({ $0 >= 0 && $0 < runner.config.vocabSize }),
               !prompt.isEmpty,
               prompt.count + warmupTokens + timedTokens <= runner.maxContext,

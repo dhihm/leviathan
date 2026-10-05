@@ -1,0 +1,19 @@
+{
+  "authorModel": "claude-fable-5-1",
+  "origin": "review.txt exact Swift statements and exact report string; insertion/indentation mechanical",
+  "patches": [
+    {
+      "old": "        if simulated {\n            let simulatedReported",
+      "new": "        if simulated {\n            if unblockCalls != [sSignal, sSignal] {\n                fail(\"round \\(round): expected two unblock calls through \\(sSignal), got \\(unblockCalls)\")\n            }\n            let simulatedReported"
+    },
+    {
+      "old": "        } else {\n            if rOutcome.drained != 1",
+      "new": "        } else {\n            if !unblockCalls.isEmpty {\n                fail(\"round \\(round): unblock called during a non-failing round: \\(unblockCalls)\")\n            }\n            if rOutcome.drained != 1"
+    },
+    {
+      "old": "\"round \\(Self.simulatedRound): the router handle REPORTS failure from the host over a command that SUCCEEDED on the GPU; only ledger cleanup choreography (drain extension, single unblock) is exercised\"",
+      "new": "\"round \\(Self.simulatedRound): the router handle REPORTS failure from the host over a command that SUCCEEDED on the GPU; only ledger cleanup choreography (drain extension to S, poison, two unblock calls both through the highest committed signal) is exercised\""
+    }
+  ],
+  "sourceSha256": "30f4c8c3e5826203e12879519fdb9223951da6a029fd03c868e233dc8b7066f1"
+}

@@ -1,0 +1,21 @@
+**Verdict: ACCEPT.** Text review only. I have not run the tool and make no execution claims. Your reported state: both pure test suites pass, the native package build completed with exit 0, no GPU run yet.
+
+**The three patches are present and correct**
+
+- The simulated round asserts `unblockCalls == [sSignal, sSignal]`. Both calls come from the single failing drain, so the cumulative list is exactly two values. Placement before the other simulated checks is fine.
+- Each non-failing round asserts `unblockCalls` is empty. That makes the later event-equality check an explicit GPU-signal proof rather than an implied one.
+- The `simulated` report entry now names the drain extension to S, the poison, and the two unblock calls through the highest committed signal. It no longer says "single unblock".
+
+**Re-confirmed on the final file**
+
+- No Metal object is created before the exact GO line.
+- Every ledger `waitUntilCompleted` is preceded by bounded status polling, including both R and S before the extending drain of the simulated round.
+- The simulated round is last, the ledger is asserted poisoned afterwards, and the only later GPU work is the CPU-raise waiter outside the ledger.
+- Counters are asserted: 8 committed, 8 drained, 1 failed drain, and any `consistencyRejection` fails the run.
+- TIMED_WINDOW_END prints only when every committed command reached a terminal status. Otherwise NOT_ENDED prints with the nonterminal count, the report is still written and printed, and exit 3 is reasserted after the report path so it dominates.
+- Report creation is exclusive with a pre-check plus O_EXCL, and write and close results are checked.
+- Boundaries are honest: simulated host failure is labelled at every surface, genuine GPU failure and failed-buffer event signaling are listed as not tested, no busy-time or performance claim is made, and the adapter reports zero microseconds.
+
+**What this acceptance does not cover**
+
+The tool's "pass" status is unproven until a supervised GPU run produces a report with END, exit 0, and the expected eight tickets. The two optional items from the last review stand as optional only: a hardware poison-refusal probe, and softening the "never encountered" wording to "never encountered on a passing run".

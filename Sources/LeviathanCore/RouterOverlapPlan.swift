@@ -189,6 +189,13 @@ public struct RouterOverlapPlan: Codable, Equatable, Sendable {
         return SHA256.hex(SHA256.hash(Array(try encoder.encode(value))))
     }
 
+    /// Additive prepare-time helper: the digest form `analyze` stamps into
+    /// statisticsPlanDigest, so a runtime binding can compare it without
+    /// re-running the analysis.
+    public static func digestOfStatisticsPlan(_ statisticsPlan: RMSStatisticsPlan) throws -> String {
+        try encodedDigest(statisticsPlan)
+    }
+
     private func withDigest(_ digest: String) -> RouterOverlapPlan {
         RouterOverlapPlan(
             analysis: analysis, config: config, canonicalSchedule: canonicalSchedule,

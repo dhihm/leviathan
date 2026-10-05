@@ -1,0 +1,17 @@
+{
+  "completedUtc": "2026-10-05T05:06:49.630198+00:00",
+  "results": {
+    "runtime-pure": {
+      "exit": 0,
+      "elapsedSeconds": 0.559144708327949,
+      "exeSha256": "6df5ef586efdea9374facfdc8d01357e422c20412e2ad1d537f3d28fc5f15794",
+      "GPU": false
+    },
+    "plan-pure": {
+      "exit": 0,
+      "elapsedSeconds": 0.8906459170393646,
+      "exeSha256": "9907224df30278b03ab9259f3406fa9e51ffddc0c61fee1e20d580fbc4ef63fc",
+      "GPU": false
+    }
+  }
+}

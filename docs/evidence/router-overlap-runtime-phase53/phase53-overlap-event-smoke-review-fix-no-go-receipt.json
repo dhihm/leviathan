@@ -1,0 +1,8 @@
+{
+  "utc": "2026-10-05T05:08:39.692175+00:00",
+  "exit": 2,
+  "stdout": "BENCHMARK_READY\n",
+  "stderr": "exact GO not received; no GPU work issued\n",
+  "exeSha256": "1c4b48313f4c1b7c23bf12c0cac1d67fbe4a7a220b6022ae6105c3deaf899e7c",
+  "verification": "Actual EOF-before-GO protocol abort. Source creates Metal device only after GO; no hardware dispatch or performance test."
+}

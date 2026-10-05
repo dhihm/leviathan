@@ -1,0 +1,8 @@
+{
+  "Sources/LeviathanCore/Gemma4.swift": "318c3d3b47009b6b3e05b7bb61aba578ca655d59cb48dfff4909f09f5125ade8",
+  "Sources/LeviathanCore/GemmaForge.swift": "d33bbd1f39a6734f5ce42f81ca21e50a3d88d6e690f348c86715da0fefc81a3b",
+  "Sources/LeviathanCore/RouterOverlapPlan.swift": "e0590d69764ea64a70250b0d336c4227b216f1c726f59c713c69b48e4d304316",
+  "Package.swift": "59f067a010247e1cceaf241dfb636a0fb0a35923e0347fc4579a11bba9e12bf1",
+  "Sources/LeviathanCore/RouterOverlapRuntime.swift": "e529de83f9a991ea1e961f9109e0998c1f4a35010c02524bba4f494dcc6f8a05",
+  "tools/router_overlap_runtime_pure_tests/main.swift": "3ced3a189ae336d6a74924c665201923b198b1c9ed1b099afe9359bd758a9abc"
+}

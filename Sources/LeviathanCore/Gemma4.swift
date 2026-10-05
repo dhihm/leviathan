@@ -692,6 +692,19 @@ public final class Gemma4Runner {
     /// Submitted command buffers (separate from kernel count) — makes
     /// the batching effect observable.
     internal var submittedBuffers = 0
+    /// Default-off router overlap diagnostic state (RouterOverlapRuntime.swift):
+    /// nil until the first withRouterOverlapDiagnosticScope entry, then
+    /// retained with its dedicated event, routerIn buffer and ticket ledger.
+    /// While no ticket is pending, every helper below runs its unchanged body.
+    internal var routerOverlapState: RouterOverlapRuntimeState? = nil
+    /// Diagnostic sum of async router overlap ticket command-buffer intervals
+    /// (gpuEndTime - gpuStartTime, microseconds) for successfully completed
+    /// tickets. NOT busy time and NOT utilization: an interval may include
+    /// the ticket's encoded event wait. Kept separate from gpuMicrosTotal:
+    /// inside the scope gpuMicrosTotal (and every gpuMicros value derived
+    /// from it, e.g. executeGraph/executeGraphContinue results) receives no
+    /// async ticket spans and is therefore incomplete there.
+    internal var routerOverlapIntervalMicros = 0.0
     /// Profiling attribution (per-kernel mode only): accumulated GPU
     /// microseconds per weight-tensor name across matvec calls.
     internal var matvecGpuMicrosByTensor: [String: Double] = [:]
@@ -2311,6 +2324,13 @@ public final class Gemma4Runner {
 
     /// Commits and waits for the open deferred segment, if any.
     internal func flushOpenSegment() throws {
+        // Router overlap (ON only): committed tickets drain in commit order
+        // before the open segment commits; a failed ticket discards the
+        // open encoder without submitting it and throws; a poisoned active
+        // scope refuses every synchronous submission.
+        if let overlap = routerOverlapState, overlap.needsSynchronousGuard {
+            try routerOverlapDrainAll(overlap)
+        }
         guard let cmd = openCmd, let enc = openEnc else { return }
         let brT0 = breakdownInstrumentation ? Self.brNow() : 0
         defer { if breakdownInstrumentation { brFlushMicros += Self.brNow() - brT0 } }
@@ -2361,11 +2381,25 @@ public final class Gemma4Runner {
         // The discarded segment never executes — its expert-slice pins
         // cannot be waiting on GPU reads and are released wholesale.
         expertCache?.discardAllPins()
+        // Router overlap: committed tickets are drained (and accounted on
+        // success) before any buffer reuse; a failure is recorded, never
+        // thrown here, so the caller's original error is preserved. This
+        // may block on waitUntilCompleted while tickets are pending (only
+        // possible inside a router overlap scope).
+        if let overlap = routerOverlapState, overlap.ledger.hasPending {
+            routerOverlapDrainDiscarding(overlap)
+        }
     }
 
     /// Opens a deferred segment: subsequent dispatches encode into one
     /// command buffer until `flushOpenSegment()`.
     internal func beginSegment() throws {
+        // Router overlap (ON only): open WITHOUT draining pending tickets;
+        // the new buffer waits on the last signaled event value instead.
+        if openEnc == nil, let overlap = routerOverlapState, overlap.active {
+            try routerOverlapBeginSegment(overlap)
+            return
+        }
         try flushOpenSegment()
         guard let cmd = queue.makeCommandBuffer(),
               let enc = cmd.makeComputeCommandEncoder() else {
@@ -2438,6 +2472,11 @@ public final class Gemma4Runner {
                 ctPendingKernels += 1
             }
             return
+        }
+        // Router overlap (ON only): a synchronous direct command buffer
+        // never runs ahead of committed overlap tickets.
+        if let overlap = routerOverlapState, overlap.needsSynchronousGuard {
+            try routerOverlapDrainAll(overlap)
         }
         let ctTrace = commandTimelineEnabled
         let ctEncodeStart = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
@@ -2539,6 +2578,11 @@ public final class Gemma4Runner {
                 ctPendingKernels += 1
             }
             return
+        }
+        // Router overlap (ON only): a synchronous direct command buffer
+        // never runs ahead of committed overlap tickets.
+        if let overlap = routerOverlapState, overlap.needsSynchronousGuard {
+            try routerOverlapDrainAll(overlap)
         }
         let ctTrace = commandTimelineEnabled
         let ctEncodeStart = ctTrace ? Gemma4CommandTimeline.hostSeconds() : 0
@@ -3361,6 +3405,8 @@ public final class Gemma4Runner {
     }
 
     /// Read-only cumulative GPU-busy microseconds (matched-timing arms).
+    /// Inside a router overlap scope this excludes async ticket intervals
+    /// (see routerOverlapCommandBufferIntervalMicros) and is incomplete.
     public var totalGpuMicros: Double { gpuMicrosTotal }
     /// Read-only submission/dispatch counters (regression evidence that
     /// deferred-segment batching actually engaged: submitted command
@@ -3411,6 +3457,7 @@ public final class Gemma4Runner {
     /// enable), the compiled pipeline set, the SSA schedule schema, and
     /// the candidate-set signature.
     public func engineIdentity() throws -> String {
+        try routerOverlapRefuseInScope("engineIdentity")
         // No memoization: engineIdentity is called at initialization and
         // validation time, not per token, so the FULL original identity
         // plus the actual composite binding below is recomputed on every
@@ -3519,6 +3566,7 @@ public final class Gemma4Runner {
     /// `reset()` first for a fresh one). Returns evidence with the greedy
     /// argmax and top-5 logits at the final position.
     public func forward(tokenIds: [Int]) throws -> Gemma4RunEvidence {
+        try routerOverlapRefuseInScope("direct forward")
         guard !tokenIds.isEmpty else { throw Gemma4Error.badTokenId(-1) }
         guard tokenIds.allSatisfy({ $0 >= 0 && $0 < config.vocabSize }) else {
             throw Gemma4Error.badTokenId(tokenIds.first { $0 < 0 || $0 >= config.vocabSize } ?? -1)
