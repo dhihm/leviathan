@@ -1,0 +1,47 @@
+{
+  "status": "completed",
+  "baselineControlHex": "bd6b6117",
+  "baselineCandidateHex": "bd6b6116",
+  "reproducedMismatch": true,
+  "baselineControlMatchesPhase64Record": true,
+  "baselineCandidateMatchesPhase64Record": true,
+  "fullPrefixMatchesBaseline": true,
+  "allProbesPassed": true,
+  "firstDifferingPrefix": 62,
+  "firstDifferingPrefixExcludingZeroPairs": 62,
+  "firstDifferingTermIndex": 61,
+  "firstDifferingLocator": "term 61 = block 1 byte 14 high nibble",
+  "lastIdenticalPrefixHex": "bda69d7c",
+  "firstDifferingControlHex": "bd6367fd",
+  "firstDifferingCandidateHex": "bd6367fc",
+  "differingPrefixCount": 2,
+  "commandBuffersCommitted": 132,
+  "causalityStatement": "A prefix output difference at prefix k shows that the two unmodified compiled kernels compute the first k terms (with zero suffix) differently. Under order-preserving contraction the k-prefix output is the running sum after k terms, so k names the term whose inclusion first exposes the difference. Under legal compiler reassociation the masked suffix changes which terms meet, the prefix output is not the original running sum, and this result does not prove where the original runtime accumulator first differs nor identify either kernel's instruction sequence.",
+  "cpuModels": [
+    {
+      "firstPrefixDifferingFromControl": 62,
+      "model": "strictLeftProductThenAdd",
+      "prefixesMatchingCandidate": 65,
+      "prefixesMatchingControl": 63
+    },
+    {
+      "firstPrefixDifferingFromControl": 62,
+      "model": "fmaLeftProductAccumulate",
+      "prefixesMatchingCandidate": 65,
+      "prefixesMatchingControl": 63
+    },
+    {
+      "firstPrefixDifferingFromControl": 62,
+      "model": "strictRightProductThenAdd",
+      "prefixesMatchingCandidate": 65,
+      "prefixesMatchingControl": 63
+    },
+    {
+      "firstPrefixDifferingFromControl": 62,
+      "model": "fmaRightProductAccumulate",
+      "prefixesMatchingCandidate": 65,
+      "prefixesMatchingControl": 63
+    }
+  ],
+  "executableSHA256": "19c55a49c6256b700753a8f120b57f2b294574bfd8a75633cbfd0ba4cc0d7b98"
+}

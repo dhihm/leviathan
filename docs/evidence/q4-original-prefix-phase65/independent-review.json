@@ -1,0 +1,115 @@
+{
+  "verdict": "APPROVE_WITH_REQUIRED_PATCHES_BEFORE_FIRST_GPU_RUN. Requirements met by the design: the unmodified production g4_q4_matvec and the unmodified phase-62 register source are each compiled once with options nil and never instrumented. It reuses the same frozen min-1x64 case, weights, launch geometry and an in-session baseline. It uses 65 predeclared prefix masks in the production term order 0,16,1,17,...,15,31,32,48,...,63 with identical weights. Each probe has an FP64 oracle, finiteness checks and guards. Prefix 64 is checked against the same-session baseline, and the baseline is compared with the phase-64 records. There are no trace stores, no timing, no GGUF and no model hash. Five required patches: (1) the register decline bound loosens the phase-62 payload bound; (2) after a candidate timeout, buffers are still read; (3) a NOT_COMMITTED step is misreported as notReproduced or probeContractFailed instead of aborting; (4) a signed-zero-only difference, which the default math mode can produce, would become the headline first differing prefix; (5) two source texts overstate: the one-hot note and the phase-64 closed record. Test expectation correction: q4-prefix-probe-pure-tests contains 18 checks, so the expected line is 'passed 18 failed 0', not 16.",
+  "analysis": [
+    "Pipeline identity:",
+    "- The control comes from Q4WeightStageGPU(device:), which compiles Gemma4Runner.shaderSource once with options nil.",
+    "- The register kernel comes from the phase-62 Q4RegisterLoopEmitter source, compiled once with options nil.",
+    "- Neither source is edited. Masking changes only runtime x data, so every probe runs the same two compiled pipeline objects, and the compiled code cannot depend on the mask. This is the main strength over phase 64.",
+    "Term order (verified):",
+    "- xIndex(t) = 32*(t/32) + (t%32 even ? l : 16 + l), with l = (t%32)/2.",
+    "- This gives 0,16,1,17,...,15,31,32,48,...,47,63, matching the two production sum lines in source order. The pure test also asserts that both x index expressions are present in Gemma4Runner.shaderSource.",
+    "Prefix construction (verified): prefix k keeps x at the first k terms' indices and 0.0f elsewhere. Prefix 0 is all zeros and prefix 64 is the original input. termIndex = k - 1 and the locator follow the phase-64 layout.",
+    "Zero suffix: for the finite frozen scales (|d| < 1/16), a masked term evaluates to \u00b10 under every association. s + (\u00b10) = s and fma(a, 0, s) = s for finite nonzero s.",
+    "Signed zero (unmitigated in the proposal):",
+    "- Under the default math mode, the compiler may treat signed zeros as interchangeable. Prefix 0, and any exact-zero partial sum, can therefore legally come out as 80000000 in one kernel and 00000000 in the other.",
+    "- summarize() takes the minimum differing prefix, so such an artifact would hide the real finding. Patch 4 adds a separate field that excludes pairs where both outputs are zero; the raw first difference stays reported.",
+    "FP64 oracles:",
+    "- With these operands every product is exact in Double (11-bit half mantissa x 4-bit nibble x 11-bit activation), and 64 partial sums stay well inside 53 bits.",
+    "- The explicit prefix oracle and the masked-input Q4Oracle should therefore agree exactly; the 1e-12 relative agreement check is a consistency gate, not a tolerance on GPU output.",
+    "- The existing 1e-4 contract via worstRel is applied to both kernels on the masked input.",
+    "CPU models: comparing prefix k with sums[k-1] is valid for all four serial models because masked terms are no-ops in each. These are consistent-with hypotheses only. Prefix 0 is predicted +0, so a -0 output there is a signed-zero artifact, not evidence against a model.",
+    "Baseline and phase-64 records:",
+    "- A finite, guard-intact baseline is required before any probe. reproducedMismatch gates the probes.",
+    "- fullPrefixMatchesBaseline requires prefix-64 hex for both kernels to equal the baseline.",
+    "- The phase-64 hex comparison is recorded but correctly does not govern status; the same-session baseline does.",
+    "Bounded completion:",
+    "- Every command buffer goes through the existing 10 s semaphore submit; waitUntilCompleted is never used.",
+    "- runPair stops reads after a control timeout. After a candidate timeout it still read guard bytes of the in-flight buffers, including the candidate output buffer (patch 2).",
+    "- END is printed only when terminal; otherwise NOT_ENDED, exit 5.",
+    "- Totals are 2 + 130 = 132 committed command buffers, each 1 threadgroup of 32 threads.",
+    "Status:",
+    "- ERROR maps to commandBufferError, which is correct.",
+    "- NOT_COMMITTED (command buffer or encoder unavailable) leaves bits empty. On the baseline this produced reproducedMismatch == nil and hence notReproduced (exit 7); on a probe it produced probeContractFailed or notReproduced. An infrastructure failure must not be reported as a finding (patch 3 maps it to aborted).",
+    "Gate consistency: phase 62 runs the register decline with the payload bound weightLength = guardBytes + payload, as fixed in the phase-61 review. The proposal passes 2 * guardBytes + payload, which lets the span check accept a read into the trailing guard. It has no effect on min-1x64 but loosens an existing gate (patch 1).",
+    "Source text accuracy:",
+    "- The note 'a single-term sum is the rounded product under every model' is not established. (d*w)*x and d*(w*x) can round differently when the exact product needs more than 24 bits, so a one-hot probe would test product association. The omission is fine as a predeclaration; the justification must not claim it is uninformative (patch 5).",
+    "- The phase-64 closed record says 'decode operands identical'. Those were instrumented unpack copies without an arithmetic final tied to the originals, so the record should say so and state that both production-shaped trace finals were bd6b6116 (patch 5).",
+    "Analysis prose (not source, not patched; must not be carried into docs):",
+    "- 'the difference is arithmetic, not decode' overstates phase 64: the decode probes were instrumented copies.",
+    "- 'the production control as compiled does not evaluate the 64 terms as one serial chain ... trace stores appear to have forced the serial shape' is an untested per-instruction hypothesis.",
+    "- Phase 65 can show only where a masked-input output difference first appears, under the limited causality stated in the source.",
+    "Pure tests: 3 (order) + 4 (masks) + 3 (oracle) + 3 (summary) + 5 (contract) = 18. The hand-oracle case is correct: block 0 term = 1 x -8 x 0.5 = -4; block 1 term = -2 x 7 x 0.5 = -7.",
+    "Safety:",
+    "- Before GO: parsing, report-path rejection and the executable digest only.",
+    "- EOF or a non-GO line exits 1 before device creation.",
+    "- The report is written with .withoutOverwriting, bounded at 16 MiB, never trimmed, and contains no weights.",
+    "- No GGUF, model hash, timing, default, corpus, seed or gate change.",
+    "- Phases 61, 62 and 64 are untouched; makeProbeInput is an additive extension.",
+    "Test command: the xcrun tool-presence line is a manual shell step, not code. It asserts nothing and may be dropped without affecting the diagnostic."
+  ],
+  "requiredPatches": [
+    {
+      "file": "Sources/LeviathanCore/Q4PrefixProbe.swift",
+      "old": "            inDim: c.inDim, outDim: c.outDim, weightOffset: g, weightLength: 2 * g + c.blocks.count,\n",
+      "new": "            inDim: c.inDim, outDim: c.outDim, weightOffset: g, weightLength: g + c.blocks.count,\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/Q4PrefixProbe.swift",
+      "old": "            let cand = gpu.runSingle(pipeline: registerPipe, launch: registerLaunch, b: b, y: yK)\n",
+      "new": "            let cand = gpu.runSingle(pipeline: registerPipe, launch: registerLaunch, b: b, y: yK)\n            // A candidate whose completion was not observed may still be executing: read nothing.\n            if !cand.terminal { return Pair(ctl: ctl, cand: cand, ctlBits: [], candBits: [], guards: false) }\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/Q4PrefixProbe.swift",
+      "old": "            return .commandBufferError\n        }\n        guard r.reproducedMismatch == true, r.fullPrefixMatchesBaseline == true else { return .notReproduced }\n",
+      "new": "            return .commandBufferError\n        }\n        // A step that was never committed is an aborted run, never a reproduction or probe finding.\n        let completions = [r.baselineControlCompletion, r.baselineCandidateCompletion].compactMap { $0 }\n            + r.probes.flatMap { [$0.controlCompletion, $0.candidateCompletion] }\n        if completions.contains(where: { $0 != \"COMPLETED\" }) { return .aborted }\n        guard r.reproducedMismatch == true, r.fullPrefixMatchesBaseline == true else { return .notReproduced }\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/Q4PrefixProbe.swift",
+      "old": "    public var firstDifferingCandidateHex: String? = nil\n",
+      "new": "    public var firstDifferingCandidateHex: String? = nil\n    /// First differing prefix whose two outputs are not both signed zeros (00000000 / 80000000). The default math\n    /// mode may drop the sign of a zero sum, so a zero-only difference stays in the probes but is never the headline.\n    public var firstDifferingPrefixExcludingZeroPairs: Int? = nil\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/Q4PrefixProbe.swift",
+      "old": "        let summary = summarize(report.probes)\n        report.differingPrefixCount = summary.count\n",
+      "new": "        let summary = summarize(report.probes)\n        report.differingPrefixCount = summary.count\n        report.firstDifferingPrefixExcludingZeroPairs = report.probes.first(where: { p in\n            let zero: (String?) -> Bool = { $0 == \"00000000\" || $0 == \"80000000\" }\n            return p.controlCompletion == \"COMPLETED\" && p.candidateCompletion == \"COMPLETED\" && !p.bitIdentical\n                && !(zero(p.controlHex) && zero(p.candidateHex))\n        })?.prefix\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/Q4PrefixProbe.swift",
+      "old": "        \"One-hot inputs are omitted: a single-term sum is the rounded product under every model and cannot separate \"\n            + \"the accumulation hypotheses. No timing, no GGUF, no hashing, no instrumentation.\",\n",
+      "new": "        \"One-hot inputs are omitted by predeclaration to keep the probe set at the 65 fixed prefixes; a single-term \"\n            + \"output would test product association and rounding, not accumulation order. Differences where both \"\n            + \"outputs are signed zeros are reported separately because the default math mode may drop the sign of a \"\n            + \"zero sum. No timing, no GGUF, no hashing, no instrumentation.\",\n"
+    },
+    {
+      "file": "Sources/LeviathanCore/Q4PrefixProbe.swift",
+      "old": "        \"q4-first-divergence-diagnostic-v1 (phase 64): decode operands identical, control bd6b6117 vs register \"\n            + \"bd6b6116, production-shaped trace copies not calibrated, original cause NOT ESTABLISHED, frozen\",\n",
+      "new": "        \"q4-first-divergence-diagnostic-v1 (phase 64): instrumented decoded-operand probes identical, uninstrumented \"\n            + \"control bd6b6117 vs register bd6b6116, both production-shaped trace finals bd6b6116 failed original \"\n            + \"calibration, original cause NOT ESTABLISHED, frozen\",\n"
+    }
+  ],
+  "conditionalCompilePatches": [
+    {
+      "condition": "Apply only if the build of q4-prefix-probe-pure-tests reports that Q4Oracle is not found or is inaccessible from the tool module (it is used there across the module boundary). Apply both entries together; the check count stays 18.",
+      "file": "Sources/LeviathanCore/Q4PrefixProbe.swift",
+      "old": "    /// FP64 serial sum of the first k ORIGINAL terms in production order (exact half decode, double products).\n",
+      "new": "    /// The existing FP64 matvec oracle on the k-prefix masked input of a single-row case.\n    public static func maskedOracle(blocks: [UInt8], inDim: Int, x: [Float], prefix k: Int) -> Double? {\n        guard let masked = maskedInput(x, prefix: k),\n              let ref = try? Q4Oracle.matvecFP64(blocks: blocks[...], outDim: 1, inDim: inDim, x: masked),\n              ref.count == 1 else { return nil }\n        return ref[0]\n    }\n\n    /// FP64 serial sum of the first k ORIGINAL terms in production order (exact half decode, double products).\n"
+    },
+    {
+      "condition": "Same condition as the previous entry; apply together.",
+      "file": "tools/q4_prefix_probe_pure_tests/main.swift",
+      "old": "    if let masked = Q4PrefixProbeOrder.maskedInput(x, prefix: 40),\n       let ref = try? Q4Oracle.matvecFP64(blocks: blocks[...], outDim: 1, inDim: 64, x: masked), ref.count == 1,\n       let p = Q4PrefixProbeOrder.prefixOracle(blocks: blocks, inDim: 64, x: x, prefix: 40) {\n        h.check(abs(ref[0] - p) <= 1e-12 * max(1.0, abs(p)), \"masked-input oracle agrees with the explicit prefix oracle\")\n",
+      "new": "    if let r0 = Q4PrefixProbeOrder.maskedOracle(blocks: blocks, inDim: 64, x: x, prefix: 40),\n       let p = Q4PrefixProbeOrder.prefixOracle(blocks: blocks, inDim: 64, x: x, prefix: 40) {\n        h.check(abs(r0 - p) <= 1e-12 * max(1.0, abs(p)), \"masked-input oracle agrees with the explicit prefix oracle\")\n"
+    }
+  ],
+  "limitations": [
+    "Not compiled or run by the reviewer. Expected pure line after the patches: 'q4-prefix-probe-pure-tests passed 18 failed 0'. The phase-64 and earlier pure suites should be unchanged. Any other actual result is the result.",
+    "Input perturbation only. A first differing prefix k shows that the two unmodified compiled kernels give different Float bits on the k-prefix masked input.",
+    "Under order-preserving evaluation, prefix k equals each kernel's running sum after term k-1.",
+    "Under legal reassociation or contraction differences, the masked suffix changes which terms meet. This then proves neither where the original accumulator first differs nor any instruction sequence.",
+    "No arithmetic-cause or per-instruction claim follows from any outcome.",
+    "Signed zeros: differences where both outputs are 00000000/80000000 are retained in the probes but excluded from firstDifferingPrefixExcludingZeroPairs.",
+    "CPU-model matches at prefix 0, or at any exact-zero partial sum, can fail on the sign of zero alone. These model comparisons are consistent-with evidence on one 64-term row, not proof of either kernel's accumulation order.",
+    "Only prefix 64 is the frozen input. A finding is meaningful only with status completed: reproducedMismatch true, fullPrefixMatchesBaseline true and every probe passing its finite, guard, FP64-contract and oracle-agreement checks.",
+    "A baseline that differs from the phase-64 hex is reported, not reconciled; the same-session baseline governs.",
+    "The analysis prose statements 'difference is arithmetic, not decode' and 'trace stores forced the serial shape' are unverified hypotheses and must not appear in the phase-65 summary as findings.",
+    "The AIR or disassembly follow-up is only a tool-presence check, run as a manual shell step. Nothing about availability or output is asserted.",
+    "fullModelQualified, gainQualified, installable, productionPerformanceClaim and busyTimeClaim remain false. There is no timing, GGUF, model hash or default change, and phases 61, 62 and 64 remain frozen."
+  ]
+}

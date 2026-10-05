@@ -27,6 +27,7 @@ Leviathan is a personal project building a local LLM inference engine for Mac GP
 - [Actual kernel stage attribution](docs/KERNEL_STAGE_ATTRIBUTION_PHASE59.md): all three model fixtures were bit-identical with sampling, covering 125,457 kernel encoders. Changed encoder topology and overlapping timestamp ranges limit latency attribution.
 - Isolated Q4 load experiments are closed: [shared weight staging](docs/Q4_WEIGHT_STAGING_PHASE60.md) preserved bits but was 2.48–2.86 times slower; [unrolled register decoding](docs/Q4_PACKED_WORD_PHASE61.md) and [loop-preserving register decoding](docs/Q4_REGISTER_LOOP_PHASE62.md) failed compiled-bit gates, so timing was withheld and no candidate was installed.
 - [Frozen minimum-row diagnosis](docs/Q4_FIRST_DIVERGENCE_PHASE64.md) reproduced the original one-bit mismatch and equal decoded operands; trace stores changed the control output, leaving the original arithmetic cause unestablished.
+- [Original-pipeline prefix probes](docs/Q4_ORIGINAL_PREFIX_PHASE65.md) reproduced the full-input mismatch and found differences at fixed mask lengths 62 and 64 only. Input perturbation does not identify original intermediate accumulators or compiled instructions.
 - Performance: closing the gap with Ollama and broader Python model coverage are in progress.
 
 [MIT](LICENSE); model weights keep their upstream terms.

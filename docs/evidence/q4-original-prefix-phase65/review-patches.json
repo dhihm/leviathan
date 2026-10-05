@@ -1,0 +1,6 @@
+{
+  "requiredPatches": 7,
+  "conditionalApplied": false,
+  "beforeSHA256": "715de5fdbcad08f37fdf374d807ffe74ee734356975e471f228c5a189963463e",
+  "afterSHA256": "549f603e38e614183bccedf226338a12dc7ef86210499d1a76fa37668a0f3b78"
+}

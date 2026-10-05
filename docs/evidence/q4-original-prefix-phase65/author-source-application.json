@@ -1,0 +1,22 @@
+[
+  {
+    "file": "Package.swift",
+    "beforeSHA256": "19e2352c517de63790f7c89c6eff113bc5aeb1cac749028d6b6196c2af8fa8dd",
+    "afterSHA256": "55a72c10158a626c24d2dd4ed2574f47943941d25084f2e6efb9a673ece169fe"
+  },
+  {
+    "file": "Sources/LeviathanCore/Q4PrefixProbe.swift",
+    "beforeSHA256": null,
+    "afterSHA256": "715de5fdbcad08f37fdf374d807ffe74ee734356975e471f228c5a189963463e"
+  },
+  {
+    "file": "tools/q4_prefix_probe_diagnostic/main.swift",
+    "beforeSHA256": null,
+    "afterSHA256": "19311308a61f9b6a1b41645e9c4f6e078469c92e165b885497f6a0b7d622ce4c"
+  },
+  {
+    "file": "tools/q4_prefix_probe_pure_tests/main.swift",
+    "beforeSHA256": null,
+    "afterSHA256": "9893b69d3c4d182afa6422ad4b8793b602efb2d4faaf035c3f687ff02c860f01"
+  }
+]
