@@ -17,3 +17,7 @@ Matched performance remains a separate gate: the same executable and settings, a
 Asynchronous command-buffer intervals are separate from the original GPU timing counter. ON's recorded original counter excludes router/shared tickets, is incomplete and has different coverage from OFF; it is not busy time, utilization or a speedup measure. The report includes per-arm coverage text. Timed wall calls are the comparison metric. Arbitrary externally decoded reports may retain a true gainQualified flag in memory, but the tool's compact and pretty report writers normalize it to false. No activation API consumes these reports.
 
 The rejected phase52 serial-attention SIMD composition and closed phase38 copy/readback experiment are not retried. Current evidence is stored in docs/evidence/router-overlap-runtime-phase53.
+
+## Completed matched comparison
+
+The fixed seven-pair comparison completed and rejected promotion because all fixture spreads exceeded 5% and no fixture reached 2% gain. See [the measured result](ROUTER_OVERLAP_PERFORMANCE_PHASE53.md) and retained evidence. Correctness passed, but no speedup is qualified.
