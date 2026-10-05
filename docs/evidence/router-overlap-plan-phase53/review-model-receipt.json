@@ -1,0 +1,11 @@
+{
+  "models": [
+    "claude-fable-5-1",
+    "claude-fable-5-1"
+  ],
+  "exit": {
+    "exit": 0,
+    "elapsedSeconds": 223.84274662518874,
+    "completedUtc": "2026-10-05T04:19:44.475313+00:00"
+  }
+}

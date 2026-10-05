@@ -1,0 +1,13 @@
+{
+  "utc": "2026-10-05T04:18:12.899122+00:00",
+  "argv": [
+    ".build/release/router-overlap-pure-tests",
+    "--graph",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json"
+  ],
+  "exit": 0,
+  "elapsedSeconds": 0.9956597913987935,
+  "executableSHA256": "a38b89884d6050cf360fa2135ac9d369158936bc2ab9b560fe356b570c3f214c",
+  "GPUWork": false,
+  "modelFileReadOrHash": false
+}

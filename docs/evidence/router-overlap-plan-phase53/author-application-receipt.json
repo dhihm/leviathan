@@ -1,0 +1,11 @@
+{
+  "utc": "2026-10-05T04:12:12.597331+00:00",
+  "exactProviderPatches": 3,
+  "newFiles": 2,
+  "sourceSHA256": {
+    "Sources/LeviathanCore/GemmaForge.swift": "c675e48446bdc5385c1cd42e2206c74df4589778b9e7e1e82d91951387d452a5",
+    "Package.swift": "233aaea17e38fde124228e0b430796fa356a84db489523231a48f7d7223cd055",
+    "Sources/LeviathanCore/RouterOverlapPlan.swift": "817e2e3d178f29e673cd52838c9e708693fc84c19d12adf2ae8b877b88d70e5b",
+    "tools/router_overlap_pure_tests/main.swift": "72db669a08d0a56ed27777f518ced50088c76b23e542c344daac11983ad71756"
+  }
+}

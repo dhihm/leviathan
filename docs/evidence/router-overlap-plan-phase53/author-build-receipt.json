@@ -1,0 +1,7 @@
+{
+  "exit": 1,
+  "command": "swift build -c release --product router-overlap-pure-tests -j 4",
+  "coreCompiled": true,
+  "error": "test-only throwing boolean expression main.swift:229",
+  "GPUWork": false
+}

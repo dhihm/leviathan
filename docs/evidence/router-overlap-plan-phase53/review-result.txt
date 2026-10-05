@@ -1,0 +1,16 @@
+**Verdict: ACCEPT.**
+
+I traced every modeled op in the replay against the executeToken excerpt and the shared physical key, walked the permuted order and all three replays by hand, and checked each test mutation for dataflow validity before it reaches the planner. No substantive correctness failure found.
+
+**What I verified**
+
+- **Binding fidelity.** Each replay case reproduces the executeToken binding it models: rmsnorm whole buffers at byte 0 plus slot compute/reuse, matvec input at byte 0 with the write range from the offset attribute and rows, rope/softcap/scale in place on the output binding (scale never reads its input binding at runtime, and the replay requires input placement equal to output), axpy accumulator aliasing the output and addend disjoint, gelu_up reading the fused pair from the gate binding, cache_append and attention on the layer's cache, router_topk readback of exactly the expert count into host routing state, expert chain on distinct input/output with declared dedicated scratch, embed_row with its decode scratch. The gate/up alias uses the same mapping as the executor via the shared key. Unknown ops reject.
+- **Scope honesty.** The header and resource comments state that batched MoE, router residency kernels, and Gemma4Runner internals are not proven, and that runtime must bind routerIn to a dedicated buffer. Nothing in the code implies otherwise.
+- **Hazard logic.** The remap of only the i6 and i7 h versions is the minimal correct choice. Permuted plus remap succeeds. The control without remap fails at the first shared gate because i6 evicts the i0 h version from the h buffer. Partial remap fails at the in-place router scale. The x-alias, shared-alias, and reuse-before-compute cases fail at the indices the tests assert.
+- **Statistics authority.** The plan is shape-checked, every window action is checked against the compute/reuse/reuse pattern on one unique slot with the same x version, out-of-window actions reject, and the plan must equal a fresh derivation. Replay reuse requires both the slot token and the x input intact.
+- **Trap bounds.** All byte arithmetic on the replay path is overflow-checked or bounded. The matvec expression (offset + rows) * 4 only evaluates after offset * 4 equals the already-checked lower byte, so it cannot overflow where the earlier check passed. Negative slices, duplicate value ids, out-of-range slots and layers, and non-permutation orders reject with errors.
+- **Tests.** Every SSA mutation passes GemmaSSA.validate before the planner sees it, and each needle matches the actual message text. Window offset 14 and the per-layer op count of 31 match expectedSequence.
+
+**One non-blocking note**
+
+The computed property `remap` on RouterOverlapPlan builds its dictionary with uniqueKeysWithValues. A decoded, un-reverified plan with duplicated remapped ids traps there if a consumer skips reverify. Fresh plans cannot hit this because output ids are checked unique. Switching to the uniquingKeysWith initializer or returning a thrown error would close the gap cheaply. Not a blocker given the documented reverify-before-use contract.

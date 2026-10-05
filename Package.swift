@@ -29,5 +29,10 @@ let package = Package(
             dependencies: ["LeviathanCore"],
             path: "Sources/leviathan-dag-helper"
         ),
+        .executableTarget(
+            name: "router-overlap-pure-tests",
+            dependencies: ["LeviathanCore"],
+            path: "tools/router_overlap_pure_tests"
+        ),
     ]
 )

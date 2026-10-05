@@ -30,6 +30,34 @@ public enum GemmaForgeError: Error, CustomStringConvertible, Equatable {
     }
 }
 
+/// Canonical physical backing of an SSA vector value name: the single
+/// mapping shared by the graph executor's buffer binding and the pure
+/// schedule analyzers (RouterOverlapPlan). gate and up are offset slices
+/// of one fused GU buffer (their byte ranges come from the value's
+/// recorded sliceOffset and the matvec offset attribute); every other
+/// canonical vector name owns its whole buffer. Names outside the
+/// canonical vector set have no binding (nil).
+public enum GemmaPhysicalBuffer: String, Codable, CaseIterable, Sendable {
+    case x, h, t1, t2, t3, kv, gu, act, shared, router, logits
+
+    public static func of(valueName name: String) -> GemmaPhysicalBuffer? {
+        switch name {
+        case "x": return .x
+        case "h": return .h
+        case "t1": return .t1
+        case "t2": return .t2
+        case "t3": return .t3
+        case "kv": return .kv
+        case "gate", "up": return .gu
+        case "act": return .act
+        case "shared": return .shared
+        case "router": return .router
+        case "logits": return .logits
+        default: return nil
+        }
+    }
+}
+
 public struct GemmaForgeCandidate: Codable, Equatable, Hashable, Sendable {
     /// Batch GPU-only kernel runs into one command buffer per run
     /// (numerically identical order; only submission granularity changes).
@@ -949,21 +977,24 @@ public enum GemmaForge {
                 throw GemmaForgeError.executionFailed(
                     "operand \(id) is not a buffer-resident vector value")
             }
-            switch value.name {
-            case "x": return runner.bufX
-            case "h": return runner.bufH
-            case "t1": return runner.bufT1
-            case "t2": return runner.bufT2
-            case "t3": return runner.bufT3
-            case "kv": return runner.bufKV
-            case "gate", "up": return runner.bufGU   // offset slices, see matvec
-            case "act": return runner.bufAct
-            case "shared": return runner.bufShared
-            case "router": return runner.bufRouter
-            case "logits": return runner.bufLogits
-            default:
+            // Shared pure name -> physical buffer mapping (also used by
+            // the schedule analyzers); binding and offsets are unchanged.
+            guard let key = GemmaPhysicalBuffer.of(valueName: value.name) else {
                 throw GemmaForgeError.executionFailed(
                     "no physical buffer binding for value \(value.name)")
+            }
+            switch key {
+            case .x: return runner.bufX
+            case .h: return runner.bufH
+            case .t1: return runner.bufT1
+            case .t2: return runner.bufT2
+            case .t3: return runner.bufT3
+            case .kv: return runner.bufKV
+            case .gu: return runner.bufGU   // offset slices, see matvec
+            case .act: return runner.bufAct
+            case .shared: return runner.bufShared
+            case .router: return runner.bufRouter
+            case .logits: return runner.bufLogits
             }
         }
         func a(_ inst: GemmaSSAIR.Instruction, _ key: String) -> Int {
