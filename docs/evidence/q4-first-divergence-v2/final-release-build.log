@@ -1,0 +1,67 @@
+Building for production...
+[0/35] Write sources
+[1/35] Write swift-version--1AB21518FC5DEDBE.txt
+[3/36] Compiling LeviathanCore Artifact.swift
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/LeviathanCore/DAGMetalBackend.swift:246:19: warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+244 |             // Bounded copy of exactly input.count * Float.stride bytes into the input value buffer.
+245 |             let byteCount = input.count * MemoryLayout<Float>.stride
+246 |             input.withUnsafeBytes { raw in
+    |                   `- warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+247 |                 memcpy(values[0].contents(), raw.baseAddress!, byteCount)
+248 |             }
+
+/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/Sources/LeviathanCore/Q4LaunchLowering.swift:966:25: warning: immutable value 'controlRec' was never used; consider replacing with '_' or removing it [#no-usage]
+ 964 |                               r.screenMicrosPerShape.map { String(format: "%.1f us", $0.reduce(0, +)) } ?? ""))
+ 965 |         }
+ 966 |         let (finalists, controlRec) = Q4LaunchForge.finalists(componentResults,
+     |                         `- warning: immutable value 'controlRec' was never used; consider replacing with '_' or removing it [#no-usage]
+ 967 |                                                               controlWidth: control.width)
+ 968 |         guard !finalists.isEmpty else {
+[3/69] Write Objects.LinkFileList
+[9/69] Linking router-route-replay
+[10/69] Linking router-route-replay-pure-tests
+[10/69] Linking router-selection-pure-tests
+[11/69] Linking router-selection-component
+[13/69] Write Objects.LinkFileList
+[17/69] Linking router-overlap-runtime-pure-tests
+[18/69] Linking router-overlap-model-gate-pure-tests
+[19/69] Linking router-overlap-model-gate
+[20/69] Write Objects.LinkFileList
+[22/69] Linking router-overlap-pure-tests
+[23/69] Linking router-overlap-event-smoke
+[24/69] Write Objects.LinkFileList
+[26/69] Linking router-device-routing-pure-tests
+[27/69] Linking router-device-routing-gate
+[28/69] Write Objects.LinkFileList
+[30/69] Linking router-device-routing-gate-pure-tests
+[31/69] Linking router-device-routing-component
+[32/69] Write Objects.LinkFileList
+[34/69] Linking router-device-routing-benchmark
+[35/69] Linking router-device-routing-benchmark-pure-tests
+[36/69] Write Objects.LinkFileList
+[38/69] Linking q4-weight-stage-pure-tests
+[39/69] Linking q4-weight-stage-component
+[40/69] Write Objects.LinkFileList
+[42/69] Linking q4-register-loop-pure-tests
+[43/69] Linking q4-register-loop-component
+[44/69] Write Objects.LinkFileList
+[46/69] Linking q4-prefix-probe-pure-tests
+[47/69] Linking q4-prefix-probe-diagnostic
+[48/69] Write Objects.LinkFileList
+[50/69] Linking q4-packed-word-pure-tests
+[51/69] Linking q4-packed-word-component
+[52/69] Write Objects.LinkFileList
+[54/69] Linking q4-first-divergence-pure-tests
+[55/69] Linking q4-first-divergence-diagnostic
+[56/69] Write Objects.LinkFileList
+[58/69] Linking owned-process-diagnostics
+[59/69] Linking owned-process-diagnostics-pure-tests
+[60/69] Write Objects.LinkFileList
+[62/69] Linking leviathan-tests
+[63/69] Linking leviathan-forge-helper
+[64/69] Write Objects.LinkFileList
+[65/69] Linking leviathan-dag-helper
+[66/69] Linking leviathan-cli
+[67/69] Linking kernel-stage-attribution
+[68/69] Linking kernel-stage-attribution-pure-tests
+Build complete! (105.07s)

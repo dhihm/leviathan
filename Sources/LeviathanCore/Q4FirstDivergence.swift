@@ -92,6 +92,22 @@ public enum Q4FirstDivergenceLayout {
         let s = String(v, radix: 16)
         return String(repeating: "0", count: max(0, 8 - s.count)) + s
     }
+
+    /// Host-expected unpack words for row 0 in the unpack layout: zero-extended half scale bits per block, the 16
+    /// quant bytes per block in byte order, and the x bit patterns in element order. nil on a malformed case.
+    public static func expectedUnpack(blocks: [UInt8], inDim: Int, x: [Float]) -> [UInt32]? {
+        guard inDim > 0, inDim % 32 == 0 else { return nil }
+        let blocksPerRow = inDim / 32
+        guard blocks.count >= blocksPerRow * 18, x.count >= inDim else { return nil }
+        var out = [UInt32](repeating: 0, count: unpackWords(blocksPerRow: blocksPerRow, inDim: inDim))
+        for b in 0..<blocksPerRow {
+            let o = b * 18
+            out[scaleIndex(block: b)] = UInt32(blocks[o]) | (UInt32(blocks[o + 1]) << 8)
+            for l in 0..<16 { out[quantIndex(blocksPerRow: blocksPerRow, block: b, byte: l)] = UInt32(blocks[o + 2 + l]) }
+        }
+        for i in 0..<inDim { out[xIndex(blocksPerRow: blocksPerRow, element: i)] = x[i].bitPattern }
+        return out
+    }
 }
 
 // MARK: - CPU accumulation hypotheses (Swift Float, no implicit contraction)
@@ -161,7 +177,7 @@ public enum Q4FirstDivergenceCPU {
 // MARK: - Instrumented kernel emitter (copies for one traced row; never production)
 
 public enum Q4FirstDivergenceEmitter {
-    public static let codegenVersion = "q4fd-v1"
+    public static let codegenVersion = "q4fd-v2"
 
     public static func kernelName(shape: Q4FirstDivergenceShape, variant: Q4FirstDivergenceVariant) -> String {
         "q4fd_" + shape.rawValue + "_" + variant.rawValue
@@ -188,11 +204,13 @@ public enum Q4FirstDivergenceEmitter {
         ]
         switch shape {
         case .production:
+            // Verbatim lines of the extracted production g4_q4_matvec body (name `rowBytes`, single ulong cast);
+            // the mirror check requires them exactly.
             lines += [
-                "    device const uchar* rowBase = wbase + wOff + (ulong)row * (ulong)blocksPerRow * 18u;",
+                "    device const uchar* rowBytes = wbase + wOff + (ulong)row * blocksPerRow * 18u;",
                 "    float sum = 0.0f;",
                 "    for (uint b = 0; b < blocksPerRow; b++) {",
-                "        device const uchar* blk = rowBase + b * 18u;",
+                "        device const uchar* blk = rowBytes + b * 18u;",
                 "        ushort dbits = ushort(blk[0]) | (ushort(blk[1]) << 8u);",
                 "        float d = float(as_type<half>(dbits));",
             ]
@@ -234,11 +252,9 @@ public enum Q4FirstDivergenceEmitter {
         switch variant {
         case .unpack:
             lines += [
-                "            if (row == 0u) {",
-                "                tr[blocksPerRow + b * 16u + l] = uint(q);",
-                "                tr[blocksPerRow * 17u + b * 32u + l] = as_type<uint>(x[b * 32u + l]);",
-                "                tr[blocksPerRow * 17u + b * 32u + 16u + l] = as_type<uint>(x[b * 32u + 16u + l]);",
-                "            }",
+                "            if (row == 0u) { tr[blocksPerRow + b * 16u + l] = uint(q); }",
+                "            if (row == 0u) { tr[blocksPerRow * 17u + b * 32u + l] = as_type<uint>(x[b * 32u + l]); }",
+                "            if (row == 0u) { tr[blocksPerRow * 17u + b * 32u + 16u + l] = as_type<uint>(x[b * 32u + 16u + l]); }",
             ]
         case .sumOnly:
             lines += [
@@ -268,11 +284,83 @@ public enum Q4FirstDivergenceEmitter {
     }
 }
 
+// MARK: - Mirror check (pure; refuses before any dispatch)
+
+public enum Q4FirstDivergenceMirror {
+    static let traceParam = "device uint* tr [[buffer(5)]],"
+    static let traceStorePrefix = "if (row == 0u) { tr["
+    static let termPrefixes = ["sum += ", "uint k0 ", "uint k1 ", "float w0 ", "float w1 ", "float dw0 ", "float dw1 ",
+                               "float p0 ", "float p1 "]
+
+    /// Trimmed non-empty, non-comment lines of the unique `kernel void NAME(` through its matching closing brace, with
+    /// the name normalized to K; nil when the declaration does not occur exactly once or the braces never balance.
+    public static func kernelLines(_ source: String, name: String) -> [String]? {
+        let marker = "kernel void " + name + "("
+        guard source.components(separatedBy: marker).count == 2, let start = source.range(of: marker) else { return nil }
+        var depth = 0
+        var opened = false
+        var end: String.Index? = nil
+        var i = start.lowerBound
+        while i < source.endIndex {
+            let ch = source[i]
+            if ch == "{" {
+                depth += 1
+                opened = true
+            } else if ch == "}" {
+                depth -= 1
+                if opened, depth == 0 {
+                    end = source.index(after: i)
+                    break
+                }
+            }
+            i = source.index(after: i)
+        }
+        guard let e = end else { return nil }
+        return source[start.lowerBound..<e].split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("//") }
+            .map { $0.replacingOccurrences(of: marker, with: "kernel void K(") }
+    }
+
+    /// Empty when every instrumented copy mirrors its original: the decode skeleton (all lines but term and trace
+    /// lines) is identical for all three variants, and the sum-only copy minus its trace stores is the original verbatim.
+    public static func check(controlSource: String, registerSource: String, registerKernelName: String) -> [String] {
+        var errors = [String]()
+        let originals: [(Q4FirstDivergenceShape, String, String)] = [
+            (.production, controlSource, Q4WeightStageEmitter.controlFunction),
+            (.register, registerSource, registerKernelName),
+        ]
+        for (shape, source, name) in originals {
+            guard let original = kernelLines(source, name: name) else {
+                errors.append(name + ": original not extractable exactly once")
+                continue
+            }
+            let originalSkeleton = original.filter { l in !termPrefixes.contains { l.hasPrefix($0) } }
+            for variant in Q4FirstDivergenceVariant.allCases {
+                let copyName = Q4FirstDivergenceEmitter.kernelName(shape: shape, variant: variant)
+                guard let copy = kernelLines(Q4FirstDivergenceEmitter.emit(shape: shape, variant: variant),
+                                             name: copyName) else {
+                    errors.append(copyName + ": copy not extractable exactly once")
+                    continue
+                }
+                let stripped = copy.filter { $0 != traceParam && !$0.hasPrefix(traceStorePrefix) }
+                let skeleton = stripped.filter { l in !termPrefixes.contains { l.hasPrefix($0) } }
+                if skeleton != originalSkeleton { errors.append(copyName + ": decode skeleton differs from " + name) }
+                if variant == .sumOnly, stripped != original {
+                    errors.append(copyName + ": term lines differ from " + name)
+                }
+            }
+        }
+        return errors
+    }
+}
+
 // MARK: - Report
 
 public enum Q4FirstDivergenceStatus: String, Codable, Sendable {
     case completed
     case notReproduced
+    case integrityFailed
     case unsupported
     case commandBufferError
     case notEnded
@@ -313,15 +401,23 @@ public struct Q4FirstDivergenceVariantDiff: Codable, Equatable, Sendable {
     public let variant: String
     public let productionTraceFinalEqualsControl: Bool
     public let registerTraceFinalEqualsCandidate: Bool
+    public let lastTracedSumsEqualOwnFinals: Bool
+    public let runsIntact: Bool
+    /// Only the sum-only variant can be attributed; split is altered arithmetic by construction. Final calibration
+    /// is necessary, not sufficient: it never proves the originals' unobservable intermediates.
     public let attributableToOriginals: Bool
     public let stages: [Q4FirstDivergenceStageDiff]
 
     public init(variant: String, productionTraceFinalEqualsControl: Bool, registerTraceFinalEqualsCandidate: Bool,
-                stages: [Q4FirstDivergenceStageDiff]) {
+                lastTracedSumsEqualOwnFinals: Bool, runsIntact: Bool, stages: [Q4FirstDivergenceStageDiff]) {
         self.variant = variant
         self.productionTraceFinalEqualsControl = productionTraceFinalEqualsControl
         self.registerTraceFinalEqualsCandidate = registerTraceFinalEqualsCandidate
-        self.attributableToOriginals = productionTraceFinalEqualsControl && registerTraceFinalEqualsCandidate
+        self.lastTracedSumsEqualOwnFinals = lastTracedSumsEqualOwnFinals
+        self.runsIntact = runsIntact
+        self.attributableToOriginals = variant == Q4FirstDivergenceVariant.sumOnly.rawValue
+            && productionTraceFinalEqualsControl && registerTraceFinalEqualsCandidate && lastTracedSumsEqualOwnFinals
+            && runsIntact
         self.stages = stages
     }
 }
@@ -339,6 +435,7 @@ public struct Q4FirstDivergenceTraceRun: Codable, Equatable, Sendable {
     public let lastTracedSumHex: String?
     public let lastTracedSumEqualsOwnFinal: Bool?
     public let finalEqualsUninstrumented: Bool
+    public let allFinite: Bool
 }
 
 public struct Q4FirstDivergenceCPUModelResult: Codable, Equatable, Sendable {
@@ -378,6 +475,10 @@ public struct Q4FirstDivergenceReport: Codable {
     public var controlFP64WorstRel: Double? = nil
     public var candidateFP64WorstRel: Double? = nil
     public var uninstrumentedGuardsIntact: Bool? = nil
+    public var uninstrumentedFinite: Bool? = nil
+    public var uninstrumentedInContract: Bool? = nil
+    public var mirrorErrors: [String] = []
+    public var unpackMatchesHost: [String: Bool] = [:]
     public var reproducedMismatch: Bool? = nil
     public var instrumentedCompileErrors: [String] = []
     public var traces: [Q4FirstDivergenceTraceRun] = []
@@ -453,13 +554,16 @@ extension Q4WeightStageGPU {
 // MARK: - Driver
 
 public enum Q4FirstDivergenceDiagnostics {
-    public static let kind = "q4-first-divergence-diagnostic-v1"
+    public static let kind = "q4-first-divergence-diagnostic-v2"
     public static let caseName = "min-1x64"
     public static let usage = "usage: q4-first-divergence-diagnostic --report NEW_REPORT.json"
     public static let closedRecords: [String] = [
         "q4-packed-word-register-decode-component-v1 (phase 61): correctness-rejected, frozen",
         "q4-register-loop-decode-component-v1 (phase 62): correctness-rejected on 17 of 17 supported cases "
             + "(1858 of 2447 rows) including min-1x64, frozen",
+        "q4-first-divergence-diagnostic-v1 (phase 64, first run): control bd6b6117 vs register bd6b6116, instrumented "
+            + "decoded operands identical, production-shaped trace finals bd6b6116 not calibrated, original cause NOT "
+            + "ESTABLISHED; that report is preserved as recorded and is not retagged by this v2 kind",
     ]
     public static let notes: [String] = [
         "Diagnostic only: no optimization candidate, no production or default change; fullModelQualified, "
@@ -474,7 +578,16 @@ public enum Q4FirstDivergenceDiagnostics {
         "The split variant (named w, d*w, (d*w)*x, sum) is altered arithmetic by construction; the sum-only variant "
             + "keeps the two production term lines verbatim but still adds stores.",
         "CPU accumulation models are consistent-with hypotheses on one 64-term row; a match is not a proof of the "
-            + "compiled instruction sequence.",
+            + "compiled instruction sequence. Both originals are compiled with options nil, the SDK default math mode, "
+            + "which this diagnostic does not change; the four models do not cover other permitted rewrites, so a "
+            + "no-match is not evidence either way.",
+        "v2 (hardened after independent review): only the sum-only trace can establish a first divergence, and only "
+            + "when each trace final equals its uninstrumented original, each last traced sum equals its own final, both "
+            + "integer unpack copies equal the host bytes, the uninstrumented outputs are finite, in contract and "
+            + "guard-intact, and every trace run is completed, finite, fully written and guard-intact. Final calibration "
+            + "is necessary, not sufficient: it is trace evidence about the calibrated copies and never proves the "
+            + "originals' unobservable intermediates or instruction sequence. The split trace never attributes. Every "
+            + "instrumented copy is checked line-for-line against the uniquely extracted original before any dispatch.",
         "No fast-math, fma or volatile flag is applied to make either original pass; options nil selects the Metal "
             + "compiler default (not the safe math mode), under which contraction and reassociation are permitted in "
             + "both originals and in every instrumented copy; no timing is measured.",
@@ -501,6 +614,7 @@ public enum Q4FirstDivergenceDiagnostics {
         switch s {
         case .completed: return 0
         case .notReproduced: return 7
+        case .integrityFailed: return 3
         case .unsupported: return 2
         case .commandBufferError: return 4
         case .notEnded: return 5
@@ -512,35 +626,52 @@ public enum Q4FirstDivergenceDiagnostics {
         Q4WeightStageCorpus.synthetic().first { $0.name == caseName }
     }
 
-    /// Status reflects run integrity only; whether the cause was established is a report field.
+    /// Status reflects run integrity only; whether the cause was established is a report field. A completion other
+    /// than COMPLETED is aborted; a non-finite, out-of-contract or guard-violated original, or a trace run that is not
+    /// finite, fully written and guard-intact, is integrityFailed; neither is ever reported as completed or not
+    /// reproduced.
     public static func finalStatus(_ r: Q4FirstDivergenceReport) -> Q4FirstDivergenceStatus {
         if !r.terminal { return .notEnded }
         if r.error != nil { return .aborted }
         guard r.hardware != nil, r.registerCompileError == nil, r.declined == nil,
-              r.instrumentedCompileErrors.isEmpty else { return .unsupported }
-        if r.controlCompletion == "ERROR" || r.candidateCompletion == "ERROR"
-            || r.traces.contains(where: { $0.completion == "ERROR" }) { return .commandBufferError }
+              r.instrumentedCompileErrors.isEmpty, r.mirrorErrors.isEmpty else { return .unsupported }
+        let completions: [String?] = [r.controlCompletion, r.candidateCompletion]
+            + r.traces.map { Optional($0.completion) }
+        if completions.contains(where: { $0 == "ERROR" }) { return .commandBufferError }
+        guard r.controlCompletion == "COMPLETED", r.candidateCompletion == "COMPLETED" else { return .aborted }
+        guard r.uninstrumentedGuardsIntact == true, r.uninstrumentedFinite == true,
+              r.uninstrumentedInContract == true else { return .integrityFailed }
+        guard r.traces.count == Q4FirstDivergenceShape.allCases.count * Q4FirstDivergenceVariant.allCases.count,
+              r.traces.allSatisfy({ $0.completion == "COMPLETED" }) else { return .aborted }
+        guard r.traces.allSatisfy({ $0.guardsIntact && $0.allFinite && $0.unwrittenWords == 0 }) else {
+            return .integrityFailed
+        }
         guard r.reproducedMismatch == true else { return .notReproduced }
         return .completed
     }
 
-    /// Pure attribution rule. Returns established plus an explicit statement.
-    public static func attribute(reproduced: Bool?, unpackIdentical: Bool?,
-                                 unpack: [Q4FirstDivergenceStageDiff],
+    /// Pure attribution rule. Only the sum-only trace can establish; split is altered arithmetic by construction.
+    public static func attribute(reproduced: Bool?, uninstrumentedIntact: Bool, unpackHostVerified: Bool,
+                                 unpackIdentical: Bool?, unpack: [Q4FirstDivergenceStageDiff],
                                  variants: [Q4FirstDivergenceVariantDiff]) -> (established: Bool, statement: String) {
         guard reproduced == true else {
             return (false, "mismatch not reproduced on the frozen case; nothing to attribute")
         }
+        guard uninstrumentedIntact else {
+            return (false, "ORIGINAL CAUSE NOT ESTABLISHED: uninstrumented outputs not finite, outside the FP64 "
+                    + "contract or guard-violated")
+        }
         if unpackIdentical == false, let d = unpack.first(where: { !$0.identical }) {
             return (false, "ORIGINAL CAUSE NOT ESTABLISHED: decode operands differ in the instrumented unpack kernels "
                     + "at stage " + d.stage + " index " + String(d.firstIndex ?? -1) + " (" + (d.locator ?? "")
-                    + "); this points at the register decoder, but the unpack kernels have no arithmetic final to tie "
-                    + "to the originals, so the rule does not attribute it")
+                    + "); each copy's comparison with the host bytes is in unpackMatchesHost; the unpack kernels "
+                    + "have no arithmetic final to tie to the originals, so the rule does not attribute it")
         }
-        guard unpackIdentical == true else {
-            return (false, "ORIGINAL CAUSE NOT ESTABLISHED: unpack stage incomplete")
+        guard unpackIdentical == true, unpackHostVerified else {
+            return (false, "ORIGINAL CAUSE NOT ESTABLISHED: integer unpack identity with the host bytes not verified for "
+                    + "both copies (incomplete, unwritten, guard-violated or differing)")
         }
-        for name in ["sumOnly", "split"] {
+        for name in [Q4FirstDivergenceVariant.sumOnly.rawValue] {
             guard let v = variants.first(where: { $0.variant == name }), v.attributableToOriginals else { continue }
             if let d = v.stages.first(where: { !$0.identical }) {
                 let indexText: String = String(d.firstIndex ?? -1)
@@ -548,13 +679,15 @@ public enum Q4FirstDivergenceDiagnostics {
                 let productionText: String = d.productionHex ?? "?"
                 let registerText: String = d.registerHex ?? "?"
                 var s: String = "ESTABLISHED by the " + name
-                s += " trace, calibrated by its finals (both trace finals equal their uninstrumented originals and each "
-                s += "last traced sum equals its own final; this is trace evidence about the traced copies, not an "
-                s += "observation of the originals' compiled instruction sequence): first divergence at stage "
+                s += " trace, calibrated by its finals (each trace final equals its uninstrumented original, each "
+                s += "last traced sum equals its own final, integer unpack equals the host bytes, guards and finiteness "
+                s += "intact; this is trace evidence about the calibrated copies, not an observation of the originals' "
+                s += "compiled instruction sequence): first divergence at stage "
                 s += d.stage
                 s += " index " + indexText
                 s += " (" + locatorText + "), production " + productionText
-                s += " register " + registerText + "; decode operands identical"
+                s += " register " + registerText + "; decode operands identical; this locates the first differing "
+                s += "running sum of the calibrated copies, not the compiled instruction that produced it"
                 return (true, s)
             }
             return (false, "ORIGINAL CAUSE NOT ESTABLISHED: the " + name + " trace finals equal their originals yet "
@@ -562,12 +695,13 @@ public enum Q4FirstDivergenceDiagnostics {
                     + "coverage gap, not an explanation")
         }
         let flags = variants.map {
-            $0.variant + " production=" + String($0.productionTraceFinalEqualsControl) + " register="
-                + String($0.registerTraceFinalEqualsCandidate)
+            $0.variant + " productionFinal=" + String($0.productionTraceFinalEqualsControl) + " registerFinal="
+                + String($0.registerTraceFinalEqualsCandidate) + " lastSums=" + String($0.lastTracedSumsEqualOwnFinals)
+                + " intact=" + String($0.runsIntact)
         }
-        return (false, "ORIGINAL CAUSE NOT ESTABLISHED: no trace variant reproduced both uninstrumented finals ("
-                + flags.joined(separator: "; ") + "); instrumentation altered the compiled arithmetic, so the traces "
-                + "describe altered kernels, not the originals; decode operands identical")
+        return (false, "ORIGINAL CAUSE NOT ESTABLISHED: the sum-only trace did not pass the attribution gate ("
+                + flags.joined(separator: "; ") + "); the traces describe the instrumented copies, not the originals; "
+                + "the split trace is altered arithmetic by construction and never attributes; decode operands identical")
     }
 
     public static func run(executableDigest: String, emit: (String) -> Void) -> Q4FirstDivergenceReport {
@@ -630,6 +764,15 @@ public enum Q4FirstDivergenceDiagnostics {
             report.registerCompileError = "phase-62 register source (options nil): " + String(describing: error)
             return finish(&report)
         }
+        // The instrumented copies must mirror both uniquely extracted originals before anything is dispatched.
+        report.mirrorErrors = Q4FirstDivergenceMirror.check(
+            controlSource: Gemma4Runner.shaderSource,
+            registerSource: (try? Q4RegisterLoopEmitter.emit(descriptor)) ?? "",
+            registerKernelName: descriptor.kernelName)
+        if !report.mirrorErrors.isEmpty {
+            emit("instrumented copies do not mirror the originals; refused before any dispatch")
+            return finish(&report)
+        }
         let g = Q4WeightStageGPU.guardBytes
         if let reason = Q4RegisterLoopPlan.declineReason(
             inDim: c.inDim, outDim: c.outDim, weightOffset: g, weightLength: 2 * g + c.blocks.count,
@@ -677,19 +820,28 @@ public enum Q4FirstDivergenceDiagnostics {
         report.uninstrumentedGuardsIntact = gpu.guardsIntact(b.w, payloadBytes: b.weightBytes)
             && gpu.guardsIntact(b.x, payloadBytes: c.inDim * 4) && gpu.guardsIntact(yControl, payloadBytes: 4)
             && gpu.guardsIntact(yCandidate, payloadBytes: 4)
+        report.uninstrumentedFinite = ctlBits.count == 1 && candBits.count == 1
+            && Float(bitPattern: ctlBits[0]).isFinite && Float(bitPattern: candBits[0]).isFinite
+        report.uninstrumentedInContract = false
         if let ref = try? Q4Oracle.matvecFP64(blocks: c.blocks[...], outDim: c.outDim, inDim: c.inDim, x: c.x) {
-            report.controlFP64WorstRel = Q4WeightStageDiagnostics.worstRel(ctlBits, ref).worst
-            report.candidateFP64WorstRel = Q4WeightStageDiagnostics.worstRel(candBits, ref).worst
+            let ctl = Q4WeightStageDiagnostics.worstRel(ctlBits, ref)
+            let cand = Q4WeightStageDiagnostics.worstRel(candBits, ref)
+            report.controlFP64WorstRel = ctl.worst
+            report.candidateFP64WorstRel = cand.worst
+            report.uninstrumentedInContract = ctl.finite && cand.finite
+                && (ctl.worst.map { $0 < Q4WeightStageDiagnostics.correctnessContract } ?? false)
+                && (cand.worst.map { $0 < Q4WeightStageDiagnostics.correctnessContract } ?? false)
         }
-        if ctlBits.count == 1, candBits.count == 1 {
-            let finite = Float(bitPattern: ctlBits[0]).isFinite && Float(bitPattern: candBits[0]).isFinite
-            if !finite || report.uninstrumentedGuardsIntact != true {
-                report.error = "uninstrumented reproduction not trustworthy: finite=" + String(finite) + " guards="
-                    + String(report.uninstrumentedGuardsIntact ?? false)
-                return finish(&report)
-            }
-            report.reproducedMismatch = ctlBits[0] != candBits[0]
+        // Both originals must be COMPLETED, finite, in the FP64 contract and guard-intact before any instrumented
+        // copy is dispatched; otherwise the status is aborted (completion) or integrityFailed (the rest).
+        guard ctlOutcome.completion == "COMPLETED", candOutcome.completion == "COMPLETED",
+              report.uninstrumentedGuardsIntact == true, report.uninstrumentedFinite == true,
+              report.uninstrumentedInContract == true else {
+            emit("uninstrumented reproduction not intact (completion, finiteness, FP64 contract or guards); no "
+                 + "instrumented copy is dispatched")
+            return finish(&report)
         }
+        report.reproducedMismatch = ctlBits[0] != candBits[0]
         emit("uninstrumented: control " + (report.controlFinalHex ?? "n/a") + " candidate "
              + (report.candidateFinalHex ?? "n/a") + " reproduced="
              + (report.reproducedMismatch.map { String($0) } ?? "n/a"))
@@ -745,7 +897,9 @@ public enum Q4FirstDivergenceDiagnostics {
                     finalHex: yBits.first.map { Q4FirstDivergenceLayout.hex8($0) },
                     lastTracedSumHex: lastSum.map { Q4FirstDivergenceLayout.hex8($0) },
                     lastTracedSumEqualsOwnFinal: lastSum.map { s in yBits.count == 1 && yBits[0] == s },
-                    finalEqualsUninstrumented: variant == .unpack ? false : finalEquals))
+                    finalEqualsUninstrumented: variant == .unpack ? false : finalEquals,
+                    allFinite: completed && yBits.count == 1 && Float(bitPattern: yBits[0]).isFinite
+                        && (variant == .unpack || (!w.isEmpty && w.allSatisfy { Float(bitPattern: $0).isFinite }))))
             }
         }
 
@@ -760,16 +914,21 @@ public enum Q4FirstDivergenceDiagnostics {
             return zip(ps, rs).map { Q4FirstDivergenceStageDiff.make(stage: $0.name, production: $0.values,
                                                                        register: $1.values) }
         }
+        func intact(_ t: Q4FirstDivergenceTraceRun?) -> Bool {
+            guard let t = t else { return false }
+            return t.completion == "COMPLETED" && t.guardsIntact && t.allFinite && t.unwrittenWords == 0
+        }
+        let hostUnpack = Q4FirstDivergenceLayout.expectedUnpack(blocks: c.blocks, inDim: c.inDim, x: c.x)
+        for shape in Q4FirstDivergenceShape.allCases {
+            let run = report.traces.first {
+                $0.shape == shape.rawValue && $0.variant == Q4FirstDivergenceVariant.unpack.rawValue
+            }
+            report.unpackMatchesHost[shape.rawValue] = intact(run) && hostUnpack != nil
+                && traced(shape, .unpack) == hostUnpack
+        }
         if let u = stageDiffs(.unpack) {
             report.unpack = u
             report.unpackIdentical = u.allSatisfy { $0.identical }
-        }
-        /// A trace run is calibrated to its original only if it completed, its final equals the uninstrumented bits,
-        /// its guards are intact, every trace word was written and its last traced sum equals its own final.
-        func calibrated(_ run: Q4FirstDivergenceTraceRun?) -> Bool {
-            guard let run = run else { return false }
-            return run.completion == "COMPLETED" && run.finalEqualsUninstrumented && run.guardsIntact
-                && run.unwrittenWords == 0 && run.lastTracedSumEqualsOwnFinal == true
         }
         for variant in [Q4FirstDivergenceVariant.sumOnly, .split] {
             guard let s = stageDiffs(variant) else { continue }
@@ -777,8 +936,11 @@ public enum Q4FirstDivergenceDiagnostics {
             let rRun = report.traces.first { $0.shape == "register" && $0.variant == variant.rawValue }
             report.variants.append(Q4FirstDivergenceVariantDiff(
                 variant: variant.rawValue,
-                productionTraceFinalEqualsControl: calibrated(pRun),
-                registerTraceFinalEqualsCandidate: calibrated(rRun), stages: s))
+                productionTraceFinalEqualsControl: pRun?.finalEqualsUninstrumented ?? false,
+                registerTraceFinalEqualsCandidate: rRun?.finalEqualsUninstrumented ?? false,
+                lastTracedSumsEqualOwnFinals: pRun?.lastTracedSumEqualsOwnFinal == true
+                    && rRun?.lastTracedSumEqualsOwnFinal == true,
+                runsIntact: intact(pRun) && intact(rRun), stages: s))
         }
 
         // 4. CPU hypotheses.
@@ -795,8 +957,12 @@ public enum Q4FirstDivergenceDiagnostics {
                 firstDifferenceVsRegisterSumTrace: sums.flatMap { s in rSum.map { Q4FirstDivergenceLayout.firstDifference(s, $0) } } ?? nil))
         }
 
-        let verdict = attribute(reproduced: report.reproducedMismatch, unpackIdentical: report.unpackIdentical,
-                                unpack: report.unpack, variants: report.variants)
+        let verdict = attribute(reproduced: report.reproducedMismatch,
+                                uninstrumentedIntact: report.uninstrumentedGuardsIntact == true
+                                    && report.uninstrumentedFinite == true && report.uninstrumentedInContract == true,
+                                unpackHostVerified: report.unpackMatchesHost["production"] == true
+                                    && report.unpackMatchesHost["register"] == true,
+                                unpackIdentical: report.unpackIdentical, unpack: report.unpack, variants: report.variants)
         report.originalCauseEstablished = verdict.established
         report.originalCauseStatement = verdict.statement
         emit(verdict.statement)

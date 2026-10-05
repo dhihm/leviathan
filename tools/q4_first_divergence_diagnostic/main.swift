@@ -4,8 +4,9 @@
 // installable, no timing, no model file. Protocol: parse, exclusive report path and executable digest before
 // BENCHMARK_READY; exact GO before any Metal device; 10 s semaphore per command buffer; NOT_ENDED and exit 5 on
 // timeout with END withheld; TIMED_WINDOW_END only when every committed command buffer completed. Exit: 0 diagnostic
-// completed (the attribution verdict is in the report); 7 mismatch not reproduced; 2 unsupported; 4 command buffer
-// error; 5 not ended; 1 otherwise.
+// completed (the attribution verdict is in the report); 7 mismatch not reproduced; 3 integrity failure; 2 unsupported
+// (including a failed pre-dispatch mirror check); 4 command buffer error; 5 not ended; 1 otherwise (including
+// NOT_COMMITTED). v2 hardened kind; the v1 report stands as recorded.
 
 import Foundation
 import LeviathanCore

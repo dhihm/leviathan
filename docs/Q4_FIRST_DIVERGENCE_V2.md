@@ -1,0 +1,23 @@
+# Hardened original-kernel diagnosis: v2
+
+The original minimum-row mismatch remains reproduced. Both instrumented unpack probes now also match the host's original bytes, and every instrumented body passes an exact unique-original mirror check. **The original arithmetic cause is still not established:** the production sum-only trace final differs from the uninstrumented control. No failed candidate or production default is promoted.
+
+This is a distinct `q4-first-divergence-diagnostic-v2` source and executable. It addresses the delayed independent Opus review collected after 2,106.765 seconds. The v1 report and executable remain preserved historical evidence, not v2 qualification. The source author reconciled 33 exact patches against the current code, including earlier compile and Fable review changes. No original kernel, fixture, compiler option, model or normal path changed.
+
+## Gates and actual result
+
+Uninstrumented outputs must be finite, inside the original FP64 1e-4 contract and guard-intact. Incomplete or uncommitted infrastructure steps cannot become reproduction findings. Every trace must complete, be finite and guard-intact, and write every word. The scale, quantization and activation bit probes must each agree with host expectations. The sum-only trace may supply calibrated trace evidence only when both finals match their respective originals and both final recorded sums match their own outputs. The split variant is altered arithmetic by construction and never attributes an original cause.
+
+Unique original kernel bodies are extracted and compared line-for-line with each instrumented decode skeleton; sum-only bodies minus trace stores must match verbatim. The first actual mirror pure test failed at 20 passed / 1 failed. It identified `rowBase` versus `rowBytes` and an extra integer cast in the production copy. The conditional source-author correction matched the original body; the mirror check was not relaxed. This also restricts the earlier v1 interpretation: that run did not isolate trace stores as the reason its production copy output changed.
+
+The corrected release build passed. Pure checks passed 21 + 18 + 22 + 29 + 40 = 130. EOF reached READY and exited 1 without a Metal device or report. After refreshing the debug CLI, all 2,056 existing regression checks passed with actual exit 0, END and released supervision lock.
+
+The actual Apple M1 Max run completed eight command buffers, exited 0 and emitted END in 0.555242 supervisor seconds. Both locks were released. Original control bits were `bd6b6117`; candidate bits were `bd6b6116`. All baseline finite/contract/guard gates passed. There were no mirror errors. Both unpack shapes matched host bytes and each other. All traces completed, were finite and fully written, had intact guards and consistent own final sums.
+
+Both sum-only finals were `bd6b6116`: the register trace matched its original, but the production trace did not. All 64 traced running sums agreed between the copies. The split copies likewise agreed and remain non-attributable. The report therefore says `originalCauseEstablished: false`. Host-matched decode probes and source mirroring strengthen the diagnosis, but they still cannot reveal the uninstrumented original's instruction sequence. The fixed [input-prefix probes](Q4_ORIGINAL_PREFIX_PHASE65.md) independently found masked-input differences at lengths 62 and 64; they are input perturbations, not observed original accumulators.
+
+Actual executable SHA-256: `cbaf9d870e1ec800b17e003f4855237f325739a4878a30e9cfc3c40596576b61`. The frozen executable remains beside the local receipt. [Full raw evidence](evidence/q4-first-divergence-v2/) includes the delayed review, reconciliation, original-mirror correction, report and terminal receipts.
+
+Native SDK headers state that the default `mathMode` depends on the language-standard version. Options nil retains the SDK default; this work does not assert a particular default mode or compiled optimization. The selected Command Line Tools and checked Xcode/Metal toolchain paths do not expose offline Metal compilation or disassembly utilities. No toolchain was installed or downloaded. An additional instruction-level claim is not supported by the current evidence.
+
+No model file, weight upload, rehash, performance timing, gain qualification or default promotion occurred. All five claim flags remain false. A separate same-pipeline RMS scheduling component is under independent review; it changes scheduling of disjoint work, not per-output arithmetic. The Ollama goal remains unmet. A read-only local Ollama residency query returned no resident model at this stage; it does not establish the residency during earlier comparisons.

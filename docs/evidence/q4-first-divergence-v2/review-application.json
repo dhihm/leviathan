@@ -1,0 +1,20 @@
+{
+  "patchCount": 33,
+  "files": [
+    {
+      "file": "Sources/LeviathanCore/Q4FirstDivergence.swift",
+      "beforeSHA256": "96ec52252166fb55f4b865129ff40dd7da0775fdbca088d9c9cf52e05cdf9629",
+      "afterSHA256": "b5d7c4c5a61ea9aeef77d108fe362d079a4cca4a184bf26369fead975267d254"
+    },
+    {
+      "file": "tools/q4_first_divergence_diagnostic/main.swift",
+      "beforeSHA256": "53f053078b4ded5a1a037d58e9ba4a440974db2592855608b75ce3138325a63a",
+      "afterSHA256": "bc1f8bc32937d91684e4cdb18f50428ea8d72d2509aed18d61af8440e43bcb04"
+    },
+    {
+      "file": "tools/q4_first_divergence_pure_tests/main.swift",
+      "beforeSHA256": "4acc9289bf2c68d6e53ab9810402a5b9932a94f1f1e4468be3ca4503b14fc865",
+      "afterSHA256": "23241f374e2ce7ae1a2641029d95cbf5bf8fa9e955f30d0f1291d5ca4fd2be79"
+    }
+  ]
+}

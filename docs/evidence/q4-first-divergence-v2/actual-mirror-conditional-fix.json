@@ -1,0 +1,9 @@
+{
+  "patches": [
+    {
+      "file": "Sources/LeviathanCore/Q4FirstDivergence.swift",
+      "old": "        case .production:\n            lines += [\n                \"    device const uchar* rowBase = wbase + wOff + (ulong)row * (ulong)blocksPerRow * 18u;\",\n                \"    float sum = 0.0f;\",\n                \"    for (uint b = 0; b < blocksPerRow; b++) {\",\n                \"        device const uchar* blk = rowBase + b * 18u;\",\n                \"        ushort dbits = ushort(blk[0]) | (ushort(blk[1]) << 8u);\",\n                \"        float d = float(as_type<half>(dbits));\",\n            ]",
+      "new": "        case .production:\n            // Verbatim lines of the extracted production g4_q4_matvec body (name `rowBytes`, single ulong cast);\n            // the mirror check requires them exactly.\n            lines += [\n                \"    device const uchar* rowBytes = wbase + wOff + (ulong)row * blocksPerRow * 18u;\",\n                \"    float sum = 0.0f;\",\n                \"    for (uint b = 0; b < blocksPerRow; b++) {\",\n                \"        device const uchar* blk = rowBytes + b * 18u;\",\n                \"        ushort dbits = ushort(blk[0]) | (ushort(blk[1]) << 8u);\",\n                \"        float d = float(as_type<half>(dbits));\",\n            ]"
+    }
+  ]
+}

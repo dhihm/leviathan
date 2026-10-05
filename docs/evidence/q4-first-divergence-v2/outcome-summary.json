@@ -1,0 +1,67 @@
+{
+  "kind": "q4-first-divergence-diagnostic-v2",
+  "status": "completed",
+  "controlFinalHex": "bd6b6117",
+  "candidateFinalHex": "bd6b6116",
+  "reproducedMismatch": true,
+  "uninstrumentedFinite": true,
+  "uninstrumentedInContract": true,
+  "uninstrumentedGuardsIntact": true,
+  "mirrorErrors": [],
+  "unpackMatchesHost": {
+    "production": true,
+    "register": true
+  },
+  "unpackIdentical": true,
+  "originalCauseEstablished": false,
+  "originalCauseStatement": "ORIGINAL CAUSE NOT ESTABLISHED: the sum-only trace did not pass the attribution gate (sumOnly productionFinal=false registerFinal=true lastSums=true intact=true; split productionFinal=false registerFinal=true lastSums=true intact=true); the traces describe the instrumented copies, not the originals; the split trace is altered arithmetic by construction and never attributes; decode operands identical",
+  "commandBuffersCommitted": 8,
+  "variants": [
+    {
+      "attributableToOriginals": false,
+      "lastTracedSumsEqualOwnFinals": true,
+      "productionTraceFinalEqualsControl": false,
+      "registerTraceFinalEqualsCandidate": true,
+      "runsIntact": true,
+      "stages": [
+        {
+          "count": 64,
+          "identical": true,
+          "stage": "sum"
+        }
+      ],
+      "variant": "sumOnly"
+    },
+    {
+      "attributableToOriginals": false,
+      "lastTracedSumsEqualOwnFinals": true,
+      "productionTraceFinalEqualsControl": false,
+      "registerTraceFinalEqualsCandidate": true,
+      "runsIntact": true,
+      "stages": [
+        {
+          "count": 64,
+          "identical": true,
+          "stage": "w"
+        },
+        {
+          "count": 64,
+          "identical": true,
+          "stage": "dw"
+        },
+        {
+          "count": 64,
+          "identical": true,
+          "stage": "p"
+        },
+        {
+          "count": 64,
+          "identical": true,
+          "stage": "sum"
+        }
+      ],
+      "variant": "split"
+    }
+  ],
+  "executableSHA256": "cbaf9d870e1ec800b17e003f4855237f325739a4878a30e9cfc3c40596576b61"
+}

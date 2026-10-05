@@ -1,0 +1,158 @@
+{
+  "benchmark": {
+    "argv": [
+      ".build/release/q4-first-divergence-diagnostic",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase64-v2-hardened-diagnostic-run/diagnostic-report.json"
+    ],
+    "cwd": "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53"
+  },
+  "child": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 89519,
+      "ppid": 89518,
+      "start_tvsec": 1791210080,
+      "start_tvusec": 585779,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 89519,
+        "ppid": 89518,
+        "start_tvsec": 1791210080,
+        "start_tvusec": 585779,
+        "uid": 501
+      },
+      "pid": 89519,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 89519,
+    "spawnedUTC": "2026-10-05T14:21:20.587398Z"
+  },
+  "cleanupResult": {
+    "lockReleaseEligible": true,
+    "lockReleaseError": null,
+    "lockReleased": true
+  },
+  "createdUTC": "2026-10-05T14:21:20.584614Z",
+  "kind": "owned_benchmark_supervisor_state",
+  "launchUUID": "68bca04d-42b7-438d-ae2d-3a54cd78d73b",
+  "markers": {
+    "endObservedUTC": "2026-10-05T14:21:21.125429Z",
+    "goSentUTC": "2026-10-05T14:21:20.689426Z",
+    "readyObservedUTC": "2026-10-05T14:21:20.668341Z"
+  },
+  "outputDir": "/tmp/leviathan-forge2-tooling/phase64-v2-hardened-diagnostic-run",
+  "phase": "finished",
+  "phaseHistory": [
+    {
+      "phase": "created",
+      "utc": "2026-10-05T14:21:20.584631Z"
+    },
+    {
+      "phase": "spawning_wrapper",
+      "utc": "2026-10-05T14:21:20.585079Z"
+    },
+    {
+      "phase": "wrapper_spawned",
+      "utc": "2026-10-05T14:21:20.587431Z"
+    },
+    {
+      "phase": "identity_recorded",
+      "utc": "2026-10-05T14:21:20.588362Z"
+    },
+    {
+      "phase": "start_released",
+      "utc": "2026-10-05T14:21:20.589033Z"
+    },
+    {
+      "phase": "ready_observed",
+      "utc": "2026-10-05T14:21:20.668596Z"
+    },
+    {
+      "phase": "pre_go_snapshot",
+      "utc": "2026-10-05T14:21:20.669282Z"
+    },
+    {
+      "phase": "sending_go",
+      "utc": "2026-10-05T14:21:20.688559Z"
+    },
+    {
+      "phase": "timed_window",
+      "utc": "2026-10-05T14:21:20.689437Z"
+    },
+    {
+      "phase": "window_ended",
+      "utc": "2026-10-05T14:21:21.125469Z"
+    },
+    {
+      "phase": "post_window",
+      "utc": "2026-10-05T14:21:21.141751Z"
+    },
+    {
+      "phase": "child_exited",
+      "utc": "2026-10-05T14:21:21.143152Z"
+    },
+    {
+      "phase": "finished",
+      "utc": "2026-10-05T14:21:21.144828Z"
+    }
+  ],
+  "phaseUTC": "2026-10-05T14:21:21.144828Z",
+  "progress": {
+    "lastLine": "report /tmp/leviathan-forge2-tooling/phase64-v2-hardened-diagnostic-run/diagnostic-report.json written: status completed; original cause established: false; diagnostic only, no gain, install or production claim",
+    "lastLineUTC": "2026-10-05T14:21:21.142665Z",
+    "lineCount": 6,
+    "tpotLines": []
+  },
+  "quietAck": null,
+  "quietReadyFile": null,
+  "quietRequestFile": null,
+  "receiptWritten": true,
+  "schemaVersion": 1,
+  "supervisor": {
+    "nativeIdentity": {
+      "comm": "python3.11",
+      "pid": 89518,
+      "ppid": 65294,
+      "start_tvsec": 1791210080,
+      "start_tvusec": 488562,
+      "uid": 501
+    },
+    "nativeLookup": {
+      "detail": "",
+      "errno": null,
+      "errnoName": null,
+      "identity": {
+        "comm": "python3.11",
+        "pid": 89518,
+        "ppid": 65294,
+        "start_tvsec": 1791210080,
+        "start_tvusec": 488562,
+        "uid": 501
+      },
+      "pid": 89518,
+      "source": "proc_pidinfo(PROC_PIDTBSDINFO)",
+      "status": "ok"
+    },
+    "pid": 89518,
+    "uid": 501
+  },
+  "timeoutSeconds": 600.0,
+  "wrapperArgv": [
+    "/opt/anaconda3/bin/python3",
+    "-I",
+    "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/tools/owned_benchmark_supervisor.py",
+    "_exec-wrapper",
+    "--",
+    ".build/release/q4-first-divergence-diagnostic",
+    "--report",
+    "/tmp/leviathan-forge2-tooling/phase64-v2-hardened-diagnostic-run/diagnostic-report.json"
+  ]
+}

@@ -40,6 +40,12 @@ func checkLayout(_ h: inout Harness) {
     h.check(L.locator(stage: "sum", index: 39) == "term 39 = block 1 byte 3 high nibble"
             && L.locator(stage: "quantBytes", index: 21) == "block 1 byte 5" && L.locator(stage: "xBits", index: 7) == "x element 7"
             && L.hex8(0x1F) == "0000001f", "locator strings and 8-digit hex")
+    let ub: [UInt8] = [0x34, 0x12] + (0..<16).map { UInt8(0xA0 + $0) }
+    let ux = (0..<32).map { Float($0) }
+    let e = L.expectedUnpack(blocks: ub, inDim: 32, x: ux)
+    h.check(e?.count == 49 && e?[0] == 0x1234 && e?[1] == 0xA0 && e?[16] == 0xAF && e?[17] == 0
+            && e?[48] == Float(31).bitPattern && L.expectedUnpack(blocks: [0x34], inDim: 32, x: ux) == nil,
+            "host unpack expectation: little-endian scale, quant byte order, x bit order, short input refused")
 }
 
 func checkHalf(_ h: inout Harness) {
@@ -103,6 +109,22 @@ func checkEmitter(_ h: inout Harness) {
             "the production kernel carries the mirrored byte read and term line")
 }
 
+func checkMirror(_ h: inout Harness) {
+    typealias M = Q4FirstDivergenceMirror
+    let descriptor = try? Q4RegisterLoopDescriptor.derive(executionWidth: 32)
+    let registerSource = descriptor.flatMap { try? Q4RegisterLoopEmitter.emit($0) }
+    let errors = M.check(controlSource: Gemma4Runner.shaderSource, registerSource: registerSource ?? "",
+                         registerKernelName: descriptor?.kernelName ?? "")
+    for e in errors { print("mirror: " + e) }
+    h.check(registerSource != nil && errors.isEmpty,
+            "every instrumented copy mirrors its uniquely extracted original (skeleton; sum-only verbatim)")
+    h.check(M.kernelLines("kernel void k(int a) { }\nkernel void k(int a) { }\n", name: "k") == nil
+            && M.kernelLines("kernel void k(int a) {\n    x;\n", name: "k") == nil
+            && M.kernelLines("// head\nkernel void k(int a) {\n    // c\n    x;\n}\nkernel void j() {}\n", name: "k")
+                == ["kernel void K(int a) {", "x;", "}"],
+            "extraction refuses duplicate and unbalanced declarations, drops comments, normalizes the name")
+}
+
 func checkFrozenCase(_ h: inout Harness) {
     let c = Q4FirstDivergenceDiagnostics.frozenCase()
     let first = Q4WeightStageCorpus.synthetic().first
@@ -117,24 +139,36 @@ func checkAttribution(_ h: inout Harness) {
     let diff = Q4FirstDivergenceStageDiff.make(stage: "sum", production: [1, 2, 3], register: [1, 2, 4])
     h.check(same.identical && diff.firstIndex == 2 && diff.productionHex == "00000003" && diff.registerHex == "00000004"
             && diff.locator == "term 2 = block 0 byte 1 low nibble", "stage diff construction")
-    let good = Q4FirstDivergenceVariantDiff(variant: "sumOnly", productionTraceFinalEqualsControl: true,
-                                            registerTraceFinalEqualsCandidate: true, stages: [diff])
-    let bad = Q4FirstDivergenceVariantDiff(variant: "sumOnly", productionTraceFinalEqualsControl: true,
-                                           registerTraceFinalEqualsCandidate: false, stages: [diff])
-    let r0 = D.attribute(reproduced: nil, unpackIdentical: true, unpack: [], variants: [good])
-    let r1 = D.attribute(reproduced: true, unpackIdentical: true, unpack: [], variants: [good])
-    let r2 = D.attribute(reproduced: true, unpackIdentical: true, unpack: [], variants: [bad])
-    let r3 = D.attribute(reproduced: true, unpackIdentical: false,
-                         unpack: [Q4FirstDivergenceStageDiff.make(stage: "quantBytes", production: [1], register: [2])],
-                         variants: [good])
-    let r4 = D.attribute(reproduced: true, unpackIdentical: true, unpack: [],
-                         variants: [Q4FirstDivergenceVariantDiff(variant: "split", productionTraceFinalEqualsControl: true,
-                                                                 registerTraceFinalEqualsCandidate: true, stages: [same])])
-    h.check(!r0.established && !r2.established && r2.statement.contains("NOT ESTABLISHED")
-            && !r3.established && r3.statement.contains("NOT ESTABLISHED") && !r4.established
-            && r4.statement.contains("NOT ESTABLISHED"), "not reproduced, unattributable trace, decode difference and empty-diff contradiction never establish")
-    h.check(r1.established && r1.statement.contains("ESTABLISHED by the sumOnly trace") && r1.statement.contains("term 2"),
-            "an attributable trace with a differing stage establishes the first divergence")
+    func variant(_ name: String, finals: Bool = true, last: Bool = true, intact: Bool = true,
+                 _ stages: [Q4FirstDivergenceStageDiff]) -> Q4FirstDivergenceVariantDiff {
+        Q4FirstDivergenceVariantDiff(variant: name, productionTraceFinalEqualsControl: true,
+                                     registerTraceFinalEqualsCandidate: finals, lastTracedSumsEqualOwnFinals: last,
+                                     runsIntact: intact, stages: stages)
+    }
+    func attr(_ v: [Q4FirstDivergenceVariantDiff], reproduced: Bool? = true, intact: Bool = true, host: Bool = true,
+              unpackIdentical: Bool? = true,
+              unpack: [Q4FirstDivergenceStageDiff] = []) -> (established: Bool, statement: String) {
+        D.attribute(reproduced: reproduced, uninstrumentedIntact: intact, unpackHostVerified: host,
+                    unpackIdentical: unpackIdentical, unpack: unpack, variants: v)
+    }
+    let good = variant("sumOnly", [diff])
+    let refused = [
+        attr([good], reproduced: nil), attr([good], intact: false), attr([good], host: false),
+        attr([good], unpackIdentical: false,
+             unpack: [Q4FirstDivergenceStageDiff.make(stage: "quantBytes", production: [1], register: [2])]),
+        attr([variant("sumOnly", finals: false, [diff])]), attr([variant("sumOnly", last: false, [diff])]),
+        attr([variant("sumOnly", intact: false, [diff])]), attr([variant("split", [diff])]),
+        attr([variant("sumOnly", [same])]),
+    ]
+    h.check(refused.allSatisfy { !$0.established }
+            && refused.dropFirst().allSatisfy { $0.statement.contains("NOT ESTABLISHED") }
+            && good.attributableToOriginals && !variant("split", [diff]).attributableToOriginals,
+            "not reproduced, uninstrumented integrity, host unpack, unpack difference, final, last-sum, run integrity, "
+                + "split and empty-diff contradiction never establish")
+    let ok = attr([good])
+    h.check(ok.established && ok.statement.contains("ESTABLISHED by the sumOnly trace") && ok.statement.contains("term 2")
+            && ok.statement.contains("not the compiled instruction"),
+            "a sum-only trace passing every gate with a differing stage establishes the first differing running sum")
 }
 
 func checkContract(_ h: inout Harness) {
@@ -147,7 +181,8 @@ func checkContract(_ h: inout Harness) {
     if let data = try? D.encodeReport(Q4FirstDivergenceReport()),
        var obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
         let base = flags.allSatisfy { (obj[$0] as? Bool) == false } && (obj["kind"] as? String) == D.kind
-            && (obj["originalCauseEstablished"] as? Bool) == false && (obj["closedRecords"] as? [String])?.count == 2
+            && (obj["originalCauseEstablished"] as? Bool) == false && (obj["closedRecords"] as? [String])?.count == 3
+            && (obj["kind"] as? String) == "q4-first-divergence-diagnostic-v2"
         for f in flags { obj[f] = true }
         if let raw = try? JSONSerialization.data(withJSONObject: obj),
            let decoded = try? JSONDecoder().decode(Q4FirstDivergenceReport.self, from: raw),
@@ -156,12 +191,13 @@ func checkContract(_ h: inout Harness) {
             contract = base && flags.allSatisfy { (back[$0] as? Bool) == false }
         }
     }
-    h.check(contract, "claim flags encode false and re-emit false after tampering; both closed records present")
+    h.check(contract, "claim flags encode false and re-emit false after tampering; v2 kind; three closed records present")
     var r = Q4FirstDivergenceReport()
     h.check(D.finalStatus(r) == .unsupported, "empty report is unsupported")
     r.terminal = false
     h.check(D.finalStatus(r) == .notEnded && D.exitCode(.notEnded) == 5 && D.exitCode(.notReproduced) == 7
-            && D.exitCode(.completed) == 0 && D.exitCode(.commandBufferError) == 4, "status and exit mapping")
+            && D.exitCode(.completed) == 0 && D.exitCode(.commandBufferError) == 4
+            && D.exitCode(.integrityFailed) == 3, "status and exit mapping")
 }
 
 func runAll() -> Int32 {
@@ -170,6 +206,7 @@ func runAll() -> Int32 {
     checkHalf(&h)
     checkModels(&h)
     checkEmitter(&h)
+    checkMirror(&h)
     checkFrozenCase(&h)
     checkAttribution(&h)
     checkContract(&h)

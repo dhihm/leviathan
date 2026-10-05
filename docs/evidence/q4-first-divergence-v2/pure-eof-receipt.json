@@ -1,0 +1,70 @@
+[
+  {
+    "name": "prefix-pure",
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/q4-prefix-probe-pure-tests"
+    ],
+    "exit": 0,
+    "expectedExit": 0,
+    "elapsedSeconds": 0.6138550420291722,
+    "stdout": "q4-prefix-probe-pure-tests passed 18 failed 0\n",
+    "stderr": ""
+  },
+  {
+    "name": "divergence-pure",
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/q4-first-divergence-pure-tests"
+    ],
+    "exit": 0,
+    "expectedExit": 0,
+    "elapsedSeconds": 0.5176300830207765,
+    "stdout": "q4-first-divergence-pure-tests passed 21 failed 0\n",
+    "stderr": ""
+  },
+  {
+    "name": "loop-pure",
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/q4-register-loop-pure-tests"
+    ],
+    "exit": 0,
+    "expectedExit": 0,
+    "elapsedSeconds": 0.4970039171166718,
+    "stdout": "q4-register-loop-pure-tests passed 22 failed 0\n",
+    "stderr": ""
+  },
+  {
+    "name": "word-pure",
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/q4-packed-word-pure-tests"
+    ],
+    "exit": 0,
+    "expectedExit": 0,
+    "elapsedSeconds": 0.5057863751426339,
+    "stdout": "q4-packed-word-pure-tests passed 29 failed 0\n",
+    "stderr": ""
+  },
+  {
+    "name": "shared-pure",
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/q4-weight-stage-pure-tests"
+    ],
+    "exit": 0,
+    "expectedExit": 0,
+    "elapsedSeconds": 0.5042573749087751,
+    "stdout": "q4-weight-stage-pure-tests passed 40 failed 0\n",
+    "stderr": ""
+  },
+  {
+    "name": "synthetic-eof",
+    "argv": [
+      "/Users/dhihm/Documents/Codex/2026-10-02/task-5/leviathan-router-overlap-phase53/.build/release/q4-first-divergence-diagnostic",
+      "--report",
+      "/tmp/leviathan-forge2-tooling/phase64-delayed-review-hardening-fable/eof-no-report.json"
+    ],
+    "exit": 1,
+    "expectedExit": 1,
+    "elapsedSeconds": 0.5129247079603374,
+    "stdout": "BENCHMARK_READY\n",
+    "stderr": "q4-first-divergence-diagnostic: expected exactly GO on stdin; no device created\n"
+  }
+]
