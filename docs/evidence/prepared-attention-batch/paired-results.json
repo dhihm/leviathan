@@ -1,0 +1,223 @@
+{
+  "scope": "Three matched serial AB/BA/AB process pairs, preserved old executable versus new executable; same GGUF/raw-Hello/32 generated IDs, BOS-only reuse, repeat1 warmup excluded and repeats2/3 timed, no profiling or other owned GPU/build/author jobs during timing. Startup/identity/prefill excluded. CLI synchronous decode wall includes graph execution and output readback, distinct from Ollama server eval counters.",
+  "binarySha256": "6197931a3107e0b9dc398511e3e3fd57cd0d9f418f20b3b4c33ddadd9ca05b9d",
+  "baselineBinarySha256": "408076eaf055fd990c541f1f01c5940dbf64b4bb50903428d00ef88eb62d319c",
+  "planHashes": {
+    "incumbent": "1c815f16171096eb6ac2ab8c55a28c05d937e9def6aea60a33ec08f0e507625f",
+    "candidate": "0b79b56741dd5a0b6117186af247a0c9993487d7ae125b3b910e376776c17c22"
+  },
+  "arms": [
+    {
+      "pair": 1,
+      "arm": "incumbent",
+      "exit": 0,
+      "elapsedSeconds": 54.08692341670394,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 11472.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 374.57
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 11522.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 370.53
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 11561.9,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 372.02
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 11542.0,
+      "warmAggregateTokensPerSecond": 2.685843008144169,
+      "log": "pair-1-incumbent.log"
+    },
+    {
+      "pair": 1,
+      "arm": "candidate",
+      "exit": 0,
+      "elapsedSeconds": 40.60665020812303,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 9409.0,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 302.84
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 9443.6,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 305.6
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 9411.4,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 301.61
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 9427.5,
+      "warmAggregateTokensPerSecond": 3.2882524529302573,
+      "log": "pair-1-candidate.log"
+    },
+    {
+      "pair": 2,
+      "arm": "candidate",
+      "exit": 0,
+      "elapsedSeconds": 40.36288679204881,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 9326.6,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 298.64
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 9370.4,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 300.19
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 9340.6,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 298.79
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 9355.5,
+      "warmAggregateTokensPerSecond": 3.313558869114425,
+      "log": "pair-2-candidate.log"
+    },
+    {
+      "pair": 2,
+      "arm": "incumbent",
+      "exit": 0,
+      "elapsedSeconds": 46.80515370797366,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 11565.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 364.53
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 11410.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 364.14
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 11490.2,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 368.3
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 11450.150000000001,
+      "warmAggregateTokensPerSecond": 2.7073881128194826,
+      "log": "pair-2-incumbent.log"
+    },
+    {
+      "pair": 3,
+      "arm": "incumbent",
+      "exit": 0,
+      "elapsedSeconds": 47.60819779103622,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 11471.3,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 367.92
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 11731.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 377.31
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 11679.7,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 375.99
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 11705.400000000001,
+      "warmAggregateTokensPerSecond": 2.6483503340338643,
+      "log": "pair-3-incumbent.log"
+    },
+    {
+      "pair": 3,
+      "arm": "candidate",
+      "exit": 0,
+      "elapsedSeconds": 42.32515308400616,
+      "rows": [
+        {
+          "repetition": 1,
+          "decodeWallMillis": 9551.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 305.76
+        },
+        {
+          "repetition": 2,
+          "decodeWallMillis": 9690.9,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 304.26
+        },
+        {
+          "repetition": 3,
+          "decodeWallMillis": 9807.1,
+          "timedDecodeSteps": 31,
+          "perTokenMedianMillis": 308.14
+        }
+      ],
+      "warmTimedDecodeWallMedianMillis": 9749.0,
+      "warmAggregateTokensPerSecond": 3.1798133141860703,
+      "log": "pair-3-candidate.log"
+    }
+  ],
+  "pairs": [
+    {
+      "pair": 1,
+      "order": [
+        "incumbent",
+        "candidate"
+      ],
+      "candidateToIncumbentWallRatio": 0.8167995148154565,
+      "wallReductionPercent": 18.320048518454346
+    },
+    {
+      "pair": 2,
+      "order": [
+        "candidate",
+        "incumbent"
+      ],
+      "candidateToIncumbentWallRatio": 0.8170635319187958,
+      "wallReductionPercent": 18.29364680812042
+    },
+    {
+      "pair": 3,
+      "order": [
+        "incumbent",
+        "candidate"
+      ],
+      "candidateToIncumbentWallRatio": 0.8328634647256821,
+      "wallReductionPercent": 16.713653527431795
+    }
+  ],
+  "startedUTC": "2026-10-04T03:50:46Z",
+  "medianPairedWallRatio": 0.8170635319187958,
+  "medianPairedWallReductionPercent": 18.29364680812042,
+  "allPairsImprove": true,
+  "everyPairOverTwoPercent": true,
+  "crossArmExactTokenIDs": true,
+  "sourceUnchanged": true,
+  "plansUnchanged": true,
+  "binaryUnchanged": true
+}

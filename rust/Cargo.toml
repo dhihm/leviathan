@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["crates/lev-gguf", "crates/lev-cpu", "crates/lev-forge", "crates/lev-vulkan", "crates/lev-model", "crates/lev-cli"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.0.1"
+
+# Lean profiles: build output is large, so no full debug info by default.
+# CARGO_TARGET_DIR is expected to point outside the repository.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.release]
+debug = false
+incremental = false

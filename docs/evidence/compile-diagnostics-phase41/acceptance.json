@@ -1,0 +1,56 @@
+{
+  "completedUtc": "2026-10-04T17:32:46.598524+00:00",
+  "base": "cc1219fe0b07abfea7dd872466fa10e4f865b1d7",
+  "releaseBuildExit": 0,
+  "testsPassed": 1669,
+  "testsFailed": 0,
+  "initialFailure": "Test harness expected debug CLI path; corrected with symlink to identical release executable, no source changes",
+  "cliSha256": "b77e692ff46dd80116500335c86000273e1744cd35ebb31a5a5aed48a1ef0f5a",
+  "actualAuthorModel": "claude-opus-5-5",
+  "finalReviewerModel": "claude-fable-5-1",
+  "finalReviewAccepted": true,
+  "productChanges": "Typed diagnostics and ten catch sites in five lazy accessors only",
+  "runtimePolicyChanged": false,
+  "performanceClaim": false,
+  "freshProductionForgeOrPositivePlanReloadRun": true,
+  "foreignArtifactReloadRejected": true,
+  "mainPromoted": false,
+  "mainPublicationApprovedAfterIntegratedChecks": true,
+  "productionStages": [
+    {
+      "name": "fresh",
+      "exit": 0,
+      "elapsedSeconds": 756.2270943750627
+    },
+    {
+      "name": "reload",
+      "exit": 0,
+      "elapsedSeconds": 36.63753700023517
+    }
+  ],
+  "threeStrictFixtureGatesPassed": true,
+  "allFallbackCountsZero": true,
+  "selectedCandidate": {
+    "gpuCacheAppend": true,
+    "matvecCooperativeQ6": true,
+    "matvecTiledF32": false,
+    "matvecTiledQ4": false,
+    "matvecTiledQ6": false,
+    "parallelAttention": true,
+    "rmsStatisticsReuse": true,
+    "rmsnormCooperative": true,
+    "rmsnormTiled": false,
+    "routerGPUResidency": true,
+    "routerLaunchDivisor": 1,
+    "segmentBatching": true,
+    "top5Diagnostic": false,
+    "vectorizedLoads": true
+  },
+  "q4Width": 64,
+  "planDigest": "50107816f506952aa3bee1389563d59cb849841c427566ee92ae2f4b844114b8",
+  "compositeDigest": "a82d1319a75a2575a2b9ebfa63696df31c700a6a38afdb773c0c409d44cb4795",
+  "artifactFileHashes": {
+    "batch-plan.json": "cbf98a0fd6d53c9e1c7e203bd11caea3bcc3e21791fe66e6d9c917d08017b813",
+    "composite-pass.json": "5000559e3d18f25ff90e43bea677cbb4afdb1076b857967e4c0cb04b2f9071a8"
+  }
+}

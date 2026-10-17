@@ -1,0 +1,711 @@
+{
+ "dnTensor": "blk.0.ffn_down_exps.weight",
+ "expertIntermediate": 32,
+ "gateUpOut": 64,
+ "geluApprox": "tanh",
+ "graph": {
+  "inputs": [
+   "x",
+   "gu_weights",
+   "down_weights"
+  ],
+  "nodes": [
+   {
+    "args": [],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      96
+     ]
+    },
+    "name": "x",
+    "op": "placeholder",
+    "target": "placeholder"
+   },
+   {
+    "args": [],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      3,
+      64,
+      96
+     ]
+    },
+    "name": "gu_weights",
+    "op": "placeholder",
+    "target": "placeholder"
+   },
+   {
+    "args": [],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      3,
+      96,
+      32
+     ]
+    },
+    "name": "down_weights",
+    "op": "placeholder",
+    "target": "placeholder"
+   },
+   {
+    "args": [
+     {
+      "__node__": "gu_weights"
+     },
+     0,
+     0
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      64,
+      96
+     ]
+    },
+    "name": "select",
+    "op": "call_function",
+    "target": "aten.select.int"
+   },
+   {
+    "args": [
+     {
+      "__node__": "x"
+     },
+     {
+      "__node__": "select"
+     }
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      64
+     ]
+    },
+    "name": "linear",
+    "op": "call_function",
+    "target": "aten.linear.default"
+   },
+   {
+    "args": [
+     {
+      "__node__": "linear"
+     },
+     32,
+     -1
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "seq",
+     "items": [
+      {
+       "dtype": "float32",
+       "shape": [
+        1,
+        32
+       ]
+      },
+      {
+       "dtype": "float32",
+       "shape": [
+        1,
+        32
+       ]
+      }
+     ],
+     "shape": null
+    },
+    "name": "split",
+    "op": "call_function",
+    "target": "aten.split.Tensor"
+   },
+   {
+    "args": [
+     {
+      "__node__": "split"
+     },
+     0
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      32
+     ]
+    },
+    "name": "getitem",
+    "op": "call_function",
+    "target": "operator.getitem"
+   },
+   {
+    "args": [
+     {
+      "__node__": "split"
+     },
+     1
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      32
+     ]
+    },
+    "name": "getitem_1",
+    "op": "call_function",
+    "target": "operator.getitem"
+   },
+   {
+    "args": [
+     {
+      "__node__": "getitem"
+     }
+    ],
+    "kwargs": {
+     "approximate": "tanh"
+    },
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      32
+     ]
+    },
+    "name": "gelu",
+    "op": "call_function",
+    "target": "aten.gelu.default"
+   },
+   {
+    "args": [
+     {
+      "__node__": "gelu"
+     },
+     {
+      "__node__": "getitem_1"
+     }
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      32
+     ]
+    },
+    "name": "mul",
+    "op": "call_function",
+    "target": "aten.mul.Tensor"
+   },
+   {
+    "args": [
+     {
+      "__node__": "down_weights"
+     },
+     0,
+     0
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      96,
+      32
+     ]
+    },
+    "name": "select_1",
+    "op": "call_function",
+    "target": "aten.select.int"
+   },
+   {
+    "args": [
+     {
+      "__node__": "mul"
+     },
+     {
+      "__node__": "select_1"
+     }
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      96
+     ]
+    },
+    "name": "linear_1",
+    "op": "call_function",
+    "target": "aten.linear.default"
+   },
+   {
+    "args": [
+     {
+      "__node__": "gu_weights"
+     },
+     0,
+     1
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      64,
+      96
+     ]
+    },
+    "name": "select_2",
+    "op": "call_function",
+    "target": "aten.select.int"
+   },
+   {
+    "args": [
+     {
+      "__node__": "x"
+     },
+     {
+      "__node__": "select_2"
+     }
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      64
+     ]
+    },
+    "name": "linear_2",
+    "op": "call_function",
+    "target": "aten.linear.default"
+   },
+   {
+    "args": [
+     {
+      "__node__": "linear_2"
+     },
+     32,
+     -1
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "seq",
+     "items": [
+      {
+       "dtype": "float32",
+       "shape": [
+        1,
+        32
+       ]
+      },
+      {
+       "dtype": "float32",
+       "shape": [
+        1,
+        32
+       ]
+      }
+     ],
+     "shape": null
+    },
+    "name": "split_1",
+    "op": "call_function",
+    "target": "aten.split.Tensor"
+   },
+   {
+    "args": [
+     {
+      "__node__": "split_1"
+     },
+     0
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      32
+     ]
+    },
+    "name": "getitem_2",
+    "op": "call_function",
+    "target": "operator.getitem"
+   },
+   {
+    "args": [
+     {
+      "__node__": "split_1"
+     },
+     1
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      32
+     ]
+    },
+    "name": "getitem_3",
+    "op": "call_function",
+    "target": "operator.getitem"
+   },
+   {
+    "args": [
+     {
+      "__node__": "getitem_2"
+     }
+    ],
+    "kwargs": {
+     "approximate": "tanh"
+    },
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      32
+     ]
+    },
+    "name": "gelu_1",
+    "op": "call_function",
+    "target": "aten.gelu.default"
+   },
+   {
+    "args": [
+     {
+      "__node__": "gelu_1"
+     },
+     {
+      "__node__": "getitem_3"
+     }
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      32
+     ]
+    },
+    "name": "mul_1",
+    "op": "call_function",
+    "target": "aten.mul.Tensor"
+   },
+   {
+    "args": [
+     {
+      "__node__": "down_weights"
+     },
+     0,
+     1
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      96,
+      32
+     ]
+    },
+    "name": "select_3",
+    "op": "call_function",
+    "target": "aten.select.int"
+   },
+   {
+    "args": [
+     {
+      "__node__": "mul_1"
+     },
+     {
+      "__node__": "select_3"
+     }
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      96
+     ]
+    },
+    "name": "linear_3",
+    "op": "call_function",
+    "target": "aten.linear.default"
+   },
+   {
+    "args": [
+     {
+      "__node__": "gu_weights"
+     },
+     0,
+     2
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      64,
+      96
+     ]
+    },
+    "name": "select_4",
+    "op": "call_function",
+    "target": "aten.select.int"
+   },
+   {
+    "args": [
+     {
+      "__node__": "x"
+     },
+     {
+      "__node__": "select_4"
+     }
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      64
+     ]
+    },
+    "name": "linear_4",
+    "op": "call_function",
+    "target": "aten.linear.default"
+   },
+   {
+    "args": [
+     {
+      "__node__": "linear_4"
+     },
+     32,
+     -1
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "seq",
+     "items": [
+      {
+       "dtype": "float32",
+       "shape": [
+        1,
+        32
+       ]
+      },
+      {
+       "dtype": "float32",
+       "shape": [
+        1,
+        32
+       ]
+      }
+     ],
+     "shape": null
+    },
+    "name": "split_2",
+    "op": "call_function",
+    "target": "aten.split.Tensor"
+   },
+   {
+    "args": [
+     {
+      "__node__": "split_2"
+     },
+     0
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      32
+     ]
+    },
+    "name": "getitem_4",
+    "op": "call_function",
+    "target": "operator.getitem"
+   },
+   {
+    "args": [
+     {
+      "__node__": "split_2"
+     },
+     1
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      32
+     ]
+    },
+    "name": "getitem_5",
+    "op": "call_function",
+    "target": "operator.getitem"
+   },
+   {
+    "args": [
+     {
+      "__node__": "getitem_4"
+     }
+    ],
+    "kwargs": {
+     "approximate": "tanh"
+    },
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      32
+     ]
+    },
+    "name": "gelu_2",
+    "op": "call_function",
+    "target": "aten.gelu.default"
+   },
+   {
+    "args": [
+     {
+      "__node__": "gelu_2"
+     },
+     {
+      "__node__": "getitem_5"
+     }
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      32
+     ]
+    },
+    "name": "mul_2",
+    "op": "call_function",
+    "target": "aten.mul.Tensor"
+   },
+   {
+    "args": [
+     {
+      "__node__": "down_weights"
+     },
+     0,
+     2
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      96,
+      32
+     ]
+    },
+    "name": "select_5",
+    "op": "call_function",
+    "target": "aten.select.int"
+   },
+   {
+    "args": [
+     {
+      "__node__": "mul_2"
+     },
+     {
+      "__node__": "select_5"
+     }
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      1,
+      96
+     ]
+    },
+    "name": "linear_5",
+    "op": "call_function",
+    "target": "aten.linear.default"
+   },
+   {
+    "args": [
+     [
+      {
+       "__node__": "linear_1"
+      },
+      {
+       "__node__": "linear_3"
+      },
+      {
+       "__node__": "linear_5"
+      }
+     ]
+    ],
+    "kwargs": {},
+    "meta": {
+     "dtype": "float32",
+     "shape": [
+      3,
+      1,
+      96
+     ]
+    },
+    "name": "stack",
+    "op": "call_function",
+    "target": "aten.stack.default"
+   },
+   {
+    "args": [
+     [
+      {
+       "__node__": "stack"
+      }
+     ]
+    ],
+    "kwargs": {},
+    "meta": null,
+    "name": "output",
+    "op": "output",
+    "target": "output"
+   }
+  ],
+  "outputs": [
+   "output"
+  ]
+ },
+ "graphSha256": "93419b3d36897c2f983e0822ee4f4290a814c15d741d6b992560748b285ba9e8",
+ "guTensor": "blk.0.ffn_gate_up_exps.weight",
+ "hidden": 96,
+ "region": "gemma4.moe.routed-region",
+ "schema": 1,
+ "slotOps": [
+  "q4_0.expert-slice-linear-gate-up",
+  "gelu-tanh-split-mul",
+  "q4_0.expert-slice-linear-down"
+ ],
+ "stackOutputs": true,
+ "topK": 3,
+ "torch": {
+  "advisoryOnly": true,
+  "atenOps": [
+   "aten.gelu.default",
+   "aten.linear.default",
+   "aten.mul.Tensor",
+   "aten.select.int",
+   "aten.split.Tensor",
+   "aten.stack.default",
+   "operator.getitem"
+  ],
+  "strict": true,
+  "version": "2.9.1"
+ }
+}

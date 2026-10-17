@@ -1,0 +1,19 @@
+time: command terminated abnormally
+      951.31 real        83.63 user        37.04 sys
+          2444181504  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+             2332192  page reclaims
+               33863  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               17457  voluntary context switches
+             2138054  involuntary context switches
+        406507290070  instructions retired
+        362810814109  cycles elapsed
+         31154750336  peak memory footprint

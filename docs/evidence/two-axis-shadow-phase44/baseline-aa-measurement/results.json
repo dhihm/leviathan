@@ -1,0 +1,727 @@
+{
+  "scope": "Frozen validated baseline A/A control only, no candidate variant",
+  "protocol": {
+    "preparedUtc": "2026-10-04T18:20:42.371853+00:00",
+    "status": "prepared_not_started",
+    "purpose": "A/A noise floor for future comparisons; no rejected candidate rerun",
+    "quietWindowRequired": true,
+    "noOwnParallelGPUWork": true,
+    "processEnumerationPermitted": false,
+    "baselineExecutable": "<workspace>/leviathan-compile-diagnostics-phase41/.build/release/leviathan-cli",
+    "baselineSha256": "b77e692ff46dd80116500335c86000273e1744cd35ebb31a5a5aed48a1ef0f5a",
+    "plan": "/tmp/leviathan-forge2-tooling/phase41-compiler-integrity-review/production-lifecycle/batch-plan.json",
+    "composite": "/tmp/leviathan-forge2-tooling/phase41-compiler-integrity-review/production-lifecycle/composite-pass.json",
+    "baselineScope": "Frozen already validated main execution before shadow-library addition, actual automatic divisor1/Q4width32/E4R32 selection",
+    "visits": 7,
+    "repeatsPerVisit": 4,
+    "warmRepeats": 3,
+    "excludeWithinVisitFirstRepeat": true,
+    "retainAllVisits": true,
+    "outlierRemoval": false,
+    "decodeTokenDenominator": 31,
+    "generatedIDsPerRun": 32,
+    "fixture": "raw Hello with BOS alignment",
+    "perVisitStatistic": "median warm decode elapsed milliseconds divided by31",
+    "relativeSpread": "(max(perVisitMedian)-min(perVisitMedian))/median(perVisitMedian)",
+    "predeclaredDecision": "relativeSpread>0.05 means baseline reproducibility is inadequate for judging future sub5percent changes; prior failed gates stay failed",
+    "timingClaims": "No performance improvement or Ollama ratio; A/A control only",
+    "separateGapTrace": "Needs externally authored optional instrumentation in a separate run, not the A/A run; use one host monotonic clock at commit and wait return. Do not infer exact GPU completion gap from host wait return without clock/overhead validation. Flush-minus-GPU is not CPU busy time.",
+    "quietWindowCoordinatedUtc": "2026-10-04T18:55:53.794266+00:00",
+    "quietSource": "Parent confirms Dokkabi developer and utility idle, no parent-owned Mac builds or benchmarks scheduled. Run after compilation/tests/reviews.",
+    "observations": [
+      "pmset -g therm",
+      "pmset -g batt",
+      "vm_stat",
+      "uptime aggregate load"
+    ],
+    "observationPlacement": "Before and after each visit, outside decode windows; no process enumeration",
+    "matchedPrerequisites": "A/A spread<=5%, all7visits retained, no recorded thermal warning or capacity limit, AC power with battery percentage at least20 if reported, no pageout/swapout growth. If not met skip matched attribution; do not claim noise eliminated."
+  },
+  "coordination": {
+    "scope": "phase43-baseline-aa-seven-visits",
+    "ready": true,
+    "coordinatedUtc": "2026-10-04T18:40:14.132609+00:00",
+    "source": "Parent delegation confirms Dokkabi developer/utility idle and no parent-owned Mac builds or benchmarks; run after compilation/review/tests, no own parallel GPU work. Does not assert user applications idle or eliminate noise."
+  },
+  "startedUtc": "2026-10-04T19:10:02.985529+00:00",
+  "command": [
+    "<workspace>/leviathan-compile-diagnostics-phase41/.build/release/leviathan-cli",
+    "gemma-generate",
+    "--file",
+    "<workspace>/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "--graph",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "--plan",
+    "/tmp/leviathan-forge2-tooling/phase41-compiler-integrity-review/production-lifecycle/batch-plan.json",
+    "--composite-plan",
+    "/tmp/leviathan-forge2-tooling/phase41-compiler-integrity-review/production-lifecycle/composite-pass.json",
+    "--moe-region",
+    "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+    "--text",
+    "Hello",
+    "--max-tokens",
+    "32",
+    "--repeat",
+    "4",
+    "--bos-align"
+  ],
+  "visits": [
+    {
+      "visit": 1,
+      "exit": 0,
+      "elapsedSeconds": 22.75479375012219,
+      "decodeTotalsMs": [
+        2535.8,
+        2884.7,
+        2453.1,
+        2603.9
+      ],
+      "generatedIDs": [
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772"
+      ],
+      "fallbackValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "completedUtc": "2026-10-04T19:10:25.783794+00:00",
+      "warmMedianMsPerToken": 83.99677419354839
+    },
+    {
+      "visit": 2,
+      "exit": 0,
+      "elapsedSeconds": 22.58624304132536,
+      "decodeTotalsMs": [
+        2947.2,
+        3243.1,
+        2553.3,
+        2862.9
+      ],
+      "generatedIDs": [
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772"
+      ],
+      "fallbackValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "completedUtc": "2026-10-04T19:10:48.396152+00:00",
+      "warmMedianMsPerToken": 92.35161290322581
+    },
+    {
+      "visit": 3,
+      "exit": 0,
+      "elapsedSeconds": 21.172273749951273,
+      "decodeTotalsMs": [
+        2436.9,
+        2571.3,
+        2478.3,
+        2797.7
+      ],
+      "generatedIDs": [
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772"
+      ],
+      "fallbackValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "completedUtc": "2026-10-04T19:11:09.597558+00:00",
+      "warmMedianMsPerToken": 82.94516129032259
+    },
+    {
+      "visit": 4,
+      "exit": 0,
+      "elapsedSeconds": 21.853153165895492,
+      "decodeTotalsMs": [
+        2331.6,
+        2569.2,
+        3035.5,
+        3092.0
+      ],
+      "generatedIDs": [
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772"
+      ],
+      "fallbackValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "completedUtc": "2026-10-04T19:11:31.477933+00:00",
+      "warmMedianMsPerToken": 97.91935483870968
+    },
+    {
+      "visit": 5,
+      "exit": 0,
+      "elapsedSeconds": 21.61102154199034,
+      "decodeTotalsMs": [
+        2942.0,
+        3490.3,
+        2213.5,
+        2207.1
+      ],
+      "generatedIDs": [
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772"
+      ],
+      "fallbackValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "completedUtc": "2026-10-04T19:11:53.123254+00:00",
+      "warmMedianMsPerToken": 71.40322580645162
+    },
+    {
+      "visit": 6,
+      "exit": 0,
+      "elapsedSeconds": 23.12371312500909,
+      "decodeTotalsMs": [
+        2295.3,
+        2915.2,
+        3581.2,
+        3371.9
+      ],
+      "generatedIDs": [
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772"
+      ],
+      "fallbackValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "completedUtc": "2026-10-04T19:12:16.274508+00:00",
+      "warmMedianMsPerToken": 108.7709677419355
+    },
+    {
+      "visit": 7,
+      "exit": 0,
+      "elapsedSeconds": 22.005564209073782,
+      "decodeTotalsMs": [
+        2510.5,
+        2865.6,
+        2932.2,
+        2821.6
+      ],
+      "generatedIDs": [
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+        "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772"
+      ],
+      "fallbackValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "completedUtc": "2026-10-04T19:12:38.306714+00:00",
+      "warmMedianMsPerToken": 92.43870967741935
+    }
+  ],
+  "observations": [
+    {
+      "label": "visit-1-before",
+      "utc": "2026-10-04T19:10:03.028885+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t91%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                3543.\nPages active:                            573433.\nPages inactive:                          743093.\nPages speculative:                         7721.\nPages throttled:                              0.\nPages wired down:                        676702.\nPages purgeable:                           5653.\n\"Translation faults\":              203315090652.\nPages copy-on-write:                46078899355.\nPages zero filled:                  41815599756.\nPages reactivated:                  21496700683.\nPages purged:                         746104053.\nFile-backed pages:                       831812.\nAnonymous pages:                         492435.\nPages stored in compressor:             2824658.\nPages occupied by compressor:             35940.\nDecompressions:                     17686841189.\nCompressions:                       18527863603.\nPageins:                             3385430667.\nPageouts:                              13233882.\nSwapins:                              304765595.\nSwapouts:                             413440423.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:10  up 42 days, 10:26, 4 users, load averages: 10.65 10.98 11.01\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13233882,
+        "Swapins": 304765595,
+        "Swapouts": 413440423
+      }
+    },
+    {
+      "label": "visit-1-after",
+      "utc": "2026-10-04T19:10:25.783252+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t91%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               24412.\nPages active:                             93440.\nPages inactive:                          427421.\nPages speculative:                         6470.\nPages throttled:                              0.\nPages wired down:                       1289246.\nPages purgeable:                             13.\n\"Translation faults\":              203316493822.\nPages copy-on-write:                46079197771.\nPages zero filled:                  41815789623.\nPages reactivated:                  21497505986.\nPages purged:                         746116037.\nFile-backed pages:                       462363.\nAnonymous pages:                          64968.\nPages stored in compressor:             3188593.\nPages occupied by compressor:            199479.\nDecompressions:                     17687125830.\nCompressions:                       18528533694.\nPageins:                             3385832162.\nPageouts:                              13234078.\nSwapins:                              304768332.\nSwapouts:                             413465367.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:10  up 42 days, 10:27, 4 users, load averages: 11.06 11.03 11.03\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13234078,
+        "Swapins": 304768332,
+        "Swapouts": 413465367
+      }
+    },
+    {
+      "label": "visit-2-before",
+      "utc": "2026-10-04T19:10:25.809794+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t91%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               23791.\nPages active:                             93814.\nPages inactive:                          689583.\nPages speculative:                         6628.\nPages throttled:                              0.\nPages wired down:                       1027103.\nPages purgeable:                             13.\n\"Translation faults\":              203316496577.\nPages copy-on-write:                46079198326.\nPages zero filled:                  41815789910.\nPages reactivated:                  21497505986.\nPages purged:                         746116037.\nFile-backed pages:                       724758.\nAnonymous pages:                          65267.\nPages stored in compressor:             3188298.\nPages occupied by compressor:            199371.\nDecompressions:                     17687126126.\nCompressions:                       18528533694.\nPageins:                             3385832375.\nPageouts:                              13234078.\nSwapins:                              304768332.\nSwapouts:                             413465367.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:10  up 42 days, 10:27, 4 users, load averages: 11.06 11.03 11.03\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13234078,
+        "Swapins": 304768332,
+        "Swapouts": 413465367
+      }
+    },
+    {
+      "label": "visit-2-after",
+      "utc": "2026-10-04T19:10:48.395868+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t91%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               23158.\nPages active:                            113153.\nPages inactive:                          687216.\nPages speculative:                         6847.\nPages throttled:                              0.\nPages wired down:                       1020350.\nPages purgeable:                             24.\n\"Translation faults\":              203317945323.\nPages copy-on-write:                46079440421.\nPages zero filled:                  41815969908.\nPages reactivated:                  21497830734.\nPages purged:                         746131610.\nFile-backed pages:                       724572.\nAnonymous pages:                          82644.\nPages stored in compressor:             3179840.\nPages occupied by compressor:            189839.\nDecompressions:                     17687544747.\nCompressions:                       18528954393.\nPageins:                             3385905176.\nPageouts:                              13234191.\nSwapins:                              304776601.\nSwapouts:                             413478807.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:10  up 42 days, 10:27, 4 users, load averages: 10.40 10.88 10.98\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13234191,
+        "Swapins": 304776601,
+        "Swapouts": 413478807
+      }
+    },
+    {
+      "label": "visit-3-before",
+      "utc": "2026-10-04T19:10:48.425171+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t91%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               37991.\nPages active:                            116796.\nPages inactive:                          917279.\nPages speculative:                         6905.\nPages throttled:                              0.\nPages wired down:                        772456.\nPages purgeable:                            477.\n\"Translation faults\":              203317949645.\nPages copy-on-write:                46079440977.\nPages zero filled:                  41815970191.\nPages reactivated:                  21497830734.\nPages purged:                         746131610.\nFile-backed pages:                       954731.\nAnonymous pages:                          86249.\nPages stored in compressor:             3177907.\nPages occupied by compressor:            188969.\nDecompressions:                     17687546681.\nCompressions:                       18528954393.\nPageins:                             3385905264.\nPageouts:                              13234191.\nSwapins:                              304776601.\nSwapouts:                             413478807.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:10  up 42 days, 10:27, 4 users, load averages: 10.40 10.88 10.98\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13234191,
+        "Swapins": 304776601,
+        "Swapouts": 413478807
+      }
+    },
+    {
+      "label": "visit-3-after",
+      "utc": "2026-10-04T19:11:09.597300+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t90%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               23168.\nPages active:                            105599.\nPages inactive:                          557367.\nPages speculative:                         7105.\nPages throttled:                              0.\nPages wired down:                       1157331.\nPages purgeable:                            455.\n\"Translation faults\":              203319326729.\nPages copy-on-write:                46079680942.\nPages zero filled:                  41816143117.\nPages reactivated:                  21498106370.\nPages purged:                         746144699.\nFile-backed pages:                       590900.\nAnonymous pages:                          79171.\nPages stored in compressor:             3127329.\nPages occupied by compressor:            189860.\nDecompressions:                     17687948376.\nCompressions:                       18529353632.\nPageins:                             3385953849.\nPageouts:                              13234315.\nSwapins:                              304788085.\nSwapouts:                             413484715.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:11  up 42 days, 10:27, 4 users, load averages: 10.25 10.81 10.95\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13234315,
+        "Swapins": 304788085,
+        "Swapouts": 413484715
+      }
+    },
+    {
+      "label": "visit-4-before",
+      "utc": "2026-10-04T19:11:09.624093+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t90%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               22518.\nPages active:                            106114.\nPages inactive:                          819530.\nPages speculative:                         7335.\nPages throttled:                              0.\nPages wired down:                        895187.\nPages purgeable:                              2.\n\"Translation faults\":              203319329681.\nPages copy-on-write:                46079681508.\nPages zero filled:                  41816143445.\nPages reactivated:                  21498106370.\nPages purged:                         746144699.\nFile-backed pages:                       853370.\nAnonymous pages:                          79609.\nPages stored in compressor:             3126942.\nPages occupied by compressor:            189720.\nDecompressions:                     17687948765.\nCompressions:                       18529353632.\nPageins:                             3385954103.\nPageouts:                              13234315.\nSwapins:                              304788085.\nSwapouts:                             413484715.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:11  up 42 days, 10:27, 4 users, load averages: 10.25 10.81 10.95\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13234315,
+        "Swapins": 304788085,
+        "Swapouts": 413484715
+      }
+    },
+    {
+      "label": "visit-4-after",
+      "utc": "2026-10-04T19:11:31.477482+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t90%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               22227.\nPages active:                            112592.\nPages inactive:                          476367.\nPages speculative:                         5642.\nPages throttled:                              0.\nPages wired down:                       1228920.\nPages purgeable:                            793.\n\"Translation faults\":              203320502288.\nPages copy-on-write:                46079921831.\nPages zero filled:                  41816314807.\nPages reactivated:                  21498346788.\nPages purged:                         746157379.\nFile-backed pages:                       511110.\nAnonymous pages:                          83491.\nPages stored in compressor:             3127325.\nPages occupied by compressor:            194626.\nDecompressions:                     17688200437.\nCompressions:                       18529617765.\nPageins:                             3385993605.\nPageouts:                              13234484.\nSwapins:                              304790372.\nSwapouts:                             413485179.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:11  up 42 days, 10:28, 4 users, load averages: 10.63 10.84 10.95\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13234484,
+        "Swapins": 304790372,
+        "Swapouts": 413485179
+      }
+    },
+    {
+      "label": "visit-5-before",
+      "utc": "2026-10-04T19:11:31.511807+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t90%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               21084.\nPages active:                            113809.\nPages inactive:                          799967.\nPages speculative:                         5946.\nPages throttled:                              0.\nPages wired down:                        905334.\nPages purgeable:                            793.\n\"Translation faults\":              203320506329.\nPages copy-on-write:                46079922381.\nPages zero filled:                  41816315108.\nPages reactivated:                  21498346788.\nPages purged:                         746157381.\nFile-backed pages:                       835165.\nAnonymous pages:                          84557.\nPages stored in compressor:             3126280.\nPages occupied by compressor:            194288.\nDecompressions:                     17688201485.\nCompressions:                       18529617765.\nPageins:                             3385993980.\nPageouts:                              13234484.\nSwapins:                              304790376.\nSwapouts:                             413485179.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:11  up 42 days, 10:28, 4 users, load averages: 10.63 10.84 10.95\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13234484,
+        "Swapins": 304790376,
+        "Swapouts": 413485179
+      }
+    },
+    {
+      "label": "visit-5-after",
+      "utc": "2026-10-04T19:11:53.123027+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t90%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               23773.\nPages active:                            111802.\nPages inactive:                          609467.\nPages speculative:                         2832.\nPages throttled:                              0.\nPages wired down:                       1091128.\nPages purgeable:                              2.\n\"Translation faults\":              203321657161.\nPages copy-on-write:                46080163204.\nPages zero filled:                  41816481120.\nPages reactivated:                  21498546837.\nPages purged:                         746171038.\nFile-backed pages:                       639610.\nAnonymous pages:                          84491.\nPages stored in compressor:             3127289.\nPages occupied by compressor:            201409.\nDecompressions:                     17688431657.\nCompressions:                       18529858447.\nPageins:                             3386031574.\nPageouts:                              13234571.\nSwapins:                              304792951.\nSwapouts:                             413485711.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:11  up 42 days, 10:28, 4 users, load averages: 10.67 10.85 10.95\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13234571,
+        "Swapins": 304792951,
+        "Swapouts": 413485711
+      }
+    },
+    {
+      "label": "visit-6-before",
+      "utc": "2026-10-04T19:11:53.150579+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t90%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               23373.\nPages active:                            112164.\nPages inactive:                          879818.\nPages speculative:                         3020.\nPages throttled:                              0.\nPages wired down:                        820792.\nPages purgeable:                              2.\n\"Translation faults\":              203321659901.\nPages copy-on-write:                46080163785.\nPages zero filled:                  41816481413.\nPages reactivated:                  21498546837.\nPages purged:                         746171038.\nFile-backed pages:                       910229.\nAnonymous pages:                          84773.\nPages stored in compressor:             3127017.\nPages occupied by compressor:            201308.\nDecompressions:                     17688431930.\nCompressions:                       18529858447.\nPageins:                             3386031813.\nPageouts:                              13234571.\nSwapins:                              304792951.\nSwapouts:                             413485711.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:11  up 42 days, 10:28, 4 users, load averages: 10.67 10.85 10.95\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13234571,
+        "Swapins": 304792951,
+        "Swapouts": 413485711
+      }
+    },
+    {
+      "label": "visit-6-after",
+      "utc": "2026-10-04T19:12:16.274263+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t90%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               21575.\nPages active:                             99711.\nPages inactive:                          433186.\nPages speculative:                         5033.\nPages throttled:                              0.\nPages wired down:                       1272780.\nPages purgeable:                              2.\n\"Translation faults\":              203323057319.\nPages copy-on-write:                46080407067.\nPages zero filled:                  41816665212.\nPages reactivated:                  21498872420.\nPages purged:                         746186642.\nFile-backed pages:                       469515.\nAnonymous pages:                          68415.\nPages stored in compressor:             3139686.\nPages occupied by compressor:            208062.\nDecompressions:                     17688810489.\nCompressions:                       18530262796.\nPageins:                             3386086354.\nPageouts:                              13234658.\nSwapins:                              304802743.\nSwapouts:                             413493255.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:12  up 42 days, 10:29, 4 users, load averages: 10.97 10.89 10.96\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13234658,
+        "Swapins": 304802743,
+        "Swapouts": 413493255
+      }
+    },
+    {
+      "label": "visit-7-before",
+      "utc": "2026-10-04T19:12:16.301004+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t90%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               21145.\nPages active:                            100134.\nPages inactive:                          687157.\nPages speculative:                         5220.\nPages throttled:                              0.\nPages wired down:                       1018828.\nPages purgeable:                              2.\n\"Translation faults\":              203323060116.\nPages copy-on-write:                46080407634.\nPages zero filled:                  41816665503.\nPages reactivated:                  21498872420.\nPages purged:                         746186642.\nFile-backed pages:                       723769.\nAnonymous pages:                          68742.\nPages stored in compressor:             3139370.\nPages occupied by compressor:            207949.\nDecompressions:                     17688810806.\nCompressions:                       18530262796.\nPageins:                             3386086617.\nPageouts:                              13234658.\nSwapins:                              304802743.\nSwapouts:                             413493255.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:12  up 42 days, 10:29, 4 users, load averages: 10.97 10.89 10.96\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13234658,
+        "Swapins": 304802743,
+        "Swapouts": 413493255
+      }
+    },
+    {
+      "label": "visit-7-after",
+      "utc": "2026-10-04T19:12:38.306252+00:00",
+      "raw": {
+        "thermal": {
+          "exit": 0,
+          "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+          "stderr": ""
+        },
+        "power": {
+          "exit": 0,
+          "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t90%; AC attached; not charging present: true\n",
+          "stderr": ""
+        },
+        "memory": {
+          "exit": 0,
+          "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               20830.\nPages active:                            104468.\nPages inactive:                          536008.\nPages speculative:                         5258.\nPages throttled:                              0.\nPages wired down:                       1174767.\nPages purgeable:                              8.\n\"Translation faults\":              203324465674.\nPages copy-on-write:                46080648403.\nPages zero filled:                  41816840204.\nPages reactivated:                  21499179754.\nPages purged:                         746200442.\nFile-backed pages:                       564261.\nAnonymous pages:                          81473.\nPages stored in compressor:             3116736.\nPages occupied by compressor:            199162.\nDecompressions:                     17689238815.\nCompressions:                       18530684021.\nPageins:                             3386151664.\nPageouts:                              13234766.\nSwapins:                              304808466.\nSwapouts:                             413498719.\n",
+          "stderr": ""
+        },
+        "aggregateLoad": {
+          "exit": 0,
+          "stdout": " 4:12  up 42 days, 10:29, 4 users, load averages: 11.40 11.00 11.00\n",
+          "stderr": ""
+        }
+      },
+      "memoryCounters": {
+        "Pageouts": 13234766,
+        "Swapins": 304808466,
+        "Swapouts": 413498719
+      }
+    }
+  ],
+  "overallMedianMsPerToken": 92.35161290322581,
+  "relativeSpread": 0.40462468126724654,
+  "allVisitsRetained": true,
+  "filesUnchanged": true,
+  "completedUtc": "2026-10-04T19:12:38.314262+00:00",
+  "memoryActivityDeltas": {
+    "Pageouts": 884,
+    "Swapins": 42871,
+    "Swapouts": 58296
+  },
+  "sub5PercentJudgmentPermittedByNoiseCriterion": false
+}

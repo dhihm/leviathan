@@ -1,0 +1,10 @@
+[package]
+name = "lev-vulkan"
+description = "Vulkan compute backend (Windows / Linux)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ash = { version = "=0.38.0", default-features = false, features = ["std", "loaded"] }
+lev-forge = { path = "../lev-forge" }

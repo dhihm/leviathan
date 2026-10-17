@@ -1,0 +1,30 @@
+{
+  "scope": "Read-only own-process staged memory diagnosis, then frozen single-process reproducibility control. No product/test edits or external source transmission.",
+  "modelBytes": 14439363584,
+  "modelChanges": false,
+  "quantizationChanges": false,
+  "contextChanges": false,
+  "idleSecondsPerProbePhase": 15,
+  "samplesPerIdlePhase": [
+    0,
+    15
+  ],
+  "memoryTelemetry": [
+    "vm_stat",
+    "pmset -g therm",
+    "pmset -g batt",
+    "uptime"
+  ],
+  "processEnumeration": false,
+  "singleProcessControl": {
+    "baselineExecutable": "<workspace>/leviathan-compile-diagnostics-phase41/.build/release/leviathan-cli",
+    "baselineSha256": "b77e692ff46dd80116500335c86000273e1744cd35ebb31a5a5aed48a1ef0f5a",
+    "visits": "One process,32 total repetitions; first4 startup warmup, then7 blocks of4",
+    "blockStatistic": "Discard first repetition of each block, median3 warm 31-step decode totals /31; all7blocks retained",
+    "predeclaredReproducibilityGate": "Relative spread<=0.05, all28postwarmup generations exact IDs, all reportedfallback0; frozenbinary/artifacts unchanged; noPageout/Swapoutgrowth from before to after. Failing control preserved without rerun.",
+    "claimBoundary": "Diagnostic harness change, no runtime optimization or speed gain vs main. Not a paired candidate test and not proof of no external contention.",
+    "telemetryPlacement": "Before process and after process; no sampler during timed decode windows",
+    "nextActivationGate": "Only partial two-axis pool filtering with immutable candidate-set/epsilon/analysis identity and ordinary artifact lifecycle/full32 three-fixture correctness. Do not activate performance candidate while reproducibility gate fails."
+  },
+  "preparedUtc": "2026-10-04T20:16:56.468325+00:00"
+}

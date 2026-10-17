@@ -1,0 +1,2 @@
+model file SHA-256 3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d for <workspace>/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf: cache hit (historically hashed at 2026-10-04T20:18:30Z, source historical-receipt, 14439363584 bytes); model bytes NOT re-read now and NOT freshly verified; same-path weight edits require --rehash-model
+cache record: <home>/Library/Caches/Leviathan/model-digests/b19c7952da87634e8fef49df135aee04a43293288624b6e857c39b50d285d607.json

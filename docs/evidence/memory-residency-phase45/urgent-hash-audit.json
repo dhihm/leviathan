@@ -1,0 +1,28 @@
+{
+  "main": "13fbc598bf42e2063cda4deb1607488936329356",
+  "modelBytesPerFullPass": 14439363584,
+  "hasher": "GemmaForge.fileDigest,8MiB chunk with per-chunk autoreleasepool; full file read, not metadata-only",
+  "generatePlan": "CLI790 once before repeat loop; composite receives same digest;32reps in one process still one model pass",
+  "originalAA": "7separateinvocations,7passes,101075545088logicalbytes read; decode timers exclude prep, resource state may still be affected",
+  "observedIdentityPrepMs": [
+    8336.3,
+    8226.9,
+    8192.5,
+    8241.1,
+    8243.2,
+    8248.5,
+    8221.0
+  ],
+  "timingCaveat": "Prep combines graph parse/hash/artifact validation/load; not isolated hash timing",
+  "freshGemmaForge": "CLI2983 then CoreGemmaForge1381 when fresh/stale plan=>2passes28,878,727,168bytes, plus selected composite lowering passes on cache miss",
+  "cachedGemmaForge": "CLI2983 one pass even plan/compositecachehit; does not cache model content digest across processes",
+  "serve": "CLI3613 once per serverstartup, not per request/token",
+  "Q4RMSselect": "Core selectAndPersist hashes once plus calls component forge which hashes again:2passes, with optionalboundfile",
+  "MoEselect": "component forge1956 plus finalpersist2263:2passes",
+  "Q4launchSelected": "persist1239 plus reloadinstall1171:2passes; some nonselectedbranches persistonce; nestedbindinghelpersneedcaller audit",
+  "otherProfiles": "MoEProfile572 one fullpass after each profile invocation; not per token",
+  "checksKept": "GGUFmetadata/header/ranges/shapes parsed for execution; numericalfullvocab gates; graph/source/executable/compiledartifact identity hashes",
+  "notModelHash": "Gemma4.executableDigest3276 hashes executable, not14GB model",
+  "kraken": "Not inspected here; no evidence about Kraken model hashing; do not infer from Leviathan",
+  "userOverride": "No additional full-model hash/verification calls permitted in future requested path; removal implementation must declare unverified contract rather than reuse stale digest"
+}

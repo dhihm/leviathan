@@ -1,0 +1,129 @@
+Building for production...
+[0/7] Write sources
+[2/7] Write swift-version--1AB21518FC5DEDBE.txt
+[4/8] Compiling LeviathanCore Artifact.swift
+<workspace>/leviathan-no-model-verification-phase46/Sources/LeviathanCore/DAGMetalBackend.swift:246:19: warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+244 |             // Bounded copy of exactly input.count * Float.stride bytes into the input value buffer.
+245 |             let byteCount = input.count * MemoryLayout<Float>.stride
+246 |             input.withUnsafeBytes { raw in
+    |                   `- warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+247 |                 memcpy(values[0].contents(), raw.baseAddress!, byteCount)
+248 |             }
+
+<workspace>/leviathan-no-model-verification-phase46/Sources/LeviathanCore/Q4LaunchLowering.swift:966:25: warning: immutable value 'controlRec' was never used; consider replacing with '_' or removing it [#no-usage]
+ 964 |                               r.screenMicrosPerShape.map { String(format: "%.1f us", $0.reduce(0, +)) } ?? ""))
+ 965 |         }
+ 966 |         let (finalists, controlRec) = Q4LaunchForge.finalists(componentResults,
+     |                         `- warning: immutable value 'controlRec' was never used; consider replacing with '_' or removing it [#no-usage]
+ 967 |                                                               controlWidth: control.width)
+ 968 |         guard !finalists.isEmpty else {
+[4/12] Write Objects.LinkFileList
+[7/13] Linking leviathan-forge-helper
+[8/13] Linking leviathan-dag-helper
+[9/13] Linking leviathan-cli
+[11/13] Compiling leviathan_tests main.swift
+<workspace>/leviathan-no-model-verification-phase46/Sources/leviathan-tests/main.swift:1775:13: warning: variable 'types9' was never mutated; consider changing to 'let' constant
+1773 |     // Unknown token_type code (9) across the array.
+1774 |     do {
+1775 |         var types9 = [Int32](repeating: 9, count: 256 + 3 + 2)
+     |             `- warning: variable 'types9' was never mutated; consider changing to 'let' constant
+1776 |         _ = types9
+1777 |         // Reuse the fixture with an all-9 type array via a tiny builder:
+
+<workspace>/leviathan-no-model-verification-phase46/Sources/leviathan-tests/main.swift:5469:13: warning: initialization of immutable value 'wBytes' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+5467 |         let hwProfile = try RMSCurrentHardware.profile()
+5468 |         let incumbent = try RMSIncumbentKernel.compile(device: device)
+5469 |         let wBytes = try RMSComponentInputs.weightBytes(op: op, file: nil)
+     |             `- warning: initialization of immutable value 'wBytes' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+5470 |         let x = RMSComponentInputs.activation(op: op)
+5471 |         let production = incumbent.productionPipeline(n: op.n, scaled: op.scaled)
+
+<workspace>/leviathan-no-model-verification-phase46/Sources/leviathan-tests/main.swift:7024:7: warning: 'catch' block is unreachable because no errors are thrown in 'do' block
+7022 |               !Gemma4Runner.cacheAppendGeometry(srcK: srcK, srcV: srcV, dstK: dstK, dstV: dstV,
+7023 |                                                 kvWidth: 8, position: Int.max))
+7024 |     } catch {
+     |       `- warning: 'catch' block is unreachable because no errors are thrown in 'do' block
+7025 |         failed += 1
+7026 |         print("FAIL cache-append geometry: \(error)")
+
+<workspace>/leviathan-no-model-verification-phase46/Sources/leviathan-tests/main.swift:3616:17: warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+3614 |         // Restore the ORIGINAL initial input (including NaN tail
+3615 |         // sentinels), then run round 1 + round 2 in one ordered command.
+3616 |         paddedX.withUnsafeBytes { src in
+     |                 `- warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+3617 |             memcpy(xbuf.contents(), src.baseAddress, paddedCount * 4)
+3618 |         }
+
+<workspace>/leviathan-no-model-verification-phase46/Sources/leviathan-tests/main.swift:3713:12: warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+3711 |     let scales = [Float](repeating: 1.0, count: n)
+3712 |     memcpy(buf.contents(), initial, padded * 4)
+3713 |     scales.withUnsafeBytes { raw in
+     |            `- warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+3714 |         memcpy(scaleBytes.contents(), raw.baseAddress!, n * 4)
+3715 |     }
+
+<workspace>/leviathan-no-model-verification-phase46/Sources/leviathan-tests/main.swift:4944:19: warning: expression implicitly coerced from 'Any?' to 'Any'
+4942 |         "layout": "row-major-q4_0-blocks", "quant": "q4_0",
+4943 |         "accumulate": "f32", "inputPrecision": "f32",
+4944 |         "tensor": tensor, "representativeRows": rows,
+     |                   |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                   |- note: provide a default value to avoid this warning
+     |                   |- note: force-unwrap the value to avoid this warning
+     |                   `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+4945 |         "view": view,
+4946 |     ]
+
+<workspace>/leviathan-no-model-verification-phase46/Sources/leviathan-tests/main.swift:4944:49: warning: expression implicitly coerced from 'Any?' to 'Any'
+4942 |         "layout": "row-major-q4_0-blocks", "quant": "q4_0",
+4943 |         "accumulate": "f32", "inputPrecision": "f32",
+4944 |         "tensor": tensor, "representativeRows": rows,
+     |                                                 |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                                                 |- note: provide a default value to avoid this warning
+     |                                                 |- note: force-unwrap the value to avoid this warning
+     |                                                 `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+4945 |         "view": view,
+4946 |     ]
+
+<workspace>/leviathan-no-model-verification-phase46/Sources/leviathan-tests/main.swift:4945:17: warning: expression implicitly coerced from 'Any?' to 'Any'
+4943 |         "accumulate": "f32", "inputPrecision": "f32",
+4944 |         "tensor": tensor, "representativeRows": rows,
+4945 |         "view": view,
+     |                 |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                 |- note: provide a default value to avoid this warning
+     |                 |- note: force-unwrap the value to avoid this warning
+     |                 `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+4946 |     ]
+4947 |     return try JSONSerialization.data(withJSONObject: obj)
+
+<workspace>/leviathan-no-model-verification-phase46/Sources/leviathan-tests/main.swift:5354:19: warning: expression implicitly coerced from 'Any?' to 'Any'
+5352 |         "layout": "row-major-f32-vectors", "quant": "f32",
+5353 |         "reduction": "serial-order-i0..n", "inputPrecision": "f32",
+5354 |         "tensor": tensor, "representativeVectors": reps,
+     |                   |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                   |- note: provide a default value to avoid this warning
+     |                   |- note: force-unwrap the value to avoid this warning
+     |                   `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+5355 |     ]
+5356 |     return try JSONSerialization.data(withJSONObject: obj)
+
+<workspace>/leviathan-no-model-verification-phase46/Sources/leviathan-tests/main.swift:5354:52: warning: expression implicitly coerced from 'Any?' to 'Any'
+5352 |         "layout": "row-major-f32-vectors", "quant": "f32",
+5353 |         "reduction": "serial-order-i0..n", "inputPrecision": "f32",
+5354 |         "tensor": tensor, "representativeVectors": reps,
+     |                                                    |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                                                    |- note: provide a default value to avoid this warning
+     |                                                    |- note: force-unwrap the value to avoid this warning
+     |                                                    `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+5355 |     ]
+5356 |     return try JSONSerialization.data(withJSONObject: obj)
+
+<workspace>/leviathan-no-model-verification-phase46/Sources/leviathan-tests/main.swift:3760:25: warning: '1e-40' underflows and loses precision during conversion to 'Float'
+3758 |     struct Case { let a: Float; let s: Float; let label: String }
+3759 |     let cases: [Case] = [
+3760 |         Case(a: 1.0, s: 1e-40, label: "normal * subnormal scale -> subnormal"),
+     |                         `- warning: '1e-40' underflows and loses precision during conversion to 'Float'
+3761 |         Case(a: 1e-20, s: 1e-20, label: "normal * normal -> subnormal"),
+3762 |         Case(a: Float.leastNonzeroMagnitude, s: 1.0, label: "subnormal passthrough"),
+[11/13] Write Objects.LinkFileList
+[12/13] Linking leviathan-tests
+Build complete! (78.42s)

@@ -1,0 +1,20 @@
+{
+  "sourceState": "Externally authored exact patch, built, locally tested; final Fable implementation review ACCEPT with no blockers",
+  "firstFinalReview": "Invalid fabricated tool-markup response; tools disabled, no indicated commands executed",
+  "retryState": "User explicitly authorized the exact source packet and route; same invocation completed successfully",
+  "rejectionReason": "Private project source egress requires explicit source-payload-to-destination authorization",
+  "requestedAuthorization": {
+    "payload": "Own Leviathan source and tests in /tmp/leviathan-forge2-tooling/phase44-two-axis-shadow/final-review-retry/request.txt",
+    "payloadBytes": 71331,
+    "sha256": "b6a5a1dd3376cf3a5506d2610413c3e9f1b8cad4f201a47912956036eb5cf5f2",
+    "destination": "Existing authenticated firstParty Claude CLI, claude-fable-5-1",
+    "scope": "Read-only review, safe mode, tools disabled; no company source, new credentials or purchases"
+  },
+  "publication": "Eligible for passive-shadow main promotion; no runtime activation",
+  "matchedRMSOnOff": "Not started: A/A relativeSpread40.46%>5%; paging also grew",
+  "activeJobs": [],
+  "recordedUtc": "2026-10-04T20:11:34.715578+00:00",
+  "finalVerdict": "ACCEPT",
+  "finalReviewEvidence": "final-review-accepted/review.md",
+  "authorization": "User said \ud574 after concrete 71331-byte payload/firstParty claude-fable-5-1 read-only review request"
+}

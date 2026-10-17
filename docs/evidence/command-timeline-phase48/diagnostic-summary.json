@@ -1,0 +1,74 @@
+{
+  "scope": "Single diagnostic trace, not speed qualification; all3fixtures strictly passed32ID/fullvocab1e-4 reference and OFF/ON gates, no output changes; previous A/A failure preserved",
+  "derivation": "GPU elapsed from rawtrace gpuEnd-gpuStart and kernels from trace kernelCount; denominator31 recorded continuation steps; subintervals overlap; driver boundaries not classified",
+  "rows": [
+    {
+      "fixture": "raw-hello",
+      "commands": 1147,
+      "kernelsPerToken": 1349.0,
+      "diagnosticWallMsPerStep": 78.72081051612906,
+      "gpuMsPerStep": 63.4857511388198,
+      "gpuPercentOfWall": 80.64671936503022,
+      "encodeMsPerStep": 0.9886215801440901,
+      "commitCallMsPerStep": 0.21389774197051603,
+      "commitToGPUStartMsPerStep": 5.278260882703528,
+      "GPUEndToWaitReturnMsPerStep": 4.993803979408357,
+      "GPUEndToNextCommitMsPerStep": 9.932574019917558,
+      "maxGapMs": 5.560624413192272,
+      "strictWorstRelToSerial": 7.529184222221375e-05,
+      "strictWorstRelOnToOff": 0,
+      "invalid": 0,
+      "truncated": false,
+      "traceVsExecutorGPUSecondsDifference": 0.0
+    },
+    {
+      "fixture": "en-chat",
+      "commands": 1147,
+      "kernelsPerToken": 1349.0,
+      "diagnosticWallMsPerStep": 81.220371,
+      "gpuMsPerStep": 65.38010397625547,
+      "gpuPercentOfWall": 80.49717474973791,
+      "encodeMsPerStep": 1.042483644860406,
+      "commitCallMsPerStep": 0.25941025946409474,
+      "commitToGPUStartMsPerStep": 5.598357322836114,
+      "GPUEndToWaitReturnMsPerStep": 4.652202805323947,
+      "GPUEndToNextCommitMsPerStep": 10.212954043621018,
+      "maxGapMs": 6.154332775622606,
+      "strictWorstRelToSerial": 3.740191459655762e-05,
+      "strictWorstRelOnToOff": 0,
+      "invalid": 0,
+      "truncated": false,
+      "traceVsExecutorGPUSecondsDifference": 0.0
+    },
+    {
+      "fixture": "kr-chat",
+      "commands": 1147,
+      "kernelsPerToken": 1349.0,
+      "diagnosticWallMsPerStep": 82.70920574193549,
+      "gpuMsPerStep": 65.31633454705438,
+      "gpuPercentOfWall": 78.9710576484686,
+      "encodeMsPerStep": 1.051649376149139,
+      "commitCallMsPerStep": 0.26065730039150486,
+      "commitToGPUStartMsPerStep": 5.351638661757592,
+      "GPUEndToWaitReturnMsPerStep": 4.377405820113998,
+      "GPUEndToNextCommitMsPerStep": 12.024542932669002,
+      "maxGapMs": 7.868749089539051,
+      "strictWorstRelToSerial": 3.272294998168945e-05,
+      "strictWorstRelOnToOff": 0,
+      "invalid": 0,
+      "truncated": false,
+      "traceVsExecutorGPUSecondsDifference": 0.0
+    }
+  ],
+  "globalPagingDeltas": {
+    "Pageouts": 8217,
+    "Swapins": 229116,
+    "Swapouts": 206175
+  },
+  "run": {
+    "exit": 0,
+    "elapsedSeconds": 125.01158862514421,
+    "binaryUnchanged": true,
+    "sourceUnchanged": true
+  }
+}

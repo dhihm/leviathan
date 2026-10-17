@@ -1,0 +1,33 @@
+== negative HTTP probes ==
+NOTE: path-first routing — GET /generate and POST /health return 404
+(the server's actual behavior), not 405; all responses below are the
+original unmodified bytes.
+
+-- 404 unknown path:
+{"error":"unknown path \/nope"} [404]
+-- 405 GET /generate:
+{"error":"unknown path \/generate"} [404]
+-- 400 POST /health with body:
+{"error":"unknown path \/health"} [404]
+-- 400 malformed JSON:
+{"error":"body is not a JSON object"} [400]
+-- 400 missing text:
+{"error":"text must be a non-empty string of at most 512 chars"} [400]
+-- 400 fractional max_tokens:
+{"error":"max_tokens must be a JSON integer 1...16"} [400]
+-- 400 boolean max_tokens:
+{"error":"max_tokens must be a JSON integer 1...16"} [400]
+-- 400 numeric chat:
+{"error":"chat must be a JSON boolean"} [400]
+-- 400 out-of-range max_tokens:
+{"error":"max_tokens must be a JSON integer 1...16"} [400]
+-- 413 oversized body:
+{"error":"content-length exceeds 4096 bytes"} [413]
+-- 415 wrong content type:
+{"error":"content-type must be application\/json"} [415]
+-- 400 unknown body key:
+{"error":"unsupported body keys"} [400]
+-- 400 prompt too long:
+{"error":"text must be a non-empty string of at most 512 chars"} [400]
+-- health still ok after negatives:
+{"status":"ok","plan_digest":"5ae137ee20aa3c7218dadca3a7a5496558b7f57dcbab47df93f47a7426cb84d9"}

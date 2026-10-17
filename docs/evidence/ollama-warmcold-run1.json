@@ -1,0 +1,184 @@
+{
+ "model": "gemma4-task5",
+ "port": 11499,
+ "ollama_version": "0.23.0",
+ "gguf": "<workspace>/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+ "gguf_sha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+ "ollama_blob_sha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+ "digest_linkage": "ollama model blob sha256 == authorized GGUF sha256 (byte-linked)",
+ "digest_computed_s": 9.2,
+ "show_details": {
+  "parent_model": "/tmp/task5-ollama-models/blobs/sha256-3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+  "format": "gguf",
+  "family": "gemma4",
+  "families": [
+   "gemma4"
+  ],
+  "parameter_size": "25.2B",
+  "quantization_level": "Q4_0"
+ },
+ "cold_note": "model unloaded between rounds (verified via /api/ps); OS page cache NOT purged \u2014 storage is not guaranteed cold",
+ "rss_note": "ps RSS point samples (KiB/1024 -> MiB) of the task-owned serve process and the runner child matched by blob path; include shared runtime overhead \u2014 not residency or peak claims",
+ "rss_before_cold_mib": {
+  "serve_pid4101": 16.2,
+  "serve_pid68306": 76.0
+ },
+ "cold": [
+  {
+   "keep_alive": 0,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 8.35996637493372,
+    "total_to_done_s": 8.436839833855629
+   },
+   "api_server": {
+    "load_duration_s": 8.140557375,
+    "prompt_eval_duration_s": 0.1616555,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.1083125,
+    "eval_count": 8
+   }
+  },
+  {
+   "keep_alive": 0,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 5.546688666567206,
+    "total_to_done_s": 5.651517832651734
+   },
+   "api_server": {
+    "load_duration_s": 5.3414565,
+    "prompt_eval_duration_s": 0.175664916,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.110191916,
+    "eval_count": 8
+   }
+  },
+  {
+   "keep_alive": 0,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 5.503576625138521,
+    "total_to_done_s": 5.609268166124821
+   },
+   "api_server": {
+    "load_duration_s": 5.338448167,
+    "prompt_eval_duration_s": 0.138568834,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.110294543,
+    "eval_count": 8
+   }
+  }
+ ],
+ "rss_after_cold_mib": {
+  "serve_pid4101": 4.1,
+  "serve_pid68306": 16.4
+ },
+ "warm": [
+  {
+   "keep_alive": -1,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 5.459333042148501,
+    "total_to_done_s": 5.5632014172151685
+   },
+   "api_server": {
+    "load_duration_s": 5.311186083,
+    "prompt_eval_duration_s": 0.127109084,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.106158499,
+    "eval_count": 8
+   }
+  },
+  {
+   "keep_alive": -1,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 0.3029750417917967,
+    "total_to_done_s": 0.41784774977713823
+   },
+   "api_server": {
+    "load_duration_s": 0.268526916,
+    "prompt_eval_duration_s": 0.023937167,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.107876334,
+    "eval_count": 8
+   }
+  },
+  {
+   "keep_alive": -1,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 0.23607424972578883,
+    "total_to_done_s": 0.3467048751190305
+   },
+   "api_server": {
+    "load_duration_s": 0.2136745,
+    "prompt_eval_duration_s": 0.019640041,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.106819126,
+    "eval_count": 8
+   }
+  },
+  {
+   "keep_alive": -1,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 0.23288025008514524,
+    "total_to_done_s": 0.34426766727119684
+   },
+   "api_server": {
+    "load_duration_s": 0.211858833,
+    "prompt_eval_duration_s": 0.018003666,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.107789708,
+    "eval_count": 8
+   }
+  },
+  {
+   "keep_alive": -1,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 0.25068874983116984,
+    "total_to_done_s": 0.36390274995937943
+   },
+   "api_server": {
+    "load_duration_s": 0.223089583,
+    "prompt_eval_duration_s": 0.024721084,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.109657626,
+    "eval_count": 8
+   }
+  }
+ ],
+ "rss_after_warm_mib": {
+  "serve_pid4101": 3.9,
+  "serve_pid68306": 126.5,
+  "runner_child_pid70278": 14745.3
+ },
+ "failures": []
+}

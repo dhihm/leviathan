@@ -1,0 +1,15 @@
+<workspace>/leviathan-no-model-verification-phase46/tools/attention_qualification/main.swift:537:19: warning: no calls to throwing functions occur within 'try' expression
+ 535 | func currentRuntimeIdentity(_ runner: Gemma4Runner) throws -> RuntimeIdentityRecord {
+ 536 |     let engine = try runner.engineIdentity()
+ 537 |     let profile = try runner.hardwareProfile()
+     |                   `- warning: no calls to throwing functions occur within 'try' expression
+ 538 |     let profileData = try canonicalEncoder().encode(profile)
+ 539 |     guard profileData.count > 0, profileData.count <= Tool.maxProfileJSONBytes,
+
+<workspace>/leviathan-no-model-verification-phase46/tools/attention_qualification/main.swift:1098:20: warning: no calls to throwing functions occur within 'try' expression
+1096 |         region: region, schedule: MoESchedule(batch: 4, rowsPerGroup: 32),
+1097 |         expectedSourceSha256: Q4LaunchArtifact.baselineMoeSourceSha256)
+1098 |     let adapters = try LoweringSelect.ssaForwardAdapters(graph: graph)
+     |                    `- warning: no calls to throwing functions occur within 'try' expression
+1099 |     let prefill: Prefill = { r, t in try callMany(adapters.0, r, t) }
+1100 |     let step: Step = { r, t, p in try callOne(adapters.1, r, t, p) }

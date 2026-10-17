@@ -1,0 +1,23 @@
+device allocated after resident release, before cache init (sample): 393216 B
+phase 1: failed-enable rejected; resident reference 2 prompt tokens + 4 steps captured; runner released
+phase 2a per-kernel (budget 8000000 B): exact tokens, worst rel 0.000e+00
+  buffer-length ledger (budget 8000000 B): slot pools 7805952 B (gu 2 x 2230272 + dn 3 x 1115136), non-expert compact buffer 1577172088 B
+  measured samples: device allocated sampled at end of construction 3432071168 B (a SAMPLE — not a guaranteed startup peak), peak sampled 3432071168 B, peak pinned 3345408 B
+  io counters: misses 2880, hits 0 (of which prefetch-served 0; prefetch installed 0 slices / 0 B), evictions 2875, bytes read 4817387520 (pread may hit OS page cache — no cold-SSD claim), flushes-before-reuse 0
+  EXPERT_CACHE_STATS_JSON {"budgetBytes":8000000,"dnSlots":3,"dnStrideBytes":1115136,"evictions":2875,"flushesBeforeReuse":0,"guSlots":2,"guStrideBytes":2230272,"hits":0,"initDeviceAllocatedBytes":3432071168,"misses":2880,"nonExpertResidentBytes":1577172088,"peakDeviceAllocatedBytes":3432071168,"peakPinnedBytes":3345408,"prefetchBytes":0,"prefetchHits":0,"prefetchSlices":0,"residentBytes":7805952,"sliceBytesRead":4817387520}
+phase 2b batching (budget 8000000 B): exact tokens, worst rel 0.000e+00, in-flight flushes-before-reuse 540 observed
+  buffer-length ledger (budget 8000000 B): slot pools 7805952 B (gu 2 x 2230272 + dn 3 x 1115136), non-expert compact buffer 1577172088 B
+  measured samples: device allocated sampled at end of construction 3432071168 B (a SAMPLE — not a guaranteed startup peak), peak sampled 3432071168 B, peak pinned 6690816 B
+  io counters: misses 2880, hits 0 (of which prefetch-served 0; prefetch installed 0 slices / 0 B), evictions 2875, bytes read 4817387520 (pread may hit OS page cache — no cold-SSD claim), flushes-before-reuse 540
+  EXPERT_CACHE_STATS_JSON {"budgetBytes":8000000,"dnSlots":3,"dnStrideBytes":1115136,"evictions":2875,"flushesBeforeReuse":540,"guSlots":2,"guStrideBytes":2230272,"hits":0,"initDeviceAllocatedBytes":3432071168,"misses":2880,"nonExpertResidentBytes":1577172088,"peakDeviceAllocatedBytes":3432071168,"peakPinnedBytes":6690816,"prefetchBytes":0,"prefetchHits":0,"prefetchSlices":0,"residentBytes":7805952,"sliceBytesRead":4817387520}
+phase 3 (budget 1000000000 B, 2 replays, prefetch on): exact tokens, worst rel 0.000e+00; observed hits 2438 of 5760 loads (42.3%, prefetch-served 598)
+  buffer-length ledger (budget 1000000000 B): slot pools 999161856 B (gu 298 x 2230272 + dn 300 x 1115136), non-expert compact buffer 1577172088 B
+  measured samples: device allocated sampled at end of construction 4423417856 B (a SAMPLE — not a guaranteed startup peak), peak sampled 4423417856 B, peak pinned 3345408 B
+  io counters: misses 3322, hits 2438 (of which prefetch-served 598; prefetch installed 598 slices / 999161856 B), evictions 3322, bytes read 6556999680 (pread may hit OS page cache — no cold-SSD claim), flushes-before-reuse 0
+  EXPERT_CACHE_STATS_JSON {"budgetBytes":1000000000,"dnSlots":300,"dnStrideBytes":1115136,"evictions":3322,"flushesBeforeReuse":0,"guSlots":298,"guStrideBytes":2230272,"hits":2438,"initDeviceAllocatedBytes":4423417856,"misses":3322,"nonExpertResidentBytes":1577172088,"peakDeviceAllocatedBytes":4423417856,"peakPinnedBytes":3345408,"prefetchBytes":999161856,"prefetchHits":598,"prefetchSlices":598,"residentBytes":999161856,"sliceBytesRead":6556999680}
+phase 3b (same workload, prefetch OFF): exact tokens, worst rel 0.000e+00; hits 1840 of 5760 loads (31.9%), evictions 3322 vs 3322 with prefetch
+  buffer-length ledger (budget 1000000000 B): slot pools 999161856 B (gu 298 x 2230272 + dn 300 x 1115136), non-expert compact buffer 1577172088 B
+  measured samples: device allocated sampled at end of construction 4423417856 B (a SAMPLE — not a guaranteed startup peak), peak sampled 4423417856 B, peak pinned 3345408 B
+  io counters: misses 3920, hits 1840 (of which prefetch-served 0; prefetch installed 0 slices / 0 B), evictions 3322, bytes read 6556999680 (pread may hit OS page cache — no cold-SSD claim), flushes-before-reuse 0
+  EXPERT_CACHE_STATS_JSON {"budgetBytes":1000000000,"dnSlots":300,"dnStrideBytes":1115136,"evictions":3322,"flushesBeforeReuse":0,"guSlots":298,"guStrideBytes":2230272,"hits":1840,"initDeviceAllocatedBytes":4423417856,"misses":3920,"nonExpertResidentBytes":1577172088,"peakDeviceAllocatedBytes":4423417856,"peakPinnedBytes":3345408,"prefetchBytes":0,"prefetchHits":0,"prefetchSlices":0,"residentBytes":999161856,"sliceBytesRead":6556999680}
+EXPERT_CACHE_PASS

@@ -1,0 +1,17 @@
+NOTE: byte/device counters in this log were printed through a 32-bit %d
+format and are INVALID (values wrapped). Superseded by gemma-expert-cache-verify2.log
+with 64-bit-safe interpolation + JSON stats.
+phase 1: failed-enable rejected; resident reference 2 prompt tokens + 4 steps captured; runner released
+phase 2a per-kernel (budget 8000000 B): exact tokens, worst rel 0.000e+00
+   (budget 8000000 B): resident 7805952 B (gu 2 x 2230272 + dn 3 x 1115136), non-expert resident 1577172088 B, init allocated 983810048 B
+  misses 2880, hits 0, evictions 2875, bytes read 522420224 (pread may hit OS page cache — no cold-SSD claim), flushes-before-reuse 0
+  peak pinned 3345408 B, peak device allocated 983810048 B
+phase 2b batching (budget 8000000 B): exact tokens, worst rel 0.000e+00, in-flight flushes-before-reuse 540 observed
+   (budget 8000000 B): resident 7805952 B (gu 2 x 2230272 + dn 3 x 1115136), non-expert resident 1577172088 B, init allocated 120422400 B
+  misses 2880, hits 0, evictions 2875, bytes read 522420224 (pread may hit OS page cache — no cold-SSD claim), flushes-before-reuse 540
+  peak pinned 6690816 B, peak device allocated 120422400 B
+phase 3 (budget 1000000000 B, 2 replays): exact tokens, worst rel 0.000e+00; observed hits 1840 of 5760 loads (31.9%)
+   (budget 1000000000 B): resident 999161856 B (gu 298 x 2230272 + dn 300 x 1115136), non-expert resident 1577172088 B, init allocated 248512512 B
+  misses 3920, hits 1840, evictions 3322, bytes read -2032934912 (pread may hit OS page cache — no cold-SSD claim), flushes-before-reuse 0
+  peak pinned 3345408 B, peak device allocated 248512512 B
+EXPERT_CACHE_PASS

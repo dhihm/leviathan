@@ -1,0 +1,83 @@
+{
+  "groupCount" : 30,
+  "identityStableAfterLazyCompilation" : true,
+  "reuseCount" : 60,
+  "rows" : [
+    {
+      "bitExact" : true,
+      "computed" : 150,
+      "divisor" : 0,
+      "exactIDs" : true,
+      "fallback" : 0,
+      "fullVocab" : 262144,
+      "processedTokens" : 5,
+      "residentZeroApplied" : 150,
+      "reused" : 300,
+      "routerLaunchApplied" : 0,
+      "routerScaleApplied" : 150,
+      "steps" : 4,
+      "worstNormalizedDiff" : 0
+    },
+    {
+      "bitExact" : true,
+      "computed" : 150,
+      "divisor" : 1,
+      "exactIDs" : true,
+      "fallback" : 0,
+      "fullVocab" : 262144,
+      "processedTokens" : 5,
+      "residentZeroApplied" : 150,
+      "reused" : 300,
+      "routerLaunchApplied" : 150,
+      "routerScaleApplied" : 150,
+      "steps" : 4,
+      "worstNormalizedDiff" : 0
+    },
+    {
+      "bitExact" : true,
+      "computed" : 150,
+      "divisor" : 2,
+      "exactIDs" : true,
+      "fallback" : 0,
+      "fullVocab" : 262144,
+      "processedTokens" : 5,
+      "residentZeroApplied" : 150,
+      "reused" : 300,
+      "routerLaunchApplied" : 150,
+      "routerScaleApplied" : 150,
+      "steps" : 4,
+      "worstNormalizedDiff" : 0
+    },
+    {
+      "bitExact" : true,
+      "computed" : 150,
+      "divisor" : 4,
+      "exactIDs" : true,
+      "fallback" : 0,
+      "fullVocab" : 262144,
+      "processedTokens" : 5,
+      "residentZeroApplied" : 150,
+      "reused" : 300,
+      "routerLaunchApplied" : 150,
+      "routerScaleApplied" : 150,
+      "steps" : 4,
+      "worstNormalizedDiff" : 0
+    },
+    {
+      "bitExact" : true,
+      "computed" : 150,
+      "divisor" : 8,
+      "exactIDs" : true,
+      "fallback" : 0,
+      "fullVocab" : 262144,
+      "processedTokens" : 5,
+      "residentZeroApplied" : 150,
+      "reused" : 300,
+      "routerLaunchApplied" : 150,
+      "routerScaleApplied" : 150,
+      "steps" : 4,
+      "worstNormalizedDiff" : 0
+    }
+  ],
+  "scope" : "Actual resident model focused four-step teacher-forced full-logit gate against RMS-inclusive main incumbent. Five router candidates; five executed tokens per arm. Diagnostic E4\/width64 install, not production qualification or throughput approval."
+}

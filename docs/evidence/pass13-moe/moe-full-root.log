@@ -1,0 +1,50 @@
+component: incumbent rel-to-FP64 6.001e-07; 20/20 candidates accepted
+screen moegen_gu_E1_R32: pruned inf us/layer-equivalent (E1 sanity anchor)
+screen moegen_gu_E1_R64: pruned inf us/layer-equivalent (E1 sanity anchor)
+screen moegen_gu_E1_R128: pruned inf us/layer-equivalent (E1 sanity anchor)
+screen moegen_gu_E1_R256: pruned inf us/layer-equivalent (E1 sanity anchor)
+screen moegen_gu_E1_R1024: pruned inf us/layer-equivalent (E1 sanity anchor)
+screen moegen_gu_E2_R32: pruned 937.4 us/layer-equivalent
+screen moegen_gu_E2_R64: pruned 966.7 us/layer-equivalent
+screen moegen_gu_E2_R128: pruned 779.2 us/layer-equivalent
+screen moegen_gu_E2_R256: pruned 876.2 us/layer-equivalent
+screen moegen_gu_E2_R1024: pruned 2003.2 us/layer-equivalent
+screen moegen_gu_E4_R32: finalist 502.8 us/layer-equivalent
+screen moegen_gu_E4_R64: finalist 512.0 us/layer-equivalent
+screen moegen_gu_E4_R128: pruned 642.2 us/layer-equivalent
+screen moegen_gu_E4_R256: pruned 837.0 us/layer-equivalent
+screen moegen_gu_E4_R1024: pruned 1419.7 us/layer-equivalent
+screen moegen_gu_E8_R32: pruned 586.9 us/layer-equivalent
+screen moegen_gu_E8_R64: pruned 698.5 us/layer-equivalent
+screen moegen_gu_E8_R128: pruned 1155.3 us/layer-equivalent
+screen moegen_gu_E8_R256: pruned 898.7 us/layer-equivalent
+screen moegen_gu_E8_R1024: pruned 1054.1 us/layer-equivalent
+dispatch arithmetic at E=4: 6 batched math dispatches per layer/token vs 24 incumbent (18 fewer; count claim, not a speed claim)
+reference [en-chat]: 32 greedy steps
+reference [kr-chat]: 32 greedy steps
+reference [raw-hello]: 32 greedy steps
+gate PASS moegen_gu_E4_R32: 3/3 fixtures, worst rel 0.000e+00, batched dispatches 25020, fallbacks 0
+gate PASS moegen_gu_E4_R64: 3/3 fixtures, worst rel 0.000e+00, batched dispatches 25020, fallbacks 0
+matched timing moegen_gu_E4_R32: median 997864 vs paired incumbent 1278311 us/token-sum
+matched timing moegen_gu_E4_R64: median 1004432 vs paired incumbent 1271341 us/token-sum
+policy: selected moegen_gu_E4_R32 beats its own paired incumbent matched-repeat median summed wall by 21.9% (> 2% policy threshold)
+persisted execution: reloaded+validated+installed from disk (production); en-chat replay worst rel 0.000e+00; batched GU/ACT/DN deltas 3120/3120/3120 == expected 3120 each; ordered axpy merges 12480 == 12480; fallbacks 0
+MOE_SELECT_COMPLETED -> /tmp/leviathan-forge2-tooling/moe-full-root-artifact.json
+      802.53 real        37.63 user        29.58 sys
+          3641393152  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+             1923366  page reclaims
+               49581  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               12155  voluntary context switches
+             1501313  involuntary context switches
+        253680415141  instructions retired
+        194613434241  cycles elapsed
+         31265588544  peak memory footprint

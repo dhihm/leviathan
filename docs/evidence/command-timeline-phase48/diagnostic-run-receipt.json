@@ -1,0 +1,120 @@
+{
+  "scope": "Retained fixed three-fixture diagnostic, not a performance gain evaluation",
+  "argv": [
+    "/tmp/leviathan-forge2-tooling/phase48-command-timeline/diagnose",
+    "<workspace>/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+    "/tmp/leviathan-forge2-tooling/phase41-compiler-integrity-review/production-lifecycle/serving-three-results.json",
+    "/tmp/leviathan-forge2-tooling/phase48-command-timeline/diagnostic-results.json"
+  ],
+  "binarySha256": "9a07e3a8bee8c129f19e7fb69688ea692bec52c7c5959279c3694f5c180e4b5a",
+  "before": {
+    "label": "outside-before",
+    "utc": "2026-10-04T21:38:06.035913+00:00",
+    "raw": {
+      "memory": {
+        "exit": 0,
+        "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                                5886.\nPages active:                            286056.\nPages inactive:                          928621.\nPages speculative:                        33552.\nPages throttled:                              0.\nPages wired down:                        719867.\nPages purgeable:                           2421.\n\"Translation faults\":              203737739471.\nPages copy-on-write:                46185267407.\nPages zero filled:                  41893319566.\nPages reactivated:                  21516933155.\nPages purged:                         747376751.\nFile-backed pages:                       991604.\nAnonymous pages:                         256625.\nPages stored in compressor:             3185671.\nPages occupied by compressor:             66607.\nDecompressions:                     17712384018.\nCompressions:                       18558018423.\nPageins:                             3403746728.\nPageouts:                              13284742.\nSwapins:                              307799079.\nSwapouts:                             416786614.\n",
+        "stderr": ""
+      },
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t96%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "load": {
+        "exit": 0,
+        "stdout": " 6:38  up 42 days, 12:54, 5 users, load averages: 7.62 8.82 9.44\n",
+        "stderr": ""
+      }
+    }
+  },
+  "startedUtc": "2026-10-04T21:38:06.036123+00:00",
+  "sourceBefore": {
+    "Sources/LeviathanCore/Gemma4ExpertCache.swift": "39cb68266cfe044cb1572463fd978b65e57fe4828d98972a3e46c6b9cf5cfcd6",
+    "Sources/LeviathanCore/GemmaGraph.swift": "da010bde8aff3e33e321e58834121b97e6fcc361b36bda3b580fbfdf11242f0f",
+    "Sources/LeviathanCore/DAGForge.swift": "d324723ef25ca789f2b18c8ff81cdf825418d431e3e09c2e771acf66f5dc09b9",
+    "Sources/LeviathanCore/RMSStatisticsPlan.swift": "d4b3630a0759baa5405ceb4d5b84490dabcb48cb7b5b76ab1ae55d80283de1de",
+    "Sources/LeviathanCore/AttentionLowering.swift": "4e28d1a70c21e3414fe419a8d67ff973c4d6cb6c3458dd30d66556126469e4e7",
+    "Sources/LeviathanCore/SHA256.swift": "d817cff22138de5a2829c139bc16e0ddd4ca2de209b0121322196f254b74ccfb",
+    "Sources/LeviathanCore/LoweringSelect.swift": "e2bc5c61143e76934f4eaa6aa7a77390a58b198661456a4ab833102b732acc23",
+    "Sources/LeviathanCore/MoELowering.swift": "9e0d65da79a718acd57e7177ab77bfd4ff4fafe2123c4af354df21e0b56c9677",
+    "Sources/LeviathanCore/GemmaTokenizer.swift": "f2b5d8187cb1222dea3be3ae05596b5e69403f97c7017a5dd34cb408f733b836",
+    "Sources/LeviathanCore/ForgeBaseline.swift": "bb4cbcb6cceddea59607a803e5c428f006cd233d97602fd10d7b28cbf79607c1",
+    "Sources/LeviathanCore/RouterResidency.swift": "d9ef6f8a773584e917f75fc88e90494d5b3b7d9357014835c3a3063679390b97",
+    "Sources/LeviathanCore/RMSStatisticsKernels.swift": "568ab5bffc751a47a2d1b084c4b161729ee588b86094946a621a1d89fdf6f9e0",
+    "Sources/LeviathanCore/Limits.swift": "e3c4d8f916e1cd64f3237b1be93b1e1020e1205b492849af92db67749445f284",
+    "Sources/LeviathanCore/Gemma4CommandTimeline.swift": "6d605c1ccb9b82e36df5477f4d3583661af8b8c5e3eb5b956e0e9212824e3bde",
+    "Sources/LeviathanCore/Q4Lowering.swift": "f7da8045fa95e666e0dff832d791494527443a77117468ba4ddd86abdfd555c7",
+    "Sources/LeviathanCore/ModelDigestCache.swift": "e3370b633f4828ee0d411d0c9ad50d2930794599462bfffeb6d412f90a643283",
+    "Sources/LeviathanCore/WeightExport.swift": "c73d6b510df63dfe100d52787e3049410d125e739ea049ad34c2091dfca9f265",
+    "Sources/LeviathanCore/GemmaForge.swift": "cd3d73a5a390166171b4e1db291b9d7cf71416ff4b2382f2bf41cb14e1088bde",
+    "Sources/LeviathanCore/DAGGraph.swift": "f178d121b063846dee1e2dc604d783ffddccbbed3142094f9d28f27be2483785",
+    "Sources/LeviathanCore/MoEProfile.swift": "2dc2863264cf9a73a98ba0c65f8ba1ba629dd39841d54295005488bbb074fb14",
+    "Sources/LeviathanCore/GemmaCompositeForge.swift": "16b62900d2f3b75a425d538617dbcc37e9575462542a1fbd74e3a0718c0809ee",
+    "Sources/LeviathanCore/RMSLowering.swift": "d8ac17af362511a784722315e45590b0289c1d6afe007b5fa2011811e434dd12",
+    "Sources/LeviathanCore/GemmaOpportunityDiscovery.swift": "7d8250272a2d8c92255dc2ce0985972ec44c034c0283deddff4132aadc4057e5",
+    "Sources/LeviathanCore/GemmaShadowComposition.swift": "d79c68ee34daca8951ebcdda4a314acd205288be218c9ab1d944f2f9795f6c50",
+    "Sources/LeviathanCore/Q4.swift": "b7d629ca506ef4e93bdcef53449e3076a7432a5f83fa3445af0cbddd79b9aaad",
+    "Sources/LeviathanCore/RMSCooperative.swift": "e6764152515eeba18cbf3f71573dc904ac8a5aae9a74285a87f19fabd7d33e62",
+    "Sources/LeviathanCore/Lowering.swift": "eef05f470ff447dc34ea1127d34f6f6b50eade1ae973b1234ebec1fb52b1c0e2",
+    "Sources/LeviathanCore/Backends.swift": "c6e4367b4306b832547fafb4843bb9a2a071b8d755bd7efc65be6606e43caaa8",
+    "Sources/LeviathanCore/IR.swift": "421d1484a5ca4239f1c23569da4fbb969a3dd22a7402efcdebfe8b6b9210cb68",
+    "Sources/LeviathanCore/Q6.swift": "872997dfe9a3bceaff0353bdd979f75b427448f64bde52d43600a44a2516c54f",
+    "Sources/LeviathanCore/GGUF.swift": "0d8f547edfded8b393b71c40b4acf4bde60a1dd8f98d29063eae9f7ae76efe3b",
+    "Sources/LeviathanCore/Q6Cooperative.swift": "60afed0593add1aab07a797530199312fbc2992dd65300daffae49f1d212b795",
+    "Sources/LeviathanCore/MetalBackend.swift": "103aec77294f922455f57ce2705bb2490064aea991d18ba58c4670f461ed80c6",
+    "Sources/LeviathanCore/GemmaSSA.swift": "da374971706593033c6be928954ac006df4a1057e01a7ba2b19e4e43674a6c34",
+    "Sources/LeviathanCore/ModelFileVerification.swift": "3594e6a5e31e587a2bd60ea45bfeb378d0a0f0fcd3db688a7e3ae4e72354c362",
+    "Sources/LeviathanCore/MoEModelBinding.swift": "61936ea8982dc056ca50ed219e796e1e461cf246181e06441731d2cd53230b9f",
+    "Sources/LeviathanCore/Gemma4.swift": "a5c67d1c50ecf1b9e36904cf99746b69f64ec45500eafbf14db6a19d40fac479",
+    "Sources/LeviathanCore/RNG.swift": "7dc90e46b48ffbf38358a5c5830264fb9d7d2cadaec04a8c98ba1bc40c34d9e1",
+    "Sources/LeviathanCore/DAGMetalBackend.swift": "6c27e480f25fa8d261dfe6643ee2857c3eb996f1343ee76f6e7eb805d8224a9c",
+    "Sources/LeviathanCore/Forge.swift": "783cc21d63f468193491218e8e0a04d16782ae16a579471e2c47db8070963d57",
+    "Sources/LeviathanCore/Q4LaunchLowering.swift": "71721a8a2490eb7d74fffedd1cead04a157e5fafdb40d89d33f0874cf2ec21ba",
+    "Sources/LeviathanCore/Artifact.swift": "7b770ee14cb2862bd6277b0251894f8b88c8667405048f2b440ea1392081fc5c",
+    "Sources/leviathan-dag-helper/main.swift": "5dc2651daf66553a8fc101f2466aea3e365f083c2631552543e6576506712045",
+    "Sources/leviathan-dag-helper/LoadedRuntime.swift": "36a745a085d80219cfb9a92cb26cf8dbe27770d10668d2aed70c7256705f727e",
+    "Sources/leviathan-tests/main.swift": "b31cd3fe9f2c7dd045381eb1c0bdd14b59cd90319714cbf2421320a5652a26e7",
+    "Sources/leviathan-cli/CompositeCLI.swift": "4e4344e5e948ae63823a185f746beaf8a4d4e0193d3113b341995be04ffbac1a",
+    "Sources/leviathan-cli/main.swift": "8b8c712ff94e4e5dc9a1ef89e3ea9585cbdf88d9a1ecc4a9ecd4a078e0560b80",
+    "Sources/leviathan-forge-helper/main.swift": "971af59c7f59300a7eb6f2ae115a51c4957a37971d22d6a825f225f2ceb41d81"
+  },
+  "exit": 0,
+  "elapsedSeconds": 125.01158862514421,
+  "after": {
+    "label": "outside-after",
+    "utc": "2026-10-04T21:40:11.134501+00:00",
+    "raw": {
+      "memory": {
+        "exit": 0,
+        "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               26515.\nPages active:                             84171.\nPages inactive:                          140479.\nPages speculative:                         4272.\nPages throttled:                              0.\nPages wired down:                       1604564.\nPages purgeable:                             58.\n\"Translation faults\":              203750899501.\nPages copy-on-write:                46186752673.\nPages zero filled:                  41894782395.\nPages reactivated:                  21521280115.\nPages purged:                         747523106.\nFile-backed pages:                       171137.\nAnonymous pages:                          57785.\nPages stored in compressor:             3342323.\nPages occupied by compressor:            180414.\nDecompressions:                     17719670938.\nCompressions:                       18565552282.\nPageins:                             3404123257.\nPageouts:                              13292959.\nSwapins:                              308028195.\nSwapouts:                             416992789.\n",
+        "stderr": ""
+      },
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t96%; charging; (no estimate) present: true\n",
+        "stderr": ""
+      },
+      "load": {
+        "exit": 0,
+        "stdout": " 6:40  up 42 days, 12:56, 5 users, load averages: 13.81 10.53 10.01\n",
+        "stderr": ""
+      }
+    }
+  },
+  "binaryUnchanged": true,
+  "sourceUnchanged": true,
+  "completedUtc": "2026-10-04T21:40:11.160203+00:00"
+}

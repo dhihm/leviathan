@@ -1,0 +1,105 @@
+{
+  "before": {
+    "pooledAtCallBoundary": false,
+    "records": [
+      {
+        "footprintBytes": 1557376,
+        "stage": "before"
+      },
+      {
+        "footprintBytes": 136299712,
+        "sha256": "254bcc3fc4f27172636df4bf32de9f107f620d559b20d760197e452b97453917",
+        "stage": "after-1"
+      },
+      {
+        "footprintBytes": 270943808,
+        "sha256": "254bcc3fc4f27172636df4bf32de9f107f620d559b20d760197e452b97453917",
+        "stage": "after-2"
+      },
+      {
+        "footprintBytes": 405489472,
+        "sha256": "254bcc3fc4f27172636df4bf32de9f107f620d559b20d760197e452b97453917",
+        "stage": "after-3"
+      }
+    ]
+  },
+  "outerPoolOnly": {
+    "pooledAtCallBoundary": true,
+    "records": [
+      {
+        "footprintBytes": 1524608,
+        "stage": "before"
+      },
+      {
+        "footprintBytes": 136283328,
+        "sha256": "254bcc3fc4f27172636df4bf32de9f107f620d559b20d760197e452b97453917",
+        "stage": "after-1"
+      },
+      {
+        "footprintBytes": 136381760,
+        "sha256": "254bcc3fc4f27172636df4bf32de9f107f620d559b20d760197e452b97453917",
+        "stage": "after-2"
+      },
+      {
+        "footprintBytes": 136398144,
+        "sha256": "254bcc3fc4f27172636df4bf32de9f107f620d559b20d760197e452b97453917",
+        "stage": "after-3"
+      }
+    ]
+  },
+  "after": {
+    "pooledAtCallBoundary": false,
+    "records": [
+      {
+        "footprintBytes": 1557376,
+        "stage": "before"
+      },
+      {
+        "footprintBytes": 10208320,
+        "sha256": "254bcc3fc4f27172636df4bf32de9f107f620d559b20d760197e452b97453917",
+        "stage": "after-1"
+      },
+      {
+        "footprintBytes": 10273856,
+        "sha256": "254bcc3fc4f27172636df4bf32de9f107f620d559b20d760197e452b97453917",
+        "stage": "after-2"
+      },
+      {
+        "footprintBytes": 10273856,
+        "sha256": "254bcc3fc4f27172636df4bf32de9f107f620d559b20d760197e452b97453917",
+        "stage": "after-3"
+      }
+    ]
+  },
+  "fullGGUFAfter": {
+    "pooledAtCallBoundary": false,
+    "records": [
+      {
+        "footprintBytes": 1590144,
+        "stage": "before"
+      },
+      {
+        "footprintBytes": 12829760,
+        "sha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+        "stage": "after-1"
+      },
+      {
+        "footprintBytes": 12878912,
+        "sha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+        "stage": "after-2"
+      },
+      {
+        "footprintBytes": 12862528,
+        "sha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+        "stage": "after-3"
+      }
+    ]
+  },
+  "fixtureBytes": 134217728,
+  "fullGGUFBytes": 14439363584,
+  "fullGGUFAfterPeakFootprintBytes": 13583680,
+  "fullGGUFAfterThreeDigestsWallSeconds": 26.48,
+  "regressionPassed": 815,
+  "regressionFailed": 0,
+  "wholeModelSpeedClaim": false
+}

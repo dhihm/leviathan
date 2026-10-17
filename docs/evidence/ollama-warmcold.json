@@ -1,0 +1,196 @@
+{
+ "model": "gemma4-task5",
+ "port": 11499,
+ "ollama_version": "0.23.0",
+ "loadavg_start": "{ 9.61 10.64 10.73 }",
+ "warm_protocol_note": "Ollama's server may reuse the KV prefix cache across identical warm requests (observed warm prompt_eval_duration far below cold); Leviathan's harness resets and re-prefills every repetition. TTFT/prefill numbers are therefore NOT strictly like-for-like; decode per-token medians are comparable.",
+ "gguf": "<workspace>/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+ "gguf_sha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+ "ollama_blob_sha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+ "digest_linkage": "ollama model blob sha256 == authorized GGUF sha256 (byte-linked)",
+ "digest_computed_s": 9.0,
+ "show_details": {
+  "parent_model": "/tmp/task5-ollama-models/blobs/sha256-3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+  "format": "gguf",
+  "family": "gemma4",
+  "families": [
+   "gemma4"
+  ],
+  "parameter_size": "25.2B",
+  "quantization_level": "Q4_0"
+ },
+ "cold_note": "model unloaded between rounds (verified via /api/ps); OS page cache NOT purged \u2014 storage is not guaranteed cold",
+ "rss_note": "ps RSS point samples (KiB/1024 -> MiB) of the task-owned serve process and the runner child matched by blob path; include shared runtime overhead \u2014 not residency or peak claims",
+ "loadavg_end": "{ 10.69 10.72 10.75 }",
+ "rss_before_cold_mib": {
+  "serve_pid4101": 11.2,
+  "serve_pid68306": 23.5
+ },
+ "cold": [
+  {
+   "keep_alive": 0,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 10.012387708760798,
+    "total_to_done_s": 10.043859749566764
+   },
+   "api_server": {
+    "load_duration_s": 9.671375208,
+    "prompt_eval_duration_s": 0.180929083,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.106955749,
+    "eval_count": 8
+   }
+  },
+  {
+   "keep_alive": 0,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 9.664495500270277,
+    "total_to_done_s": 9.752081000246108
+   },
+   "api_server": {
+    "load_duration_s": 9.393716125,
+    "prompt_eval_duration_s": 0.168603542,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.112886585,
+    "eval_count": 8
+   }
+  },
+  {
+   "keep_alive": 0,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 6.0929918750189245,
+    "total_to_done_s": 6.162914250046015
+   },
+   "api_server": {
+    "load_duration_s": 5.865241375,
+    "prompt_eval_duration_s": 0.153250125,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.110709833,
+    "eval_count": 8
+   }
+  }
+ ],
+ "rss_max_cold_mib": {
+  "serve_pid4101": 3.0,
+  "serve_pid68306": 13.9
+ },
+ "rss_after_cold_mib": {
+  "serve_pid4101": 2.0,
+  "serve_pid68306": 15.1
+ },
+ "warm": [
+  {
+   "keep_alive": -1,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 5.454540417063981,
+    "total_to_done_s": 5.555562208406627
+   },
+   "api_server": {
+    "load_duration_s": 5.271156792,
+    "prompt_eval_duration_s": 0.149911542,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.10812075,
+    "eval_count": 8
+   }
+  },
+  {
+   "keep_alive": -1,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 0.3332447079010308,
+    "total_to_done_s": 0.47314858296886086
+   },
+   "api_server": {
+    "load_duration_s": 0.2944995,
+    "prompt_eval_duration_s": 0.025011625,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.132218876,
+    "eval_count": 8
+   }
+  },
+  {
+   "keep_alive": -1,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 0.24983787490054965,
+    "total_to_done_s": 0.36886141588911414
+   },
+   "api_server": {
+    "load_duration_s": 0.222347709,
+    "prompt_eval_duration_s": 0.024327541,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.114736918,
+    "eval_count": 8
+   }
+  },
+  {
+   "keep_alive": -1,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 0.24342224979773164,
+    "total_to_done_s": 0.3680750420317054
+   },
+   "api_server": {
+    "load_duration_s": 0.215425791,
+    "prompt_eval_duration_s": 0.025355875,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.119212458,
+    "eval_count": 8
+   }
+  },
+  {
+   "keep_alive": -1,
+   "chunk_count": 9,
+   "failure": null,
+   "text": " upon-the-sands-of",
+   "nonempty_chunk_count": 8,
+   "client": {
+    "ttft_first_nonempty_s": 0.23473537527024746,
+    "total_to_done_s": 0.34486608300358057
+   },
+   "api_server": {
+    "load_duration_s": 0.213105708,
+    "prompt_eval_duration_s": 0.018086709,
+    "prompt_eval_count": 2,
+    "eval_duration_s": 0.106608251,
+    "eval_count": 8
+   }
+  }
+ ],
+ "rss_max_warm_mib": {
+  "runner_child_pid16890": 14743.6,
+  "serve_pid4101": 3.0,
+  "serve_pid68306": 123.5
+ },
+ "rss_after_warm_mib": {
+  "serve_pid4101": 2.0,
+  "serve_pid68306": 109.3,
+  "runner_child_pid16890": 14739.8
+ },
+ "failures": []
+}

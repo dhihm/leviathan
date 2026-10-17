@@ -1,0 +1,10 @@
+{
+  "sourceBase": "f5eb37f2921e49109a1a6f10e4e40fe0b8764a6c",
+  "shaderSourceTailByteIdentical": true,
+  "shaderSourceTailSha256": "d8f384d6f446b9ded88aa1c13c5a7f53d76e10ee3d9c1205f3287d7d8d523041",
+  "Gemma4OriginalLinesRemoved": 0,
+  "runtimeHookAddedLines": 107,
+  "testAddedLines": 151,
+  "newHelper": "Gemma4CommandTimeline.swift",
+  "runtimeReviewPostFix": "unchanged; only test MainActor annotation"
+}

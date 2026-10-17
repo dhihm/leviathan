@@ -1,0 +1,17 @@
+[package]
+name = "lev-cli"
+description = "Leviathan command line (cross-platform engine)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "lev"
+path = "src/main.rs"
+
+[dependencies]
+lev-gguf = { path = "../lev-gguf" }
+lev-cpu = { path = "../lev-cpu" }
+lev-forge = { path = "../lev-forge" }
+lev-vulkan = { path = "../lev-vulkan" }
+lev-model = { path = "../lev-model" }

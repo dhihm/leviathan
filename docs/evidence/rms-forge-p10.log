@@ -1,0 +1,8 @@
+incumbent rmsnorm rel-to-FP64: 1.057e-06
+  ACCEPT rmsgen_rms_T1_scalar: bit-identical, rel64 1.057e-06
+  ACCEPT rmsgen_rms_T32_scalar: bit-identical, rel64 1.057e-06
+  ACCEPT rmsgen_rms_T32_float4: bit-identical, rel64 1.057e-06
+  ACCEPT rmsgen_rms_T16_scalar: bit-identical, rel64 1.057e-06
+  ACCEPT rmsgen_rms_T16_float4: bit-identical, rel64 1.057e-06
+selected: rmsgen_rms_T1_scalar
+artifact saved: /tmp/leviathan-forge2-tooling/rms/artifact-forge-p10.json (digest 9e46c05e373b0946…)

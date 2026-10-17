@@ -1,0 +1,196 @@
+[0/1] Planning build
+Building for production...
+[0/8] Write sources
+[1/8] Write swift-version--1AB21518FC5DEDBE.txt
+[3/8] Compiling leviathan_cli CompositeCLI.swift
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:1229:32: warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1227 |                 }
+1228 |                 for t in history {
+1229 |                     try runner.forward(tokenIds: [t])
+     |                                `- warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1230 |                 }
+1231 |                 try afterStep(0, try runner.currentLogits())
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:1233:32: warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1231 |                 try afterStep(0, try runner.currentLogits())
+1232 |                 for s in 1..<steps {
+1233 |                     try runner.forward(tokenIds: [refIds[s]])
+     |                                `- warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1234 |                     try afterStep(s, try runner.currentLogits())
+1235 |                 }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:405:9: warning: immutable value 'reference' was never used; consider removing it [#no-usage]
+ 403 |     let graph: GraphIR
+ 404 |     let weights: [Float]?
+ 405 |     let reference: [Float]?   // PyTorch refOutput, only with --export-prefix
+     |         `- warning: immutable value 'reference' was never used; consider removing it [#no-usage]
+ 406 |     do {
+ 407 |         if let weightExport {
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:1675:21: warning: variable 'fixtures' was never mutated; consider changing to 'let' constant
+1673 |                         + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>")
+1674 |                 }
+1675 |                 var fixtures = smokeTest
+     |                     `- warning: variable 'fixtures' was never mutated; consider changing to 'let' constant
+1676 |                     ? [Q4LoweringForge.Q4Fixture(name: "raw-hello",
+1677 |                                                  tokens: try tokenizer.encode("Hello"))]
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:3351:23: warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+3349 |             requireValue("--prompt-ids", args) } ?? "2,9259"
+3350 |         func intArg(_ name: String, _ def: Int) -> Int {
+3351 |             guard let i = args.firstIndex(of: name) else { return def }
+     |                       `- warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+3352 |             guard let v = Int(requireValue(name, args)) else {
+3353 |                 fail("\(name) must be an integer"); return def }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:3608:23: warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+3606 |         let planPath = requireValue("--plan", args)
+3607 |         func intArgServe(_ name: String, _ def: Int) -> Int {
+3608 |             guard let i = args.firstIndex(of: name) else { return def }
+     |                       `- warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+3609 |             guard let v = Int(requireValue(name, args)) else {
+3610 |                 fail("\(name) must be an integer"); return def }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:3353:53: warning: will never be executed
+3351 |             guard let i = args.firstIndex(of: name) else { return def }
+3352 |             guard let v = Int(requireValue(name, args)) else {
+3353 |                 fail("\(name) must be an integer"); return def }
+     |                 |                                   `- warning: will never be executed
+     |                 `- note: a call to a never-returning function
+3354 |             return v
+3355 |         }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:3610:53: warning: will never be executed
+3608 |             guard let i = args.firstIndex(of: name) else { return def }
+3609 |             guard let v = Int(requireValue(name, args)) else {
+3610 |                 fail("\(name) must be an integer"); return def }
+     |                 |                                   `- warning: will never be executed
+     |                 `- note: a call to a never-returning function
+3611 |             return v
+3612 |         }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:2973:67: warning: will never be executed
+2971 |                     guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+2972 |                           id >= 0, id < preConfig.vocabSize else {
+2973 |                         fail("invalid prompt id '\($0)'"); return 0
+     |                         |                                         `- warning: will never be executed
+     |                         `- note: a call to a never-returning function
+2974 |                     }
+2975 |                     return id
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:3381:64: warning: will never be executed
+3379 |                 guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+3380 |                       id >= 0, id < preConfig.vocabSize else {
+3381 |                     fail("invalid prompt id '\($0)')"); return 0 }
+     |                     |                                          `- warning: will never be executed
+     |                     `- note: a call to a never-returning function
+3382 |                 return id
+3383 |             }
+[3/8] Write Objects.LinkFileList
+[4/8] Linking leviathan-cli
+[6/8] Compiling leviathan_tests main.swift
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:1775:13: warning: variable 'types9' was never mutated; consider changing to 'let' constant
+1773 |     // Unknown token_type code (9) across the array.
+1774 |     do {
+1775 |         var types9 = [Int32](repeating: 9, count: 256 + 3 + 2)
+     |             `- warning: variable 'types9' was never mutated; consider changing to 'let' constant
+1776 |         _ = types9
+1777 |         // Reuse the fixture with an all-9 type array via a tiny builder:
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:5469:13: warning: initialization of immutable value 'wBytes' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+5467 |         let hwProfile = try RMSCurrentHardware.profile()
+5468 |         let incumbent = try RMSIncumbentKernel.compile(device: device)
+5469 |         let wBytes = try RMSComponentInputs.weightBytes(op: op, file: nil)
+     |             `- warning: initialization of immutable value 'wBytes' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+5470 |         let x = RMSComponentInputs.activation(op: op)
+5471 |         let production = incumbent.productionPipeline(n: op.n, scaled: op.scaled)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:7024:7: warning: 'catch' block is unreachable because no errors are thrown in 'do' block
+7022 |               !Gemma4Runner.cacheAppendGeometry(srcK: srcK, srcV: srcV, dstK: dstK, dstV: dstV,
+7023 |                                                 kvWidth: 8, position: Int.max))
+7024 |     } catch {
+     |       `- warning: 'catch' block is unreachable because no errors are thrown in 'do' block
+7025 |         failed += 1
+7026 |         print("FAIL cache-append geometry: \(error)")
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:3616:17: warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+3614 |         // Restore the ORIGINAL initial input (including NaN tail
+3615 |         // sentinels), then run round 1 + round 2 in one ordered command.
+3616 |         paddedX.withUnsafeBytes { src in
+     |                 `- warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+3617 |             memcpy(xbuf.contents(), src.baseAddress, paddedCount * 4)
+3618 |         }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:3713:12: warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+3711 |     let scales = [Float](repeating: 1.0, count: n)
+3712 |     memcpy(buf.contents(), initial, padded * 4)
+3713 |     scales.withUnsafeBytes { raw in
+     |            `- warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+3714 |         memcpy(scaleBytes.contents(), raw.baseAddress!, n * 4)
+3715 |     }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:4944:19: warning: expression implicitly coerced from 'Any?' to 'Any'
+4942 |         "layout": "row-major-q4_0-blocks", "quant": "q4_0",
+4943 |         "accumulate": "f32", "inputPrecision": "f32",
+4944 |         "tensor": tensor, "representativeRows": rows,
+     |                   |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                   |- note: provide a default value to avoid this warning
+     |                   |- note: force-unwrap the value to avoid this warning
+     |                   `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+4945 |         "view": view,
+4946 |     ]
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:4944:49: warning: expression implicitly coerced from 'Any?' to 'Any'
+4942 |         "layout": "row-major-q4_0-blocks", "quant": "q4_0",
+4943 |         "accumulate": "f32", "inputPrecision": "f32",
+4944 |         "tensor": tensor, "representativeRows": rows,
+     |                                                 |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                                                 |- note: provide a default value to avoid this warning
+     |                                                 |- note: force-unwrap the value to avoid this warning
+     |                                                 `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+4945 |         "view": view,
+4946 |     ]
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:4945:17: warning: expression implicitly coerced from 'Any?' to 'Any'
+4943 |         "accumulate": "f32", "inputPrecision": "f32",
+4944 |         "tensor": tensor, "representativeRows": rows,
+4945 |         "view": view,
+     |                 |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                 |- note: provide a default value to avoid this warning
+     |                 |- note: force-unwrap the value to avoid this warning
+     |                 `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+4946 |     ]
+4947 |     return try JSONSerialization.data(withJSONObject: obj)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:5354:19: warning: expression implicitly coerced from 'Any?' to 'Any'
+5352 |         "layout": "row-major-f32-vectors", "quant": "f32",
+5353 |         "reduction": "serial-order-i0..n", "inputPrecision": "f32",
+5354 |         "tensor": tensor, "representativeVectors": reps,
+     |                   |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                   |- note: provide a default value to avoid this warning
+     |                   |- note: force-unwrap the value to avoid this warning
+     |                   `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+5355 |     ]
+5356 |     return try JSONSerialization.data(withJSONObject: obj)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:5354:52: warning: expression implicitly coerced from 'Any?' to 'Any'
+5352 |         "layout": "row-major-f32-vectors", "quant": "f32",
+5353 |         "reduction": "serial-order-i0..n", "inputPrecision": "f32",
+5354 |         "tensor": tensor, "representativeVectors": reps,
+     |                                                    |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                                                    |- note: provide a default value to avoid this warning
+     |                                                    |- note: force-unwrap the value to avoid this warning
+     |                                                    `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+5355 |     ]
+5356 |     return try JSONSerialization.data(withJSONObject: obj)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:3760:25: warning: '1e-40' underflows and loses precision during conversion to 'Float'
+3758 |     struct Case { let a: Float; let s: Float; let label: String }
+3759 |     let cases: [Case] = [
+3760 |         Case(a: 1.0, s: 1e-40, label: "normal * subnormal scale -> subnormal"),
+     |                         `- warning: '1e-40' underflows and loses precision during conversion to 'Float'
+3761 |         Case(a: 1e-20, s: 1e-20, label: "normal * normal -> subnormal"),
+3762 |         Case(a: Float.leastNonzeroMagnitude, s: 1.0, label: "subnormal passthrough"),
+[6/8] Write Objects.LinkFileList
+[7/8] Linking leviathan-tests
+Build complete! (40.12s)

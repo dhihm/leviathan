@@ -1,0 +1,82 @@
+{
+  "scope": "Static analysis of published canonical SSA and current private original source, supporting next host-boundary pass. Counts are not measured isolated wall attribution.",
+  "instructionCounts": {
+    "embed_row": 1,
+    "rmsnorm": 331,
+    "matvec": 236,
+    "rope": 60,
+    "cache_append": 30,
+    "attention": 30,
+    "axpy": 60,
+    "gelu_up": 30,
+    "scale": 60,
+    "router_topk": 30,
+    "expert_matvec_chain": 30,
+    "add": 30,
+    "copy": 5,
+    "softcap": 1
+  },
+  "routerScaleHostRoundtrips": 30,
+  "routingHostReadbacks": 30,
+  "expertChainHostZeros": 30,
+  "copyHostRoundtrips": [
+    {
+      "attrs": {},
+      "inputs": [
+        "t2@20"
+      ],
+      "layer": 5,
+      "op": "copy",
+      "output": "kv@10",
+      "tensors": []
+    },
+    {
+      "attrs": {},
+      "inputs": [
+        "t2@44"
+      ],
+      "layer": 11,
+      "op": "copy",
+      "output": "kv@22",
+      "tensors": []
+    },
+    {
+      "attrs": {},
+      "inputs": [
+        "t2@68"
+      ],
+      "layer": 17,
+      "op": "copy",
+      "output": "kv@34",
+      "tensors": []
+    },
+    {
+      "attrs": {},
+      "inputs": [
+        "t2@92"
+      ],
+      "layer": 23,
+      "op": "copy",
+      "output": "kv@46",
+      "tensors": []
+    },
+    {
+      "attrs": {},
+      "inputs": [
+        "t2@116"
+      ],
+      "layer": 29,
+      "op": "copy",
+      "output": "kv@58",
+      "tensors": []
+    }
+  ],
+  "normalPhase34BuffersPerDecode": 97,
+  "normalPhase34DispatchesPerDecode": 1289,
+  "candidateEliminableBoundaries": {
+    "routerScale": 30,
+    "residentExpertGPUZero": 30,
+    "copy": 5
+  },
+  "safety": "Expert chain flush cannot simply be removed: CPU memset aliases GPU-owned output; requires an ordered GPU zero operation before unchanged ordered axpy merges, with cache mode retaining its lifetime/synchronization guards. Router scale must preserve two float multiplication rounds without reassociation/FMA. Copy must preserve exact bit patterns and physical alias/lifetime. Actual speed requires separate component and full serving gates."
+}

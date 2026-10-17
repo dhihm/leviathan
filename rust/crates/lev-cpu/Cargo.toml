@@ -1,0 +1,8 @@
+[package]
+name = "lev-cpu"
+description = "CPU reference kernels and FP64 oracles (portable, all operating systems)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

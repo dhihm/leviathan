@@ -1,0 +1,14 @@
+{
+  "cachePath": "<home>/Library/Caches/Leviathan/model-digests/b19c7952da87634e8fef49df135aee04a43293288624b6e857c39b50d285d607.json",
+  "record": {
+    "bytes": 14439363584,
+    "format": "leviathan.model-digest-cache.v1",
+    "hashedAtUTC": "2026-10-04T20:18:30Z",
+    "path": "<workspace>/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "policy": "cached-explicit-refresh-v1",
+    "sha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+    "source": "historical-receipt"
+  },
+  "sourceReceipt": "/tmp/leviathan-forge2-tooling/phase45-memory-residency/probe-results.json",
+  "modelBytesReadNow": 0
+}

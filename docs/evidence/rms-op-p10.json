@@ -1,0 +1,1 @@
+{"eps": 1e-06, "inputPrecision": "f32", "layout": "row-major-f32-vectors", "n": 2816, "op": "rmsnorm", "quant": "f32", "reduction": "serial-order-i0..n", "representativeVectors": 8, "scaled": true, "schema": 1, "semantics": "y[i] = x[i] * inv_rms(x) * w[i]", "tensor": "blk.0.attn_norm.weight", "vectors": 8}

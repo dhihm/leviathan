@@ -1,0 +1,116 @@
+{
+  "artifactDigest": "931deb8e3ded2f734b4eb4ff10e591ea44fc55bbb6a860444a45ecccea44a610",
+  "artifactFileSHA256": "22e11a28d83badc19f3bcb703128abb3f3213a79173a99b2b8c9489a2ed69d5a",
+  "executableSHA256": "451b16b2eec8951d68e2dd62cd026993a7ad82c2e0ed0a227556c7b0964dd950",
+  "modelSHA256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
+  "schedule": {
+    "batch": 4,
+    "rowsPerGroup": 32
+  },
+  "fixtures": [
+    {
+      "gatedSteps": 32,
+      "historyDigest": "16278460089cf39265625aeb61cec8a5f979e70739f4313864a236ad7e8f0fdb",
+      "name": "en-chat",
+      "promptTokenCount": 21
+    },
+    {
+      "gatedSteps": 32,
+      "historyDigest": "73a51337695ba1b79d0f0f2bc68e30ac568168202a3ea9bb66ba2f87c985bc01",
+      "name": "kr-chat",
+      "promptTokenCount": 23
+    },
+    {
+      "gatedSteps": 32,
+      "historyDigest": "64c3ddb249ebf34b868afffb1172ae14380bc70b4d3526c2722a22fd46ac912f",
+      "name": "raw-hello",
+      "promptTokenCount": 2
+    }
+  ],
+  "worstRel": 0,
+  "performanceSelected": true,
+  "candidatePolicySumsMicroseconds": [
+    997950.667,
+    973797.125,
+    997864.083
+  ],
+  "incumbentPolicySumsMicroseconds": [
+    1266486.541,
+    1278310.833,
+    1283607.083
+  ],
+  "policyReductionPercent": 21.938854209803928,
+  "policySpeedRatio": 1.2810470431572796,
+  "candidateAggregateWallSecondsPerRep": [
+    30.924020247999998,
+    30.488454459,
+    31.465435833
+  ],
+  "incumbentAggregateWallSecondsPerRep": [
+    39.031222792,
+    39.701609166999994,
+    39.707642703000005
+  ],
+  "decodeStepsPerRep": 93,
+  "candidateMedianAggregateDecodeTPS": 3.007370945115545,
+  "incumbentMedianAggregateDecodeTPS": 2.342474321602603,
+  "candidateFixtureMedianWallMicroseconds": [
+    353170.625,
+    354029.458,
+    280062.917
+  ],
+  "pairedIncumbentFixtureMedianWallMicroseconds": [
+    444578.416,
+    456857.75,
+    374568.25
+  ],
+  "selectionExit": 0,
+  "selectionElapsedSeconds": 802.5430497908965,
+  "maxRSSBytes": 3641393152,
+  "peakMemoryFootprintBytes": 31265588544,
+  "sourceUnchanged": true,
+  "freshProcessStatus": "passed",
+  "overallGoal": "UNMET: whole-model general Torch frontend, competitive and lightweight target",
+  "freshProcessExit": 0,
+  "freshProcessElapsedSeconds": 133.65028224978596,
+  "freshProcessSourceUnchanged": true,
+  "freshProcessFixtures": [
+    {
+      "name": "en-chat",
+      "actualSteps": 32,
+      "worstRel": 0,
+      "stageDispatchDeltas": [
+        3120,
+        3120,
+        3120
+      ],
+      "orderedMergeDelta": 12480,
+      "fallbackDelta": 0
+    },
+    {
+      "name": "kr-chat",
+      "actualSteps": 32,
+      "worstRel": 0,
+      "stageDispatchDeltas": [
+        3240,
+        3240,
+        3240
+      ],
+      "orderedMergeDelta": 12960,
+      "fallbackDelta": 0
+    },
+    {
+      "name": "raw-hello",
+      "actualSteps": 32,
+      "worstRel": 0,
+      "stageDispatchDeltas": [
+        1980,
+        1980,
+        1980
+      ],
+      "orderedMergeDelta": 7920,
+      "fallbackDelta": 0
+    }
+  ],
+  "freshProcessPeakMemoryFootprintBytes": 16631420736
+}

@@ -1,0 +1,21 @@
+{
+  "baselineCommit": "4d08b6402b0c824fad958e8a0b65b9095753c286",
+  "externalAuthor": "Existing subscription ZCode zai-api GLM-5.3; user approved exact source/tests/measurement transmission",
+  "sourceReplayedFromExactExternalContents": {
+    "Sources/LeviathanCore/Q6Cooperative.swift": true,
+    "Sources/LeviathanCore/Gemma4.swift": true,
+    "Sources/LeviathanCore/GemmaForge.swift": true,
+    "Sources/leviathan-tests/main.swift": true,
+    "Sources/leviathan-cli/main.swift": true
+  },
+  "exactReplayMatches": true,
+  "sourceSha256": {
+    "Sources/LeviathanCore/Q6Cooperative.swift": "60afed0593add1aab07a797530199312fbc2992dd65300daffae49f1d212b795",
+    "Sources/LeviathanCore/Gemma4.swift": "7e1f28ec9a92ccf589fb60eb614cc87dfb1ddff44153538547a20b20cc16663d",
+    "Sources/LeviathanCore/GemmaForge.swift": "c4b3894c4e76a0ffdd3422a3ee2dbe4bdcd93287cec182befd84b31e7be6dfc7",
+    "Sources/leviathan-tests/main.swift": "2e3a30c80f0e953a6da9d1f5fa6c149b49fe3451ad5457e15963f908f5bbb112",
+    "Sources/leviathan-cli/main.swift": "250622b014e213f9f05e9f560f6f7b13f5e102718066f1beb84f47167b856c93"
+  },
+  "discardedOrderedPrototype": "Measured losing prototype preserved in probe-results.json; not final kernel",
+  "integrationOriginalSession": "Unapproved other-checkout Bash permission requests never granted; bridge stopped; isolated text-only author produced final patch"
+}

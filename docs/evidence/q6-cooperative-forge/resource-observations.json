@@ -1,0 +1,757 @@
+{
+  "scope": "Read-only before/after snapshots; no OS changes. CPU snapshots and VM cumulative counters do not establish cause. Full raw process observations retained locally, abbreviated here to process basenames. No actual temperature/clocks measured.",
+  "snapshots": [
+    {
+      "utc": "2026-10-04T09:06:45Z",
+      "pair": 1,
+      "arm": "incumbent",
+      "stage": "before",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 135731,
+        "Pages active": 107601,
+        "Pages wired down": 716243,
+        "Pages occupied by compressor": 168580,
+        "Pages throttled": 0,
+        "Swapins": 279379486,
+        "Swapouts": 386974281
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 91.5,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 37.9,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 21.0,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 14.5,
+          "process": "Telegram"
+        },
+        {
+          "cpuPercent": 10.8,
+          "process": "cloudd"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:07:13Z",
+      "pair": 1,
+      "arm": "incumbent",
+      "stage": "after",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 4443,
+        "Pages active": 97873,
+        "Pages wired down": 992293,
+        "Pages occupied by compressor": 155095,
+        "Pages throttled": 0,
+        "Swapins": 279405194,
+        "Swapouts": 387044913
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 107.3,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 38.9,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 34.7,
+          "process": "cloudd"
+        },
+        {
+          "cpuPercent": 25.4,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 17.4,
+          "process": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:07:13Z",
+      "pair": 1,
+      "arm": "candidate",
+      "stage": "before",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 149871,
+        "Pages active": 108132,
+        "Pages wired down": 712530,
+        "Pages occupied by compressor": 154679,
+        "Pages throttled": 0,
+        "Swapins": 279405214,
+        "Swapouts": 387044913
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 107.3,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 38.9,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 34.7,
+          "process": "cloudd"
+        },
+        {
+          "cpuPercent": 25.4,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 17.4,
+          "process": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:07:38Z",
+      "pair": 1,
+      "arm": "candidate",
+      "stage": "after",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 925,
+        "Pages active": 128603,
+        "Pages wired down": 992017,
+        "Pages occupied by compressor": 130298,
+        "Pages throttled": 0,
+        "Swapins": 279428289,
+        "Swapouts": 387044913
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 94.2,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 41.4,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 32.7,
+          "process": "Codex (Renderer)"
+        },
+        {
+          "cpuPercent": 25.6,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 19.2,
+          "process": "cloudd"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:07:38Z",
+      "pair": 2,
+      "arm": "candidate",
+      "stage": "before",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 133392,
+        "Pages active": 145357,
+        "Pages wired down": 701770,
+        "Pages occupied by compressor": 130057,
+        "Pages throttled": 0,
+        "Swapins": 279428313,
+        "Swapouts": 387044913
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 94.2,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 41.1,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 23.9,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 22.8,
+          "process": "Codex (Renderer)"
+        },
+        {
+          "cpuPercent": 14.1,
+          "process": "cloudd"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:08:04Z",
+      "pair": 2,
+      "arm": "candidate",
+      "stage": "after",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 74923,
+        "Pages active": 110986,
+        "Pages wired down": 773466,
+        "Pages occupied by compressor": 173387,
+        "Pages throttled": 0,
+        "Swapins": 279451868,
+        "Swapouts": 387048257
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 109.0,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 43.8,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 25.9,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 25.6,
+          "process": "Codex (Renderer)"
+        },
+        {
+          "cpuPercent": 18.0,
+          "process": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:08:04Z",
+      "pair": 2,
+      "arm": "incumbent",
+      "stage": "before",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 115860,
+        "Pages active": 150257,
+        "Pages wired down": 708137,
+        "Pages occupied by compressor": 161055,
+        "Pages throttled": 0,
+        "Swapins": 279454964,
+        "Swapouts": 387048257
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 109.1,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 50.9,
+          "process": "Codex (Renderer)"
+        },
+        {
+          "cpuPercent": 42.7,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 24.2,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 17.1,
+          "process": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:08:32Z",
+      "pair": 2,
+      "arm": "incumbent",
+      "stage": "after",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 12842,
+        "Pages active": 95931,
+        "Pages wired down": 948295,
+        "Pages occupied by compressor": 149409,
+        "Pages throttled": 0,
+        "Swapins": 279471179,
+        "Swapouts": 387084465
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 109.4,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 52.3,
+          "process": "Codex (Renderer)"
+        },
+        {
+          "cpuPercent": 40.8,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 26.6,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 14.9,
+          "process": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:08:32Z",
+      "pair": 3,
+      "arm": "incumbent",
+      "stage": "before",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 149184,
+        "Pages active": 104581,
+        "Pages wired down": 711877,
+        "Pages occupied by compressor": 149132,
+        "Pages throttled": 0,
+        "Swapins": 279471183,
+        "Swapouts": 387084465
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 113.2,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 40.8,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 35.0,
+          "process": "Codex (Renderer)"
+        },
+        {
+          "cpuPercent": 25.5,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 15.6,
+          "process": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:08:59Z",
+      "pair": 3,
+      "arm": "incumbent",
+      "stage": "after",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 26135,
+        "Pages active": 93513,
+        "Pages wired down": 1232970,
+        "Pages occupied by compressor": 155817,
+        "Pages throttled": 0,
+        "Swapins": 279480347,
+        "Swapouts": 387090837
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 108.8,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 40.7,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 24.9,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 18.5,
+          "process": "cloudd"
+        },
+        {
+          "cpuPercent": 15.1,
+          "process": "Telegram"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:08:59Z",
+      "pair": 3,
+      "arm": "candidate",
+      "stage": "before",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 118284,
+        "Pages active": 98985,
+        "Pages wired down": 741471,
+        "Pages occupied by compressor": 155558,
+        "Pages throttled": 0,
+        "Swapins": 279480359,
+        "Swapouts": 387090837
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 107.0,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 40.8,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 24.7,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 17.4,
+          "process": "cloudd"
+        },
+        {
+          "cpuPercent": 15.9,
+          "process": "Telegram"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:09:24Z",
+      "pair": 3,
+      "arm": "candidate",
+      "stage": "after",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 904,
+        "Pages active": 113590,
+        "Pages wired down": 1051947,
+        "Pages occupied by compressor": 155542,
+        "Pages throttled": 0,
+        "Swapins": 279492586,
+        "Swapouts": 387090837
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 93.3,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 40.3,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 23.8,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 22.3,
+          "process": "Codex (Renderer)"
+        },
+        {
+          "cpuPercent": 16.6,
+          "process": "cloudd"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:09:24Z",
+      "pair": 4,
+      "arm": "candidate",
+      "stage": "before",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 138591,
+        "Pages active": 125469,
+        "Pages wired down": 698923,
+        "Pages occupied by compressor": 155209,
+        "Pages throttled": 0,
+        "Swapins": 279492594,
+        "Swapouts": 387090837
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 90.8,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 40.2,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 23.8,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 22.3,
+          "process": "Codex (Renderer)"
+        },
+        {
+          "cpuPercent": 19.3,
+          "process": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:09:49Z",
+      "pair": 4,
+      "arm": "candidate",
+      "stage": "after",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 123106,
+        "Pages active": 109876,
+        "Pages wired down": 731240,
+        "Pages occupied by compressor": 169481,
+        "Pages throttled": 0,
+        "Swapins": 279497916,
+        "Swapouts": 387094281
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 93.4,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 42.6,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 23.6,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 20.4,
+          "process": "cloudd"
+        },
+        {
+          "cpuPercent": 20.4,
+          "process": "com.apple.WebKit.WebContent"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:09:49Z",
+      "pair": 4,
+      "arm": "incumbent",
+      "stage": "before",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 150307,
+        "Pages active": 112738,
+        "Pages wired down": 699994,
+        "Pages occupied by compressor": 169291,
+        "Pages throttled": 0,
+        "Swapins": 279497920,
+        "Swapouts": 387094281
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 93.4,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 40.7,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 21.9,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 21.3,
+          "process": "com.apple.WebKit.WebContent"
+        },
+        {
+          "cpuPercent": 16.4,
+          "process": "cloudd"
+        }
+      ]
+    },
+    {
+      "utc": "2026-10-04T09:10:17Z",
+      "pair": 4,
+      "arm": "incumbent",
+      "stage": "after",
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "vmPages": {
+        "Pages free": 22947,
+        "Pages active": 80833,
+        "Pages wired down": 913498,
+        "Pages occupied by compressor": 159166,
+        "Pages throttled": 0,
+        "Swapins": 279521992,
+        "Swapouts": 387138309
+      },
+      "topCPUProcesses": [
+        {
+          "cpuPercent": 106.7,
+          "process": "WindowServer"
+        },
+        {
+          "cpuPercent": 40.1,
+          "process": "Unity"
+        },
+        {
+          "cpuPercent": 27.1,
+          "process": "SkyComputerUseService"
+        },
+        {
+          "cpuPercent": 18.0,
+          "process": "cloudd"
+        },
+        {
+          "cpuPercent": 11.5,
+          "process": "replayd"
+        }
+      ]
+    }
+  ]
+}

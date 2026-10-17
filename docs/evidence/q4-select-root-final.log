@@ -1,0 +1,41 @@
+component: incumbent rel-to-FP64 7.211e-07; 8/8 candidates accepted
+reference [en-chat]: 32 greedy steps
+reference [kr-chat]: 32 greedy steps
+reference [raw-hello]: 32 greedy steps
+gate PASS q4gen_matvec_T1_R1_f32_scalar: 3/3 fixtures, worst rel 0.000e+00
+gate PASS q4gen_matvec_T16_R1_f32_scalar: 3/3 fixtures, worst rel 8.851e-05
+gate PASS q4gen_matvec_T16_R1_f32compensated_scalar: 3/3 fixtures, worst rel 8.851e-05
+gate FAIL q4gen_matvec_T16_R1_f32compensated_float4: 2/3 fixtures, worst rel 5.442e-05
+  first failure: [raw-hello] step 9 outside 1e-4 (worst 1.026e-04)
+gate PASS q4gen_matvec_T8_R1_f32_scalar: 3/3 fixtures, worst rel 7.707e-05
+gate PASS q4gen_matvec_T8_R1_f32compensated_scalar: 3/3 fixtures, worst rel 7.707e-05
+gate PASS q4gen_matvec_T8_R1_f32compensated_float4: 3/3 fixtures, worst rel 7.039e-05
+gate FAIL q4gen_matvec_T16_R2_f32compensated_float4: 2/3 fixtures, worst rel 5.442e-05
+  first failure: [raw-hello] step 9 outside 1e-4 (worst 1.026e-04)
+matched timing q4gen_matvec_T1_R1_f32_scalar: rep sums 1405357,1380338,1383464 vs paired incumbent 1365167,1368235,1384659 (median 1383464 vs 1368235 us/token)
+matched timing q4gen_matvec_T16_R1_f32_scalar: rep sums 1431466,1370393,1395882 vs paired incumbent 1440832,1379109,1381348 (median 1395882 vs 1381348 us/token)
+matched timing q4gen_matvec_T16_R1_f32compensated_scalar: rep sums 1367678,1337513,1461655 vs paired incumbent 1371081,1394484,1445829 (median 1367678 vs 1394484 us/token)
+matched timing q4gen_matvec_T8_R1_f32_scalar: rep sums 1472045,1388390,1377647 vs paired incumbent 1386046,1444605,1489661 (median 1388390 vs 1444605 us/token)
+matched timing q4gen_matvec_T8_R1_f32compensated_scalar: rep sums 1353280,1351909,1369201 vs paired incumbent 1369672,1336811,1387999 (median 1353280 vs 1369672 us/token)
+matched timing q4gen_matvec_T8_R1_f32compensated_float4: rep sums 1358564,1386856,1357581 vs paired incumbent 1361070,1368091,1341636 (median 1358564 vs 1361070 us/token)
+policy: selected q4gen_matvec_T8_R1_f32_scalar beats its own paired incumbent matched-repeat median summed wall by 3.9% (> 2% policy threshold)
+persisted execution: reloaded+validated+installed from disk; en-chat replay worst rel 4.965e-05; generated dispatches 52 (bound tensor blk.0.attn_q.weight)
+Q4_SELECT_COMPLETED -> /tmp/leviathan-forge2-tooling/q4/artifact-select-root-final.json
+     2839.69 real       220.24 user        87.10 sys
+          3328737280  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+             3568742  page reclaims
+               34725  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+               52205  voluntary context switches
+             5247148  involuntary context switches
+       1025330913195  instructions retired
+        922499692464  cycles elapsed
+         31226840192  peak memory footprint

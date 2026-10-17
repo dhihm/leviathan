@@ -1,0 +1,11 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+*.lvi
+# Python bytecode
+__pycache__/
+*.pyc
+# Model weights and weight exports are never committed
+*.weights.f32
+*.gguf
+*.forge.json

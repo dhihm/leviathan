@@ -1,0 +1,24 @@
+{
+  "roundMedianReductionPercent": [
+    3.281043186344712,
+    2.0272819246531792
+  ],
+  "allSixPairsImprove": true,
+  "eachPairReductionPercent": [
+    3.281043186344712,
+    3.80117805104887,
+    1.2469427161553304,
+    2.0272819246531792,
+    2.2241823108596903,
+    1.7482142933657796
+  ],
+  "everyPairOverTwoPercent": false,
+  "combinedMedianPairedReductionPercent": 2.1257321177564403,
+  "candidateWarmAggregateTokensPerSecondRange": [
+    2.6640427278078795,
+    2.7128848905438456
+  ],
+  "crossArmExactTokenIDs": true,
+  "sourcePlansBinaryUnchanged": true,
+  "ollamaParity": false
+}

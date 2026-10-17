@@ -1,0 +1,130 @@
+{
+  "scope": "One full-generation warmup then normal batched31decode budget and separate intrusive per-kernel replay with full-logit comparison; temporary canonical-core-linked driver mirrors actual selected E4/width32/cooperativeRMS/GPUKV/parallel-attention flags. Diagnostic API installation is not production artifact approval; actual public installation was separately qualified. Shared Mac, separate from paired timing.",
+  "normalWallMillisPerToken": 115.1925201297883,
+  "normalPercent": {
+    "gpu": 76.04294456518211,
+    "flushHost": 18.9094876640441,
+    "encode": 0.8383710755014011,
+    "readCopy": 0.2951008975264052,
+    "writeCopy": 0.10949887498489852,
+    "residual": 3.8045969227610863
+  },
+  "intrusiveFullLogitWorstNormalizedDiff": 0,
+  "kernelRanking": [
+    {
+      "calls": 10261,
+      "gpuMicros": 1231368.1710511446,
+      "name": "g4_rmsnorm_coop",
+      "diagnosticPercent": 24.21731499912057,
+      "callsPerToken": 331.0
+    },
+    {
+      "calls": 6355,
+      "gpuMicros": 1041107.3863506317,
+      "name": "g4_q4_matvec",
+      "diagnosticPercent": 20.47545658228416,
+      "callsPerToken": 205.0
+    },
+    {
+      "calls": 31,
+      "gpuMicros": 1018444.3751350045,
+      "name": "g4_q6_matvec",
+      "diagnosticPercent": 20.02974319262513,
+      "callsPerToken": 1.0
+    },
+    {
+      "calls": 930,
+      "gpuMicros": 756352.0055264235,
+      "name": "g4_f32_matvec",
+      "diagnosticPercent": 14.875173159960777,
+      "callsPerToken": 30.0
+    },
+    {
+      "calls": 1860,
+      "gpuMicros": 378275.91551467776,
+      "name": "moegen_gu_E4_R32",
+      "diagnosticPercent": 7.4395515638345815,
+      "callsPerToken": 60.0
+    },
+    {
+      "calls": 1860,
+      "gpuMicros": 200904.70416471362,
+      "name": "moegen_dn_E4_R32",
+      "diagnosticPercent": 3.951192356554681,
+      "callsPerToken": 60.0
+    },
+    {
+      "calls": 9300,
+      "gpuMicros": 129964.3674865365,
+      "name": "g4_axpy",
+      "diagnosticPercent": 2.556008917622244,
+      "callsPerToken": 300.0
+    },
+    {
+      "calls": 930,
+      "gpuMicros": 117560.25440990925,
+      "name": "g4_attn_par64_diag",
+      "diagnosticPercent": 2.3120572541608078,
+      "callsPerToken": 30.0
+    },
+    {
+      "calls": 1860,
+      "gpuMicros": 109726.67718306184,
+      "name": "g4_rope",
+      "diagnosticPercent": 2.157994308786348,
+      "callsPerToken": 60.0
+    },
+    {
+      "calls": 1860,
+      "gpuMicros": 31661.55470535159,
+      "name": "moegen_act_E4",
+      "diagnosticPercent": 0.6226877238566697,
+      "callsPerToken": 60.0
+    },
+    {
+      "calls": 1860,
+      "gpuMicros": 24967.425502836704,
+      "name": "g4_scale",
+      "diagnosticPercent": 0.49103430016639515,
+      "callsPerToken": 60.0
+    },
+    {
+      "calls": 930,
+      "gpuMicros": 15302.12676152587,
+      "name": "g4_add",
+      "diagnosticPercent": 0.3009468919632753,
+      "callsPerToken": 30.0
+    },
+    {
+      "calls": 930,
+      "gpuMicros": 14952.997211366892,
+      "name": "g4_cache_append",
+      "diagnosticPercent": 0.29408056190011983,
+      "callsPerToken": 30.0
+    },
+    {
+      "calls": 930,
+      "gpuMicros": 12987.173162400723,
+      "name": "g4_gelu_up",
+      "diagnosticPercent": 0.25541870483261003,
+      "callsPerToken": 30.0
+    },
+    {
+      "calls": 31,
+      "gpuMicros": 733.6228154599667,
+      "name": "g4_softcap",
+      "diagnosticPercent": 0.014428158230994092,
+      "callsPerToken": 1.0
+    },
+    {
+      "calls": 31,
+      "gpuMicros": 351.41734406352043,
+      "name": "g4_q6_embed_row",
+      "diagnosticPercent": 0.0069113241006349925,
+      "callsPerToken": 1.0
+    }
+  ],
+  "gpuOnlyHypotheticalMaxHostFixed": 4.174135685083627,
+  "hostOnlyHypotheticalMaxGPUFixed": 1.3150463934794439,
+  "boundLimit": "Only one measured component changes with all others held fixed; conditional sample bounds, not architecture ceilings or Ollama-comparable TPS predictions."
+}

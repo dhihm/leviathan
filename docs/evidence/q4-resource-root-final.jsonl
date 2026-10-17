@@ -1,0 +1,2 @@
+{"utc": "2026-10-03T01:33:00.775814+00:00", "taskPid": 18933, "process": "18933 18932 14:41  11.5  45248", "swap": "vm.swapusage: total = 54272.00M  used = 53109.19M  free = 1162.81M  (encrypted)", "load": "10:33  up 40 days, 16:49, 2 users, load averages: 8.82 11.55 13.92"}
+{"utc": "2026-10-03T01:57:47.612057+00:00", "taskPid": 18933, "process": "18933 18932 39:28   9.2  37680", "swap": "vm.swapusage: total = 53248.00M  used = 52648.62M  free = 599.38M  (encrypted)", "load": "10:57  up 40 days, 17:14, 2 users, load averages: 11.84 16.83 17.73"}

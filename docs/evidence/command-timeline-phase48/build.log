@@ -1,0 +1,1165 @@
+Building for production...
+[0/14] Write sources
+[5/14] Write swift-version--1AB21518FC5DEDBE.txt
+[7/15] Compiling LeviathanCore Artifact.swift
+<workspace>/leviathan-command-timeline-phase48/Sources/LeviathanCore/DAGMetalBackend.swift:246:19: warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+244 |             // Bounded copy of exactly input.count * Float.stride bytes into the input value buffer.
+245 |             let byteCount = input.count * MemoryLayout<Float>.stride
+246 |             input.withUnsafeBytes { raw in
+    |                   `- warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+247 |                 memcpy(values[0].contents(), raw.baseAddress!, byteCount)
+248 |             }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/LeviathanCore/Q4LaunchLowering.swift:966:25: warning: immutable value 'controlRec' was never used; consider replacing with '_' or removing it [#no-usage]
+ 964 |                               r.screenMicrosPerShape.map { String(format: "%.1f us", $0.reduce(0, +)) } ?? ""))
+ 965 |         }
+ 966 |         let (finalists, controlRec) = Q4LaunchForge.finalists(componentResults,
+     |                         `- warning: immutable value 'controlRec' was never used; consider replacing with '_' or removing it [#no-usage]
+ 967 |                                                               controlWidth: control.width)
+ 968 |         guard !finalists.isEmpty else {
+[8/19] Compiling leviathan_forge_helper main.swift
+[8/19] Write Objects.LinkFileList
+[9/19] Linking leviathan-forge-helper
+[11/19] Compiling leviathan_dag_helper LoadedRuntime.swift
+[11/19] Write Objects.LinkFileList
+[12/19] Linking leviathan-dag-helper
+[14/19] Compiling leviathan_tests main.swift
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:1775:13: warning: variable 'types9' was never mutated; consider changing to 'let' constant
+1773 |     // Unknown token_type code (9) across the array.
+1774 |     do {
+1775 |         var types9 = [Int32](repeating: 9, count: 256 + 3 + 2)
+     |             `- warning: variable 'types9' was never mutated; consider changing to 'let' constant
+1776 |         _ = types9
+1777 |         // Reuse the fixture with an all-9 type array via a tiny builder:
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:5469:13: warning: initialization of immutable value 'wBytes' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+5467 |         let hwProfile = try RMSCurrentHardware.profile()
+5468 |         let incumbent = try RMSIncumbentKernel.compile(device: device)
+5469 |         let wBytes = try RMSComponentInputs.weightBytes(op: op, file: nil)
+     |             `- warning: initialization of immutable value 'wBytes' was never used; consider replacing with assignment to '_' or removing it [#no-usage]
+5470 |         let x = RMSComponentInputs.activation(op: op)
+5471 |         let production = incumbent.productionPipeline(n: op.n, scaled: op.scaled)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:7024:7: warning: 'catch' block is unreachable because no errors are thrown in 'do' block
+7022 |               !Gemma4Runner.cacheAppendGeometry(srcK: srcK, srcV: srcV, dstK: dstK, dstV: dstV,
+7023 |                                                 kvWidth: 8, position: Int.max))
+7024 |     } catch {
+     |       `- warning: 'catch' block is unreachable because no errors are thrown in 'do' block
+7025 |         failed += 1
+7026 |         print("FAIL cache-append geometry: \(error)")
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:3616:17: warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+3614 |         // Restore the ORIGINAL initial input (including NaN tail
+3615 |         // sentinels), then run round 1 + round 2 in one ordered command.
+3616 |         paddedX.withUnsafeBytes { src in
+     |                 `- warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+3617 |             memcpy(xbuf.contents(), src.baseAddress, paddedCount * 4)
+3618 |         }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:3713:12: warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+3711 |     let scales = [Float](repeating: 1.0, count: n)
+3712 |     memcpy(buf.contents(), initial, padded * 4)
+3713 |     scales.withUnsafeBytes { raw in
+     |            `- warning: result of call to 'withUnsafeBytes' is unused [#no-usage]
+3714 |         memcpy(scaleBytes.contents(), raw.baseAddress!, n * 4)
+3715 |     }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:4944:19: warning: expression implicitly coerced from 'Any?' to 'Any'
+4942 |         "layout": "row-major-q4_0-blocks", "quant": "q4_0",
+4943 |         "accumulate": "f32", "inputPrecision": "f32",
+4944 |         "tensor": tensor, "representativeRows": rows,
+     |                   |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                   |- note: provide a default value to avoid this warning
+     |                   |- note: force-unwrap the value to avoid this warning
+     |                   `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+4945 |         "view": view,
+4946 |     ]
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:4944:49: warning: expression implicitly coerced from 'Any?' to 'Any'
+4942 |         "layout": "row-major-q4_0-blocks", "quant": "q4_0",
+4943 |         "accumulate": "f32", "inputPrecision": "f32",
+4944 |         "tensor": tensor, "representativeRows": rows,
+     |                                                 |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                                                 |- note: provide a default value to avoid this warning
+     |                                                 |- note: force-unwrap the value to avoid this warning
+     |                                                 `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+4945 |         "view": view,
+4946 |     ]
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:4945:17: warning: expression implicitly coerced from 'Any?' to 'Any'
+4943 |         "accumulate": "f32", "inputPrecision": "f32",
+4944 |         "tensor": tensor, "representativeRows": rows,
+4945 |         "view": view,
+     |                 |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                 |- note: provide a default value to avoid this warning
+     |                 |- note: force-unwrap the value to avoid this warning
+     |                 `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+4946 |     ]
+4947 |     return try JSONSerialization.data(withJSONObject: obj)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:5354:19: warning: expression implicitly coerced from 'Any?' to 'Any'
+5352 |         "layout": "row-major-f32-vectors", "quant": "f32",
+5353 |         "reduction": "serial-order-i0..n", "inputPrecision": "f32",
+5354 |         "tensor": tensor, "representativeVectors": reps,
+     |                   |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                   |- note: provide a default value to avoid this warning
+     |                   |- note: force-unwrap the value to avoid this warning
+     |                   `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+5355 |     ]
+5356 |     return try JSONSerialization.data(withJSONObject: obj)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:5354:52: warning: expression implicitly coerced from 'Any?' to 'Any'
+5352 |         "layout": "row-major-f32-vectors", "quant": "f32",
+5353 |         "reduction": "serial-order-i0..n", "inputPrecision": "f32",
+5354 |         "tensor": tensor, "representativeVectors": reps,
+     |                                                    |- warning: expression implicitly coerced from 'Any?' to 'Any'
+     |                                                    |- note: provide a default value to avoid this warning
+     |                                                    |- note: force-unwrap the value to avoid this warning
+     |                                                    `- note: explicitly cast to 'Any' with 'as Any' to silence this warning
+5355 |     ]
+5356 |     return try JSONSerialization.data(withJSONObject: obj)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8637:5: error: call to main actor-isolated global function 'checkEqual' in a synchronous nonisolated context [#ActorIsolatedCall]
+  18 | 
+  19 | @MainActor
+  20 | func checkEqual<T: Equatable>(_ name: String, _ actual: T, _ expected: T) {
+     |      `- note: calls to global function 'checkEqual' from outside of its actor context are implicitly asynchronous
+  21 |     if actual == expected {
+  22 |         passed += 1
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8635 |     let e3 = ev(3, bc: 18.0, ac: 18.5, aw: 21.0, gs: 19.0, ge: 20.0)
+8636 |     let good = analyze([e1, e2])
+8637 |     checkEqual("ct valid events accepted", good.validEventCount, 2)
+     |     `- error: call to main actor-isolated global function 'checkEqual' in a synchronous nonisolated context [#ActorIsolatedCall]
+8638 |     check("ct valid events have no rejections", good.rejections.isEmpty)
+8639 |     check("ct encode total sums known encodes only",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8638:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8636 |     let good = analyze([e1, e2])
+8637 |     checkEqual("ct valid events accepted", good.validEventCount, 2)
+8638 |     check("ct valid events have no rejections", good.rejections.isEmpty)
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8639 |     check("ct encode total sums known encodes only",
+8640 |           good.encodeSeconds == 0.5 && good.encodeUnknownCount == 1)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8639:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8637 |     checkEqual("ct valid events accepted", good.validEventCount, 2)
+8638 |     check("ct valid events have no rejections", good.rejections.isEmpty)
+8639 |     check("ct encode total sums known encodes only",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8640 |           good.encodeSeconds == 0.5 && good.encodeUnknownCount == 1)
+8641 |     check("ct commit-call total", good.commitCallSeconds == 0.75)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8641:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8639 |     check("ct encode total sums known encodes only",
+8640 |           good.encodeSeconds == 0.5 && good.encodeUnknownCount == 1)
+8641 |     check("ct commit-call total", good.commitCallSeconds == 0.75)
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8642 |     check("ct wait-call total", good.waitCallSeconds == 5.25)
+8643 |     check("ct GPU interval total", good.gpuSeconds == 2.5)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8642:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8640 |           good.encodeSeconds == 0.5 && good.encodeUnknownCount == 1)
+8641 |     check("ct commit-call total", good.commitCallSeconds == 0.75)
+8642 |     check("ct wait-call total", good.waitCallSeconds == 5.25)
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8643 |     check("ct GPU interval total", good.gpuSeconds == 2.5)
+8644 |     check("ct commit-to-GPU-start total", good.commitToGpuStartSeconds == 2.0)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8643:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8641 |     check("ct commit-call total", good.commitCallSeconds == 0.75)
+8642 |     check("ct wait-call total", good.waitCallSeconds == 5.25)
+8643 |     check("ct GPU interval total", good.gpuSeconds == 2.5)
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8644 |     check("ct commit-to-GPU-start total", good.commitToGpuStartSeconds == 2.0)
+8645 |     check("ct GPU-end-to-wait-return total", good.gpuEndToWaitReturnSeconds == 1.5)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8644:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8642 |     check("ct wait-call total", good.waitCallSeconds == 5.25)
+8643 |     check("ct GPU interval total", good.gpuSeconds == 2.5)
+8644 |     check("ct commit-to-GPU-start total", good.commitToGpuStartSeconds == 2.0)
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8645 |     check("ct GPU-end-to-wait-return total", good.gpuEndToWaitReturnSeconds == 1.5)
+8646 |     check("ct host span", good.hostSpanSeconds == 7.0)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8645:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8643 |     check("ct GPU interval total", good.gpuSeconds == 2.5)
+8644 |     check("ct commit-to-GPU-start total", good.commitToGpuStartSeconds == 2.0)
+8645 |     check("ct GPU-end-to-wait-return total", good.gpuEndToWaitReturnSeconds == 1.5)
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8646 |     check("ct host span", good.hostSpanSeconds == 7.0)
+8647 |     check("ct previous GPU end to next commit gap",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8646:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8644 |     check("ct commit-to-GPU-start total", good.commitToGpuStartSeconds == 2.0)
+8645 |     check("ct GPU-end-to-wait-return total", good.gpuEndToWaitReturnSeconds == 1.5)
+8646 |     check("ct host span", good.hostSpanSeconds == 7.0)
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8647 |     check("ct previous GPU end to next commit gap",
+8648 |           good.gaps == [CT.Gap(fromSequence: 1, toSequence: 2,
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8647:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8645 |     check("ct GPU-end-to-wait-return total", good.gpuEndToWaitReturnSeconds == 1.5)
+8646 |     check("ct host span", good.hostSpanSeconds == 7.0)
+8647 |     check("ct previous GPU end to next commit gap",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8648 |           good.gaps == [CT.Gap(fromSequence: 1, toSequence: 2,
+8649 |                                gpuEndToNextCommitSeconds: 1.5,
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8652:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8650 |                                gpuEndToWaitReturnSeconds: 0.5,
+8651 |                                waitReturnToNextCommitSeconds: 1.0)])
+8652 |     check("ct gap totals", good.gapTotalSeconds == 1.5 && good.gapMaxSeconds == 1.5
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8653 |           && good.gapPairsSkipped == 0)
+8654 |     check("ct complete trace is not truncated",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8654:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8652 |     check("ct gap totals", good.gapTotalSeconds == 1.5 && good.gapMaxSeconds == 1.5
+8653 |           && good.gapPairsSkipped == 0)
+8654 |     check("ct complete trace is not truncated",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8655 |           !good.truncated && good.droppedCount == 0 && good.missingSequenceCount == 0)
+8656 | 
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8658:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8656 | 
+8657 |     // Invalid timestamps are rejected, never clamped.
+8658 |     check("ct zero GPU start rejected",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8659 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 0, ge: 12.5)]) == [.nonPositiveTimestamp])
+8660 |     check("ct zero GPU end rejected",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8660:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8658 |     check("ct zero GPU start rejected",
+8659 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 0, ge: 12.5)]) == [.nonPositiveTimestamp])
+8660 |     check("ct zero GPU end rejected",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8661 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 0)]) == [.nonPositiveTimestamp])
+8662 |     check("ct non-finite GPU end rejected",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8662:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8660 |     check("ct zero GPU end rejected",
+8661 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 0)]) == [.nonPositiveTimestamp])
+8662 |     check("ct non-finite GPU end rejected",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8663 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: .nan)]) == [.nonFinite])
+8664 |     check("ct infinite host timestamp rejected",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8664:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8662 |     check("ct non-finite GPU end rejected",
+8663 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: .nan)]) == [.nonFinite])
+8664 |     check("ct infinite host timestamp rejected",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8665 |           reasons([ev(1, bc: 10, ac: 10.25, aw: .infinity, gs: 11, ge: 12.5)]) == [.nonFinite])
+8666 |     check("ct non-finite encode rejected",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8666:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8664 |     check("ct infinite host timestamp rejected",
+8665 |           reasons([ev(1, bc: 10, ac: 10.25, aw: .infinity, gs: 11, ge: 12.5)]) == [.nonFinite])
+8666 |     check("ct non-finite encode rejected",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8667 |           reasons([ev(1, encode: .nan, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 12.5)]) == [.nonFinite])
+8668 |     check("ct GPU start before host commit rejected",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8668:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8666 |     check("ct non-finite encode rejected",
+8667 |           reasons([ev(1, encode: .nan, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 12.5)]) == [.nonFinite])
+8668 |     check("ct GPU start before host commit rejected",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8669 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 9.5, ge: 12.5)]) == [.gpuOutsideHostBounds])
+8670 |     check("ct GPU end after host wait rejected",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8670:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8668 |     check("ct GPU start before host commit rejected",
+8669 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 9.5, ge: 12.5)]) == [.gpuOutsideHostBounds])
+8670 |     check("ct GPU end after host wait rejected",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8671 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 13.5)]) == [.gpuOutsideHostBounds])
+8672 |     check("ct reversed GPU interval rejected",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8672:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8670 |     check("ct GPU end after host wait rejected",
+8671 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 13.5)]) == [.gpuOutsideHostBounds])
+8672 |     check("ct reversed GPU interval rejected",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8673 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 12.5, ge: 11)]) == [.gpuReversed])
+8674 |     check("ct reversed host order rejected",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8674:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8672 |     check("ct reversed GPU interval rejected",
+8673 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 12.5, ge: 11)]) == [.gpuReversed])
+8674 |     check("ct reversed host order rejected",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8675 |           reasons([ev(1, bc: 10, ac: 9.75, aw: 13, gs: 11, ge: 12.5)]) == [.hostOrderReversed])
+8676 |     check("ct negative encode rejected",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8676:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8674 |     check("ct reversed host order rejected",
+8675 |           reasons([ev(1, bc: 10, ac: 9.75, aw: 13, gs: 11, ge: 12.5)]) == [.hostOrderReversed])
+8676 |     check("ct negative encode rejected",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8677 |           reasons([ev(1, encode: -0.25, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 12.5)]) == [.negativeEncode])
+8678 |     check("ct incomplete command buffer rejected",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8678:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8676 |     check("ct negative encode rejected",
+8677 |           reasons([ev(1, encode: -0.25, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 12.5)]) == [.negativeEncode])
+8678 |     check("ct incomplete command buffer rejected",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8679 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 12.5, completed: false)]) == [.notCompleted])
+8680 |     check("ct overlapping history rejected",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8680:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8678 |     check("ct incomplete command buffer rejected",
+8679 |           reasons([ev(1, bc: 10, ac: 10.25, aw: 13, gs: 11, ge: 12.5, completed: false)]) == [.notCompleted])
+8680 |     check("ct overlapping history rejected",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8681 |           reasons([e1, ev(2, bc: 12.75, ac: 13.0, aw: 15.0, gs: 13.5, ge: 14.5)]) == [.overlapsPrevious])
+8682 |     check("ct repeated sequence rejected", reasons([e1, e1]) == [.sequenceNotIncreasing])
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8682:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8680 |     check("ct overlapping history rejected",
+8681 |           reasons([e1, ev(2, bc: 12.75, ac: 13.0, aw: 15.0, gs: 13.5, ge: 14.5)]) == [.overlapsPrevious])
+8682 |     check("ct repeated sequence rejected", reasons([e1, e1]) == [.sequenceNotIncreasing])
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8683 | 
+8684 |     // Missing / rejected neighbors are never bridged by a derived gap.
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8686:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8684 |     // Missing / rejected neighbors are never bridged by a derived gap.
+8685 |     let acrossMissing = analyze([e1, ev(3, bc: 14.0, ac: 14.5, aw: 17.0, gs: 15.0, ge: 16.0)])
+8686 |     check("ct missing sequence is counted and not bridged by a gap",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8687 |           acrossMissing.missingSequenceCount == 1 && acrossMissing.gaps.isEmpty
+8688 |           && acrossMissing.gapPairsSkipped == 1 && acrossMissing.validEventCount == 2)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8690:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8688 |           && acrossMissing.gapPairsSkipped == 1 && acrossMissing.validEventCount == 2)
+8689 |     let acrossRejected = analyze([e1, ev(2, bc: 14.0, ac: 14.5, aw: 17.0, gs: 0, ge: 16.0), e3])
+8690 |     check("ct rejected neighbor is not bridged by a gap",
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8691 |           acrossRejected.validEventCount == 2 && acrossRejected.gaps.isEmpty
+8692 |           && acrossRejected.gapPairsSkipped == 1 && acrossRejected.missingSequenceCount == 0)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8693:5: error: call to main actor-isolated global function 'checkEqual' in a synchronous nonisolated context [#ActorIsolatedCall]
+  18 | 
+  19 | @MainActor
+  20 | func checkEqual<T: Equatable>(_ name: String, _ actual: T, _ expected: T) {
+     |      `- note: calls to global function 'checkEqual' from outside of its actor context are implicitly asynchronous
+  21 |     if actual == expected {
+  22 |         passed += 1
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8691 |           acrossRejected.validEventCount == 2 && acrossRejected.gaps.isEmpty
+8692 |           && acrossRejected.gapPairsSkipped == 1 && acrossRejected.missingSequenceCount == 0)
+8693 |     checkEqual("ct leading missing sequence is counted", analyze([e2]).missingSequenceCount, 1)
+     |     `- error: call to main actor-isolated global function 'checkEqual' in a synchronous nonisolated context [#ActorIsolatedCall]
+8694 |     check("ct dropped events mark truncation", analyze([e1, e2], dropped: 3).truncated)
+8695 | 
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8694:5: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8692 |           && acrossRejected.gapPairsSkipped == 1 && acrossRejected.missingSequenceCount == 0)
+8693 |     checkEqual("ct leading missing sequence is counted", analyze([e2]).missingSequenceCount, 1)
+8694 |     check("ct dropped events mark truncation", analyze([e1, e2], dropped: 3).truncated)
+     |     `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8695 | 
+8696 |     // Bounded recorder: keeps the first `capacity` events, counts the rest.
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8706:9: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8704 |         }
+8705 |         let trace = recorder.trace()
+8706 |         check("ct recorder keeps at most capacity events",
+     |         `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8707 |               trace.events.map(\.sequence) == [1, 2])
+8708 |         check("ct recorder counts dropped events", trace.droppedCount == 3 && trace.truncated)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8708:9: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8706 |         check("ct recorder keeps at most capacity events",
+8707 |               trace.events.map(\.sequence) == [1, 2])
+8708 |         check("ct recorder counts dropped events", trace.droppedCount == 3 && trace.truncated)
+     |         `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8709 |         let summary = CT.analyze(trace)
+8710 |         check("ct summary reports truncation",
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8710:9: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8708 |         check("ct recorder counts dropped events", trace.droppedCount == 3 && trace.truncated)
+8709 |         let summary = CT.analyze(trace)
+8710 |         check("ct summary reports truncation",
+     |         `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8711 |               summary.truncated && summary.droppedCount == 3
+8712 |               && summary.validEventCount == 2 && summary.gaps.count == 1)
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8714:9: error: main actor-isolated var 'failed' can not be mutated from a nonisolated context
+  10 | 
+  11 | var passed = 0
+  12 | var failed = 0
+     |     `- note: mutation of this var is only permitted within the actor
+  13 | 
+  14 | @MainActor
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8712 |               && summary.validEventCount == 2 && summary.gaps.count == 1)
+8713 |     } catch {
+8714 |         failed += 1; print("FAIL: ct recorder — threw " + String(describing: error))
+     |         `- error: main actor-isolated var 'failed' can not be mutated from a nonisolated context
+8715 |     }
+8716 |     for bad in [0, -1, CT.maxCapacity + 1] {
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8719:13: error: main actor-isolated var 'failed' can not be mutated from a nonisolated context
+  10 | 
+  11 | var passed = 0
+  12 | var failed = 0
+     |     `- note: mutation of this var is only permitted within the actor
+  13 | 
+  14 | @MainActor
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8717 |         do {
+8718 |             _ = try CT.Recorder(capacity: bad)
+8719 |             failed += 1; print("FAIL: ct recorder capacity \(bad) accepted")
+     |             `- error: main actor-isolated var 'failed' can not be mutated from a nonisolated context
+8720 |         } catch let error as Gemma4CommandTimelineError {
+8721 |             check("ct recorder capacity \(bad) rejected", error == .invalidCapacity(bad))
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8721:13: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8719 |             failed += 1; print("FAIL: ct recorder capacity \(bad) accepted")
+8720 |         } catch let error as Gemma4CommandTimelineError {
+8721 |             check("ct recorder capacity \(bad) rejected", error == .invalidCapacity(bad))
+     |             `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8722 |         } catch {
+8723 |             failed += 1; print("FAIL: ct recorder capacity — unexpected " + String(describing: error))
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8723:13: error: main actor-isolated var 'failed' can not be mutated from a nonisolated context
+  10 | 
+  11 | var passed = 0
+  12 | var failed = 0
+     |     `- note: mutation of this var is only permitted within the actor
+  13 | 
+  14 | @MainActor
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8721 |             check("ct recorder capacity \(bad) rejected", error == .invalidCapacity(bad))
+8722 |         } catch {
+8723 |             failed += 1; print("FAIL: ct recorder capacity — unexpected " + String(describing: error))
+     |             `- error: main actor-isolated var 'failed' can not be mutated from a nonisolated context
+8724 |         }
+8725 |     }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8726:5: error: call to main actor-isolated global function 'checkEqual' in a synchronous nonisolated context [#ActorIsolatedCall]
+  18 | 
+  19 | @MainActor
+  20 | func checkEqual<T: Equatable>(_ name: String, _ actual: T, _ expected: T) {
+     |      `- note: calls to global function 'checkEqual' from outside of its actor context are implicitly asynchronous
+  21 |     if actual == expected {
+  22 |         passed += 1
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8724 |         }
+8725 |     }
+8726 |     checkEqual("ct default recorder capacity", CT.Recorder().capacity, CT.maxCapacity)
+     |     `- error: call to main actor-isolated global function 'checkEqual' in a synchronous nonisolated context [#ActorIsolatedCall]
+8727 | 
+8728 |     // Codable roundtrips.
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8733:9: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8731 |         let decodedTrace = try JSONDecoder().decode(CT.Trace.self,
+8732 |                                                     from: JSONEncoder().encode(trace))
+8733 |         check("ct trace Codable roundtrip", decodedTrace == trace)
+     |         `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8734 |         let summary = analyze([e1, ev(2, bc: 14.0, ac: 14.5, aw: 17.0, gs: 0, ge: 16.0), e3])
+8735 |         let decodedSummary = try JSONDecoder().decode(CT.Summary.self,
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8737:9: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8735 |         let decodedSummary = try JSONDecoder().decode(CT.Summary.self,
+8736 |                                                       from: JSONEncoder().encode(summary))
+8737 |         check("ct summary Codable roundtrip", decodedSummary == summary)
+     |         `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8738 |     } catch {
+8739 |         failed += 1; print("FAIL: ct Codable roundtrip — threw " + String(describing: error))
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8739:9: error: main actor-isolated var 'failed' can not be mutated from a nonisolated context
+  10 | 
+  11 | var passed = 0
+  12 | var failed = 0
+     |     `- note: mutation of this var is only permitted within the actor
+  13 | 
+  14 | @MainActor
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8737 |         check("ct summary Codable roundtrip", decodedSummary == summary)
+8738 |     } catch {
+8739 |         failed += 1; print("FAIL: ct Codable roundtrip — threw " + String(describing: error))
+     |         `- error: main actor-isolated var 'failed' can not be mutated from a nonisolated context
+8740 |     }
+8741 | 
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8746:9: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8744 |         let trace = try CT.deviceProbe(commandBuffers: 3)
+8745 |         let summary = CT.analyze(trace)
+8746 |         check("ct device probe records every command buffer",
+     |         `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8747 |               trace.events.count == 3 && !trace.truncated)
+8748 |         let valid = summary.validEventCount == 3 && summary.rejections.isEmpty
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8749:9: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8747 |               trace.events.count == 3 && !trace.truncated)
+8748 |         let valid = summary.validEventCount == 3 && summary.rejections.isEmpty
+8749 |         check("ct device probe GPU timestamps validate inside host bounds", valid)
+     |         `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8750 |         if !valid {
+8751 |             print("  ct device probe rejections: " + String(describing: summary.rejections))
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8753:9: error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+  13 | 
+  14 | @MainActor
+  15 | func check(_ name: String, _ condition: @autoclosure () -> Bool) {
+     |      `- note: calls to global function 'check' from outside of its actor context are implicitly asynchronous
+  16 |     if condition() { passed += 1 } else { failed += 1; print("FAIL: \(name)") }
+  17 | }
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8751 |             print("  ct device probe rejections: " + String(describing: summary.rejections))
+8752 |         }
+8753 |         check("ct device probe derives non-negative adjacent gaps",
+     |         `- error: call to main actor-isolated global function 'check' in a synchronous nonisolated context [#ActorIsolatedCall]
+8754 |               summary.gaps.count == 2
+8755 |               && summary.gaps.allSatisfy { $0.gpuEndToNextCommitSeconds >= 0 })
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-tests/main.swift:8759:9: error: main actor-isolated var 'failed' can not be mutated from a nonisolated context
+  10 | 
+  11 | var passed = 0
+  12 | var failed = 0
+     |     `- note: mutation of this var is only permitted within the actor
+  13 | 
+  14 | @MainActor
+     :
+8615 | // MARK: - command-buffer timeline diagnostics
+8616 | 
+8617 | func runCommandTimelineGates() {
+     |      `- note: add '@MainActor' to make global function 'runCommandTimelineGates()' part of global actor 'MainActor'
+8618 |     typealias CT = Gemma4CommandTimeline
+8619 |     func ev(_ seq: Int, encode: Double? = nil, bc: Double, ac: Double, aw: Double,
+     :
+8757 |         print("SKIP: ct device probe — Metal unavailable")
+8758 |     } catch {
+8759 |         failed += 1; print("FAIL: ct device probe — threw " + String(describing: error))
+     |         `- error: main actor-isolated var 'failed' can not be mutated from a nonisolated context
+8760 |     }
+8761 | }
+
+[#ActorIsolatedCall]: <https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call>
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:1229:32: warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1227 |                 }
+1228 |                 for t in history {
+1229 |                     try runner.forward(tokenIds: [t])
+     |                                `- warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1230 |                 }
+1231 |                 try afterStep(0, try runner.currentLogits())
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:1233:32: warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1231 |                 try afterStep(0, try runner.currentLogits())
+1232 |                 for s in 1..<steps {
+1233 |                     try runner.forward(tokenIds: [refIds[s]])
+     |                                `- warning: result of call to 'forward(tokenIds:)' is unused [#no-usage]
+1234 |                     try afterStep(s, try runner.currentLogits())
+1235 |                 }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:405:9: warning: immutable value 'reference' was never used; consider removing it [#no-usage]
+ 403 |     let graph: GraphIR
+ 404 |     let weights: [Float]?
+ 405 |     let reference: [Float]?   // PyTorch refOutput, only with --export-prefix
+     |         `- warning: immutable value 'reference' was never used; consider removing it [#no-usage]
+ 406 |     do {
+ 407 |         if let weightExport {
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:1675:21: warning: variable 'fixtures' was never mutated; consider changing to 'let' constant
+1673 |                         + "<turn|>\n<|turn>model\n<|channel>thought\n<channel|>")
+1674 |                 }
+1675 |                 var fixtures = smokeTest
+     |                     `- warning: variable 'fixtures' was never mutated; consider changing to 'let' constant
+1676 |                     ? [Q4LoweringForge.Q4Fixture(name: "raw-hello",
+1677 |                                                  tokens: try tokenizer.encode("Hello"))]
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:3351:23: warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+3349 |             requireValue("--prompt-ids", args) } ?? "2,9259"
+3350 |         func intArg(_ name: String, _ def: Int) -> Int {
+3351 |             guard let i = args.firstIndex(of: name) else { return def }
+     |                       `- warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+3352 |             guard let v = Int(requireValue(name, args)) else {
+3353 |                 fail("\(name) must be an integer"); return def }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:3608:23: warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+3606 |         let planPath = requireValue("--plan", args)
+3607 |         func intArgServe(_ name: String, _ def: Int) -> Int {
+3608 |             guard let i = args.firstIndex(of: name) else { return def }
+     |                       `- warning: value 'i' was defined but never used; consider replacing with boolean test [#no-usage]
+3609 |             guard let v = Int(requireValue(name, args)) else {
+3610 |                 fail("\(name) must be an integer"); return def }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:3353:53: warning: will never be executed
+3351 |             guard let i = args.firstIndex(of: name) else { return def }
+3352 |             guard let v = Int(requireValue(name, args)) else {
+3353 |                 fail("\(name) must be an integer"); return def }
+     |                 |                                   `- warning: will never be executed
+     |                 `- note: a call to a never-returning function
+3354 |             return v
+3355 |         }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:3610:53: warning: will never be executed
+3608 |             guard let i = args.firstIndex(of: name) else { return def }
+3609 |             guard let v = Int(requireValue(name, args)) else {
+3610 |                 fail("\(name) must be an integer"); return def }
+     |                 |                                   `- warning: will never be executed
+     |                 `- note: a call to a never-returning function
+3611 |             return v
+3612 |         }
+
+<workspace>/leviathan-command-timeline-phase48/Sources/leviathan-cli/main.swift:2973:67: warning: will never be executed
+2971 |                     guard let id = Int($0.trimmingCharacters(in: .whitespaces)),
+2972 |                           id >= 0, id < preConfig.vocabSize else {
+2973 |                         fail("invalid prompt id '\($0)'"); return 0
+     |                         |                                         `- warning: will never be executed
+     |                         `- note: a call to a never-returning function
+2974 |                     }
+2975 |                     return id
+

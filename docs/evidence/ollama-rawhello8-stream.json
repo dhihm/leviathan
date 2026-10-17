@@ -1,0 +1,144 @@
+{
+ "request": {
+  "model": "gemma4-task5",
+  "prompt": "Hello",
+  "raw": true,
+  "stream": true,
+  "options": {
+   "temperature": 0,
+   "top_k": 1,
+   "top_p": 1,
+   "repeat_penalty": 1,
+   "seed": 42,
+   "num_predict": 8,
+   "num_ctx": 4096
+  },
+  "keep_alive": 0
+ },
+ "chunks": [
+  {
+   "t_rel_s": 7.920713,
+   "chunk": {
+    "model": "gemma4-task5",
+    "created_at": "2026-10-02T15:09:11.275817Z",
+    "response": " upon",
+    "done": false
+   }
+  },
+  {
+   "t_rel_s": 7.923314,
+   "chunk": {
+    "model": "gemma4-task5",
+    "created_at": "2026-10-02T15:09:11.279888Z",
+    "response": "-",
+    "done": false
+   }
+  },
+  {
+   "t_rel_s": 7.923346,
+   "chunk": {
+    "model": "gemma4-task5",
+    "created_at": "2026-10-02T15:09:11.299499Z",
+    "response": "the",
+    "done": false
+   }
+  },
+  {
+   "t_rel_s": 7.92342,
+   "chunk": {
+    "model": "gemma4-task5",
+    "created_at": "2026-10-02T15:09:11.315479Z",
+    "response": "-",
+    "done": false
+   }
+  },
+  {
+   "t_rel_s": 7.923846,
+   "chunk": {
+    "model": "gemma4-task5",
+    "created_at": "2026-10-02T15:09:11.331608Z",
+    "response": "s",
+    "done": false
+   }
+  },
+  {
+   "t_rel_s": 7.923877,
+   "chunk": {
+    "model": "gemma4-task5",
+    "created_at": "2026-10-02T15:09:11.347557Z",
+    "response": "ands",
+    "done": false
+   }
+  },
+  {
+   "t_rel_s": 7.923883,
+   "chunk": {
+    "model": "gemma4-task5",
+    "created_at": "2026-10-02T15:09:11.36322Z",
+    "response": "-",
+    "done": false
+   }
+  },
+  {
+   "t_rel_s": 7.92391,
+   "chunk": {
+    "model": "gemma4-task5",
+    "created_at": "2026-10-02T15:09:11.378902Z",
+    "response": "of",
+    "done": false
+   }
+  },
+  {
+   "t_rel_s": 7.92393,
+   "chunk": {
+    "model": "gemma4-task5",
+    "created_at": "2026-10-02T15:09:11.378911Z",
+    "response": "",
+    "done": true,
+    "done_reason": "length",
+    "total_duration": 7842786333,
+    "load_duration": 7536918708,
+    "prompt_eval_count": 2,
+    "prompt_eval_duration": 162579667,
+    "eval_count": 8,
+    "eval_duration": 112531876
+   }
+  }
+ ],
+ "report": {
+  "request": {
+   "model": "gemma4-task5",
+   "prompt": "Hello",
+   "raw": true,
+   "stream": true,
+   "options": {
+    "temperature": 0,
+    "top_k": 1,
+    "top_p": 1,
+    "repeat_penalty": 1,
+    "seed": 42,
+    "num_predict": 8,
+    "num_ctx": 4096
+   },
+   "keep_alive": 0
+  },
+  "chunk_count": 9,
+  "failure": null,
+  "nonempty_chunk_count": 8,
+  "text": " upon-the-sands-of",
+  "client_stream": {
+   "ttft_first_nonempty_s": 7.920713,
+   "first_to_last_nonempty_interval_s": 0.0031970000000001164,
+   "note": "client stream metrics; NOT token-interval TPS unless nonempty_chunk_count == eval_count",
+   "nonempty_matches_eval_count": true
+  },
+  "api_server_metrics": {
+   "load_duration_s": 7.536918708,
+   "prompt_eval_duration_s": 0.162579667,
+   "prompt_eval_count": 2,
+   "eval_duration_s": 0.112531876,
+   "eval_count": 8,
+   "total_duration_s": 7.842786333
+  }
+ }
+}

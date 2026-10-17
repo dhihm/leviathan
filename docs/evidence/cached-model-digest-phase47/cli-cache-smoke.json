@@ -1,0 +1,64 @@
+{
+  "runs": [
+    {
+      "label": "first",
+      "argv": [
+        "model-digest",
+        "--file",
+        "/tmp/leviathan-cache-cli-7ulca0z2/model.bin"
+      ],
+      "exit": 0,
+      "stdout": "model file SHA-256 ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad for /private/tmp/leviathan-cache-cli-7ulca0z2/model.bin: computed now from 3 bytes (initial cache miss); cached for reuse\ncache record: /tmp/leviathan-cache-cli-7ulca0z2/cache/10572b76106f5a663fea4cf8de767d741ce87e877d56e4e4fe8c4a7933bea31b.json\n",
+      "stderr": ""
+    },
+    {
+      "label": "mutated-cache-hit",
+      "argv": [
+        "model-digest",
+        "--file",
+        "/tmp/leviathan-cache-cli-7ulca0z2/model.bin"
+      ],
+      "exit": 0,
+      "stdout": "model file SHA-256 ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad for /private/tmp/leviathan-cache-cli-7ulca0z2/model.bin: cache hit (historically hashed at 2026-10-04T21:16:48Z, source initial, 3 bytes); model bytes NOT re-read now and NOT freshly verified; same-path weight edits require --rehash-model\ncache record: /tmp/leviathan-cache-cli-7ulca0z2/cache/10572b76106f5a663fea4cf8de767d741ce87e877d56e4e4fe8c4a7933bea31b.json\n",
+      "stderr": ""
+    },
+    {
+      "label": "explicit-refresh",
+      "argv": [
+        "model-digest",
+        "--file",
+        "/tmp/leviathan-cache-cli-7ulca0z2/model.bin",
+        "--rehash-model"
+      ],
+      "exit": 0,
+      "stdout": "model file SHA-256 88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589 for /private/tmp/leviathan-cache-cli-7ulca0z2/model.bin: recomputed now from 4 bytes (explicit refresh); cached for reuse\ncache record: /tmp/leviathan-cache-cli-7ulca0z2/cache/10572b76106f5a663fea4cf8de767d741ce87e877d56e4e4fe8c4a7933bea31b.json\n",
+      "stderr": ""
+    },
+    {
+      "label": "deleted-cache-hit",
+      "argv": [
+        "model-digest",
+        "--file",
+        "/tmp/leviathan-cache-cli-7ulca0z2/model.bin",
+        "--cache-only"
+      ],
+      "exit": 0,
+      "stdout": "model file SHA-256 88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589 for /private/tmp/leviathan-cache-cli-7ulca0z2/model.bin: cache hit (historically hashed at 2026-10-04T21:16:48Z, source explicit-refresh, 4 bytes); model bytes NOT re-read now and NOT freshly verified; same-path weight edits require --rehash-model\ncache record: /tmp/leviathan-cache-cli-7ulca0z2/cache/10572b76106f5a663fea4cf8de767d741ce87e877d56e4e4fe8c4a7933bea31b.json\n",
+      "stderr": ""
+    },
+    {
+      "label": "unsupported-flag",
+      "argv": [
+        "inspect",
+        "--file",
+        "/tmp/leviathan-cache-cli-7ulca0z2/model.bin",
+        "--rehash-model"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "error: --rehash-model is not supported by command 'inspect'\n"
+    }
+  ],
+  "temporaryModelBytesOnly": true,
+  "actualGGUFBytesRead": 0
+}

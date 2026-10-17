@@ -1,0 +1,341 @@
+{
+  "scope": "Single-process frozen-baseline residency reproducibility control, not candidate comparison. Prior failed A/A remains failed. Global observations do not prove quiet or causality.",
+  "protocol": {
+    "baselineExecutable": "<workspace>/leviathan-compile-diagnostics-phase41/.build/release/leviathan-cli",
+    "baselineSha256": "b77e692ff46dd80116500335c86000273e1744cd35ebb31a5a5aed48a1ef0f5a",
+    "visits": "One process,32 total repetitions; first4 startup warmup, then7 blocks of4",
+    "blockStatistic": "Discard first repetition of each block, median3 warm 31-step decode totals /31; all7blocks retained",
+    "predeclaredReproducibilityGate": "Relative spread<=0.05, all28postwarmup generations exact IDs, all reportedfallback0; frozenbinary/artifacts unchanged; noPageout/Swapoutgrowth from before to after. Failing control preserved without rerun.",
+    "claimBoundary": "Diagnostic harness change, no runtime optimization or speed gain vs main. Not a paired candidate test and not proof of no external contention.",
+    "telemetryPlacement": "Before process and after process; no sampler during timed decode windows",
+    "nextActivationGate": "Only partial two-axis pool filtering with immutable candidate-set/epsilon/analysis identity and ordinary artifact lifecycle/full32 three-fixture correctness. Do not activate performance candidate while reproducibility gate fails."
+  },
+  "command": [
+    "<workspace>/leviathan-compile-diagnostics-phase41/.build/release/leviathan-cli",
+    "gemma-generate",
+    "--file",
+    "<workspace>/models/gemma-4-26B-A4B-Q4_0/gemma-4-26B_q4_0-it.gguf",
+    "--graph",
+    "/tmp/leviathan-forge2-tooling/gemma-graph.json",
+    "--plan",
+    "/tmp/leviathan-forge2-tooling/phase41-compiler-integrity-review/production-lifecycle/batch-plan.json",
+    "--composite-plan",
+    "/tmp/leviathan-forge2-tooling/phase41-compiler-integrity-review/production-lifecycle/composite-pass.json",
+    "--moe-region",
+    "/tmp/leviathan-forge2-tooling/moe-region-root.json",
+    "--text",
+    "Hello",
+    "--max-tokens",
+    "32",
+    "--repeat",
+    "32",
+    "--bos-align"
+  ],
+  "startedUtc": "2026-10-04T20:20:38.285213+00:00",
+  "before": {
+    "label": "before-control",
+    "utc": "2026-10-04T20:20:38.320382+00:00",
+    "raw": {
+      "memory": {
+        "exit": 0,
+        "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               12387.\nPages active:                            499029.\nPages inactive:                          482668.\nPages speculative:                        10724.\nPages throttled:                              0.\nPages wired down:                        720504.\nPages purgeable:                           1948.\n\"Translation faults\":              203498768394.\nPages copy-on-write:                46129102995.\nPages zero filled:                  41846996309.\nPages reactivated:                  21500697088.\nPages purged:                         746512040.\nFile-backed pages:                       315788.\nAnonymous pages:                         676633.\nPages stored in compressor:             2753584.\nPages occupied by compressor:            314735.\nDecompressions:                     17691006366.\nCompressions:                       18532241379.\nPageins:                             3388705591.\nPageouts:                              13245732.\nSwapins:                              305240723.\nSwapouts:                             413642603.\n",
+        "stderr": ""
+      },
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "load": {
+        "exit": 0,
+        "stdout": " 5:20  up 42 days, 11:37, 4 users, load averages: 7.67 8.46 7.86\n",
+        "stderr": ""
+      }
+    },
+    "memoryCounters": {
+      "Pageouts": 13245732,
+      "Swapins": 305240723,
+      "Swapouts": 413642603
+    }
+  },
+  "elapsedSeconds": 113.59374262485653,
+  "exit": 0,
+  "after": {
+    "label": "after-control",
+    "utc": "2026-10-04T20:22:32.053056+00:00",
+    "raw": {
+      "memory": {
+        "exit": 0,
+        "stdout": "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free:                               37341.\nPages active:                            152985.\nPages inactive:                          875074.\nPages speculative:                         7321.\nPages throttled:                              0.\nPages wired down:                        808978.\nPages purgeable:                              2.\n\"Translation faults\":              203513768682.\nPages copy-on-write:                46130340146.\nPages zero filled:                  41848170486.\nPages reactivated:                  21506503717.\nPages purged:                         746605733.\nFile-backed pages:                       941492.\nAnonymous pages:                          93888.\nPages stored in compressor:             3219915.\nPages occupied by compressor:            158770.\nDecompressions:                     17700913445.\nCompressions:                       18542928051.\nPageins:                             3391019495.\nPageouts:                              13247985.\nSwapins:                              305694256.\nSwapouts:                             414484071.\n",
+        "stderr": ""
+      },
+      "thermal": {
+        "exit": 0,
+        "stdout": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n",
+        "stderr": ""
+      },
+      "power": {
+        "exit": 0,
+        "stdout": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=22741091)\t80%; AC attached; not charging present: true\n",
+        "stderr": ""
+      },
+      "load": {
+        "exit": 0,
+        "stdout": " 5:22  up 42 days, 11:39, 4 users, load averages: 15.52 11.18 9.01\n",
+        "stderr": ""
+      }
+    },
+    "memoryCounters": {
+      "Pageouts": 13247985,
+      "Swapins": 305694256,
+      "Swapouts": 414484071
+    }
+  },
+  "decodeTotalsMs": [
+    2605.3,
+    2619.0,
+    2610.7,
+    2593.7,
+    2803.4,
+    2627.3,
+    2614.2,
+    2704.7,
+    2646.8,
+    4552.2,
+    3034.4,
+    2537.2,
+    2486.2,
+    2431.4,
+    2411.3,
+    2485.8,
+    2460.1,
+    2488.5,
+    2393.8,
+    2437.6,
+    2578.3,
+    3679.5,
+    2382.5,
+    2431.3,
+    2460.6,
+    2532.5,
+    2738.1,
+    2514.6,
+    3103.4,
+    2734.9,
+    2624.1,
+    2468.0
+  ],
+  "generatedIDs": [
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772",
+    "3324 236772 1437 236772 236751 2964 236772 1340 236772 2289 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772 236751 2964 236772 1340 236772 1437 236772 236751 2964 236772 1340 236772"
+  ],
+  "fallbackValues": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "metalAllocatedGiB": [
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168",
+    "15.168"
+  ],
+  "blocks": [
+    {
+      "block": 1,
+      "repetitionIndices": [
+        5,
+        6,
+        7,
+        8
+      ],
+      "decodeTotalsMs": [
+        2803.4,
+        2627.3,
+        2614.2,
+        2704.7
+      ],
+      "warmMedianMsPerToken": 84.75161290322582
+    },
+    {
+      "block": 2,
+      "repetitionIndices": [
+        9,
+        10,
+        11,
+        12
+      ],
+      "decodeTotalsMs": [
+        2646.8,
+        4552.2,
+        3034.4,
+        2537.2
+      ],
+      "warmMedianMsPerToken": 97.88387096774194
+    },
+    {
+      "block": 3,
+      "repetitionIndices": [
+        13,
+        14,
+        15,
+        16
+      ],
+      "decodeTotalsMs": [
+        2486.2,
+        2431.4,
+        2411.3,
+        2485.8
+      ],
+      "warmMedianMsPerToken": 78.43225806451613
+    },
+    {
+      "block": 4,
+      "repetitionIndices": [
+        17,
+        18,
+        19,
+        20
+      ],
+      "decodeTotalsMs": [
+        2460.1,
+        2488.5,
+        2393.8,
+        2437.6
+      ],
+      "warmMedianMsPerToken": 78.63225806451612
+    },
+    {
+      "block": 5,
+      "repetitionIndices": [
+        21,
+        22,
+        23,
+        24
+      ],
+      "decodeTotalsMs": [
+        2578.3,
+        3679.5,
+        2382.5,
+        2431.3
+      ],
+      "warmMedianMsPerToken": 78.42903225806452
+    },
+    {
+      "block": 6,
+      "repetitionIndices": [
+        25,
+        26,
+        27,
+        28
+      ],
+      "decodeTotalsMs": [
+        2460.6,
+        2532.5,
+        2738.1,
+        2514.6
+      ],
+      "warmMedianMsPerToken": 81.69354838709677
+    },
+    {
+      "block": 7,
+      "repetitionIndices": [
+        29,
+        30,
+        31,
+        32
+      ],
+      "decodeTotalsMs": [
+        3103.4,
+        2734.9,
+        2624.1,
+        2468.0
+      ],
+      "warmMedianMsPerToken": 84.64838709677419
+    }
+  ],
+  "overallMedianMsPerToken": 81.69354838709677,
+  "relativeSpread": 0.23814412635735438,
+  "memoryActivityDeltas": {
+    "Pageouts": 2253,
+    "Swapins": 453533,
+    "Swapouts": 841468
+  },
+  "allBlocksRetained": true,
+  "filesUnchanged": true,
+  "allGeneratedIDsMatchValidatedBaseline": true,
+  "allReportedFallbackZero": true,
+  "spreadPass": false,
+  "pagingPass": false,
+  "completedUtc": "2026-10-04T20:22:32.062809+00:00",
+  "performanceComparisonPermitted": false
+}

@@ -1,0 +1,11 @@
+{
+  "scope": "Final main inclusion tree has byte-identical runtime/test sources and executable to the already fully qualified RMS experiment; English documentation records explicit user inclusion. New release regression and persisted production reload/full-logit gate passed. Earlier benchmark criterion remains failed.",
+  "exit": 0,
+  "elapsedSeconds": 65.67076741717756,
+  "binarySha256": "371e7289c0e2a8f95696f051a11aa965acb1fd7946e0f0e566be2976d6d59a6a",
+  "binaryUnchanged": true,
+  "sourceMatchesQualifiedExperiment": true,
+  "regressionPassed": 1056,
+  "regressionFailed": 0,
+  "productionReloadPassed": true
+}

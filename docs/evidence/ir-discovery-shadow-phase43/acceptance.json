@@ -1,0 +1,27 @@
+{
+  "completedUtc": "2026-10-04T18:29:35.232093+00:00",
+  "baseMain": "23b3eedfca690c09b6b2c1f0022c69e5a48fd152",
+  "authorModel": "claude-opus-5-5",
+  "reviewerModel": "claude-fable-5-1",
+  "fableFinalVerdict": "ACCEPT no blockers",
+  "testsPassed": 1808,
+  "testsFailed": 0,
+  "newPureChecks": 139,
+  "releaseBuildsSeconds": [
+    111.48,
+    69.65
+  ],
+  "actualModelTensorCount": 658,
+  "actualSSAInstructions": 934,
+  "actualProofs": 30,
+  "actualReasons": 0,
+  "orderedCandidateEquivalence": 32,
+  "actualReportDigest": "d957577fe026b8d57898dd64935115482262c1be0728b333e1927a84ba546e06",
+  "runtimeSelectionChanged": false,
+  "allExistingRuntimeSourcesByteIdentical": true,
+  "decodedReportTrustedForCandidates": false,
+  "speedClaim": false,
+  "newModelDownloaded": false,
+  "baselineNoiseMeasurementStarted": false,
+  "quietWindowNeededForNextMeasurement": true
+}

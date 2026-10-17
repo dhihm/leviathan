@@ -1,0 +1,16 @@
+[
+  "<home>/.nvm/versions/node/v24.19.0/bin/claude",
+  "--print",
+  "--model",
+  "claude-fable-5-1",
+  "--effort",
+  "medium",
+  "--safe-mode",
+  "--tools",
+  "",
+  "--disable-slash-commands",
+  "--strict-mcp-config",
+  "--output-format",
+  "stream-json",
+  "--verbose"
+]

@@ -1,0 +1,8 @@
+unoptimized incumbent reference [en-chat]: 32 steps
+unoptimized incumbent reference [kr-chat]: 32 steps
+unoptimized incumbent reference [raw-hello]: 32 steps
+production install OK: moegen_gu_E4_R32
+SSA replay [en-chat]: PASS, worst rel 0.000e+00; batched deltas 3120/3120/3120, merges 12480, fallbacks 0
+SSA replay [kr-chat]: PASS, worst rel 0.000e+00; batched deltas 3240/3240/3240, merges 12960, fallbacks 0
+SSA replay [raw-hello]: PASS, worst rel 0.000e+00; batched deltas 1980/1980/1980, merges 7920, fallbacks 0
+MOE_VERIFY_PRODUCTION_OK worst rel 0.000e+00 artifact 200831112da03657…

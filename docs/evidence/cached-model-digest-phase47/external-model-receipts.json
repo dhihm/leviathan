@@ -1,0 +1,178 @@
+{
+  "author": {
+    "events": [
+      {
+        "type": "system",
+        "subtype": "init",
+        "session_id": "a96bc37c-ad47-47bf-986f-647ef4efad85",
+        "model": "claude-opus-5-5"
+      },
+      {
+        "duration_api_ms": 1394831,
+        "session_id": "a96bc37c-ad47-47bf-986f-647ef4efad85",
+        "modelUsage": {
+          "claude-opus-5-5": {
+            "inputTokens": 4,
+            "outputTokens": 182037,
+            "thinkingTokens": 121761,
+            "cacheReadInputTokens": 291787,
+            "cacheCreationInputTokens": 457930,
+            "webSearchRequests": 0,
+            "costUSD": 7.3625533999999995,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 128000,
+            "canonicalModel": "claude-opus-5-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        },
+        "permission_denials": [],
+        "terminal_reason": "completed",
+        "is_error": false,
+        "num_turns": 1,
+        "subtype": "success",
+        "type": "result",
+        "duration_ms": 837506
+      }
+    ],
+    "requestBytes": 239884,
+    "requestSha256": "bc649bb56d89cb6259ca2a6a5a6fdcf8ba5dfe0b8c559362cea8c2b1ea03bfc9",
+    "exit": {
+      "exit": 0,
+      "elapsedSeconds": 838.7509599160403,
+      "completedUtc": "2026-10-04T21:11:42.052823+00:00"
+    }
+  },
+  "review": {
+    "events": [
+      {
+        "type": "system",
+        "subtype": "init",
+        "session_id": "8588c86a-10a7-4aa4-a0c2-778b9a41b310",
+        "model": "claude-fable-5-1"
+      },
+      {
+        "duration_api_ms": 103487,
+        "session_id": "8588c86a-10a7-4aa4-a0c2-778b9a41b310",
+        "modelUsage": {
+          "claude-fable-5-1": {
+            "inputTokens": 2,
+            "outputTokens": 7504,
+            "cacheReadInputTokens": 3322,
+            "cacheCreationInputTokens": 274705,
+            "webSearchRequests": 0,
+            "costUSD": 5.870150499999999,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 6315,
+            "canonicalModel": "claude-fable-5-1",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        },
+        "permission_denials": [],
+        "terminal_reason": "completed",
+        "is_error": false,
+        "num_turns": 1,
+        "subtype": "success",
+        "type": "result",
+        "duration_ms": 103597
+      }
+    ],
+    "requestBytes": 713345,
+    "requestSha256": "9a59cff4904aceddc3ce62e33d1f4aca99a728d0c155826c7737fcc4f2343de2",
+    "exit": {
+      "exit": 0,
+      "elapsedSeconds": 104.97119370801374,
+      "completedUtc": "2026-10-04T21:16:25.653036+00:00"
+    }
+  },
+  "unicode-fix": {
+    "events": [
+      {
+        "type": "system",
+        "subtype": "init",
+        "session_id": "07230457-2040-4a87-99dd-2da8e72b6924",
+        "model": "claude-opus-5-5"
+      },
+      {
+        "duration_api_ms": 134076,
+        "session_id": "07230457-2040-4a87-99dd-2da8e72b6924",
+        "modelUsage": {
+          "claude-opus-5-5": {
+            "inputTokens": 2,
+            "outputTokens": 17185,
+            "cacheReadInputTokens": 1463,
+            "cacheCreationInputTokens": 14553,
+            "webSearchRequests": 0,
+            "costUSD": 0.46042459999999996,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 128000,
+            "thinkingTokens": 11795,
+            "canonicalModel": "claude-opus-5-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        },
+        "permission_denials": [],
+        "terminal_reason": "completed",
+        "is_error": false,
+        "num_turns": 1,
+        "subtype": "success",
+        "type": "result",
+        "duration_ms": 134126
+      }
+    ],
+    "requestBytes": 36593,
+    "requestSha256": "7581a84ed062b5eebb58995b8781884c8d166d3c0ae310df1f1f789ba54c1e43",
+    "exit": {
+      "exit": 0,
+      "elapsedSeconds": 135.59163824981079,
+      "completedUtc": "2026-10-04T21:20:32.388379+00:00"
+    }
+  },
+  "final-review": {
+    "events": [
+      {
+        "type": "system",
+        "subtype": "init",
+        "session_id": "b65cd28b-a95b-47e1-980d-1238ba4a777b",
+        "model": "claude-fable-5-1"
+      },
+      {
+        "duration_api_ms": 48987,
+        "session_id": "b65cd28b-a95b-47e1-980d-1238ba4a777b",
+        "modelUsage": {
+          "claude-fable-5-1": {
+            "inputTokens": 2,
+            "outputTokens": 3690,
+            "cacheReadInputTokens": 3322,
+            "cacheCreationInputTokens": 18312,
+            "webSearchRequests": 0,
+            "costUSD": 0.5515905,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 64000,
+            "thinkingTokens": 2382,
+            "canonicalModel": "claude-fable-5-1",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        },
+        "permission_denials": [],
+        "terminal_reason": "completed",
+        "is_error": false,
+        "num_turns": 1,
+        "subtype": "success",
+        "type": "result",
+        "duration_ms": 49027
+      }
+    ],
+    "requestBytes": 45216,
+    "requestSha256": "6252757f6415aba5eaf601ebb4a4600d79c46b436019ea72b821cff0ffbf96bb",
+    "exit": {
+      "exit": 0,
+      "elapsedSeconds": 50.18810279108584,
+      "completedUtc": "2026-10-04T21:22:39.427533+00:00"
+    }
+  }
+}

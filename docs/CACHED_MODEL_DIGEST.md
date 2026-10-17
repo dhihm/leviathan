@@ -1,0 +1,23 @@
+# Cached model digest with explicit refresh
+
+Leviathan computes the actual model SHA-256 once on an initial cache miss, persists it, and reuses it in later processes and nested forge workflows. A cache hit does not read model bytes and does not invalidate on mtime, size, or changed contents at the same path. Refresh intentionally requires `--rehash-model` in the CLI or `LEVIATHAN_REHASH_MODEL=1` in the Python measurement tools. Cached values are described as historical computations, never fresh model verification.
+
+`leviathan-cli model-digest --file model.gguf --cache-only` reports the cached record without hashing. `leviathan-cli model-digest --file model.gguf --rehash-model` refreshes it. The explicit refresh runs once before a model command; nested lookups reuse the resulting record. Malformed, mismatched, oversized and retired-policy records fail with an explicit-refresh instruction instead of triggering a silent full-file read.
+
+The shared Swift/Python cache defaults to `~/Library/Caches/Leviathan/model-digests`; `LEVIATHAN_MODEL_DIGEST_CACHE_DIR` selects another user-owned directory. Keys are SHA-256 of the Unicode-NFC canonical UTF-8 path, not model bytes. Each `<key>.json` contains `bytes`, `format`, `hashedAtUTC`, `path`, `policy`, `sha256`, and `source`. Format is `leviathan.model-digest-cache.v1`, policy is `cached-explicit-refresh-v1`, and source is `initial`, `explicit-refresh` or `historical-receipt`. Byte count and timestamp describe the historical hash and are not freshness checks. Extra keys are ignored. Reads are bounded to 64 KiB; writes replace atomically under a per-key interprocess lock. Swift also serializes lookups within each resolver.
+
+Persisted plan/component/profile schemas are version 3, require the cached policy and bind the real historical model digest. Old schema-1 verified artifacts and the unpublished schema-2 unverified draft are rejected; executable-bound artifacts must follow ordinary re-forging and cannot be relabeled. Model header/tensor geometry, buffer bounds, graph/SSA/source/executable/body identity and numerical correctness gates remain active. No kernels, runner math, quantization, context, accuracy tolerances or candidate gain thresholds changed.
+
+The existing 14,439,363,584-byte Gemma GGUF cache was seeded from this project's completed phase45 stream-hash receipt (`2026-10-04T20:18:30Z`, SHA-256 `3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d`). The seed and cache-only check read zero model bytes for hashing. It is explicitly marked `historical-receipt`.
+
+## Validation status
+
+The initial exact Opus 5.5 patch built in 81.61 seconds. Swift/Metal tests passed 2,042 checks with zero failures; Python pure tests passed 15 checks. A separate CLI test verified initial hashing, cached reuse after mutation, explicit refresh once, cached reuse after deletion and rejection of an unsupported refresh option using only tiny synthetic files. The attention qualification tool compiled against the changed core. Fable 5.1 accepted source correctness with no blockers; its review preceded the additional Unicode interoperability finding.
+
+An independent non-ASCII-path Swift/Python check exposed inconsistent fallback spelling after deletion. An exact Opus correction now normalizes canonical paths to Unicode NFC in both implementations, while the initial/explicit hash opens the caller's file spelling. Final release build passed in 78.42 seconds; **2,053 Swift/Metal checks and 17 Python tests passed with zero failures**. A separate actual Korean filename interoperability check passed Swift-to-Python reuse, Python explicit refresh, and Swift cache-only reuse before and after deletion. The attention qualification tool also compiled against the final core. Fable 5.1 accepted the final correction with no blockers; its contingent build/test requirement is now satisfied.
+
+Known limits: deleting the parent directory as well as the model can produce different fallback resolution across languages, and non-ASCII cache records written by the unpublished pre-NFC draft are not migrated. ASCII paths, including the existing real model seed, remain byte-identical. No speed improvement or current Ollama ratio is claimed. Previous seven-block resident baseline spread remains 23.8144%, above the fixed 5% reproducibility gate, with observed global paging. Performance work continues after identity-policy integration.
+
+Additional independent checks launched eight simultaneous owned CLI processes against one 1 MiB synthetic file: one initial computation and seven cache hits. The actual retired phase41 plan was rejected for its missing required policy without constructing a model runner.
+
+Evidence is under `docs/evidence/cached-model-digest-phase47/`.

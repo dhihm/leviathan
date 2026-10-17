@@ -1,0 +1,96 @@
+{
+  "candidates" : [
+    {
+      "bitExact" : true,
+      "exactIDs" : true,
+      "f32Tiled" : false,
+      "fullVocab" : 262144,
+      "passesStrictGate" : true,
+      "q6Tiled" : false,
+      "rmsApplied" : 1655,
+      "rmsCooperative" : true,
+      "rmsFallback" : 0,
+      "steps" : 4,
+      "worstNormalizedDiff" : 0
+    },
+    {
+      "bitExact" : false,
+      "exactIDs" : true,
+      "f32Tiled" : false,
+      "fullVocab" : 262144,
+      "passesStrictGate" : true,
+      "q6Tiled" : true,
+      "rmsApplied" : 0,
+      "rmsCooperative" : false,
+      "rmsFallback" : 0,
+      "steps" : 4,
+      "worstNormalizedDiff" : 8.5234642028808594e-06
+    },
+    {
+      "bitExact" : false,
+      "exactIDs" : true,
+      "f32Tiled" : true,
+      "fullVocab" : 262144,
+      "passesStrictGate" : true,
+      "q6Tiled" : false,
+      "rmsApplied" : 0,
+      "rmsCooperative" : false,
+      "rmsFallback" : 0,
+      "steps" : 4,
+      "worstNormalizedDiff" : 7.864832878112793e-05
+    },
+    {
+      "bitExact" : false,
+      "exactIDs" : true,
+      "f32Tiled" : false,
+      "fullVocab" : 262144,
+      "passesStrictGate" : true,
+      "q6Tiled" : true,
+      "rmsApplied" : 1655,
+      "rmsCooperative" : true,
+      "rmsFallback" : 0,
+      "steps" : 4,
+      "worstNormalizedDiff" : 8.5234642028808594e-06
+    },
+    {
+      "bitExact" : false,
+      "exactIDs" : true,
+      "f32Tiled" : true,
+      "fullVocab" : 262144,
+      "passesStrictGate" : true,
+      "q6Tiled" : false,
+      "rmsApplied" : 1655,
+      "rmsCooperative" : true,
+      "rmsFallback" : 0,
+      "steps" : 4,
+      "worstNormalizedDiff" : 7.864832878112793e-05
+    },
+    {
+      "bitExact" : false,
+      "exactIDs" : true,
+      "f32Tiled" : true,
+      "fullVocab" : 262144,
+      "passesStrictGate" : true,
+      "q6Tiled" : true,
+      "rmsApplied" : 0,
+      "rmsCooperative" : false,
+      "rmsFallback" : 0,
+      "steps" : 4,
+      "worstNormalizedDiff" : 7.864832878112793e-05
+    },
+    {
+      "bitExact" : false,
+      "exactIDs" : true,
+      "f32Tiled" : true,
+      "fullVocab" : 262144,
+      "passesStrictGate" : true,
+      "q6Tiled" : true,
+      "rmsApplied" : 1655,
+      "rmsCooperative" : true,
+      "rmsFallback" : 0,
+      "steps" : 4,
+      "worstNormalizedDiff" : 7.864832878112793e-05
+    }
+  ],
+  "scope" : "Four-step teacher-forced full-logit development checks using existing diagnostic E4\/width32. No production artifact or performance approval; rejected combinations retained as observations."
+}

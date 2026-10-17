@@ -1,0 +1,459 @@
+{
+  "groups" : [
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 15,
+      "inputID" : "x@1",
+      "useIndices" : [
+        21,
+        25
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 46,
+      "inputID" : "x@4",
+      "useIndices" : [
+        52,
+        56
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 77,
+      "inputID" : "x@7",
+      "useIndices" : [
+        83,
+        87
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 108,
+      "inputID" : "x@10",
+      "useIndices" : [
+        114,
+        118
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 139,
+      "inputID" : "x@13",
+      "useIndices" : [
+        145,
+        149
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 170,
+      "inputID" : "x@16",
+      "useIndices" : [
+        176,
+        180
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 201,
+      "inputID" : "x@19",
+      "useIndices" : [
+        207,
+        211
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 232,
+      "inputID" : "x@22",
+      "useIndices" : [
+        238,
+        242
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 263,
+      "inputID" : "x@25",
+      "useIndices" : [
+        269,
+        273
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 294,
+      "inputID" : "x@28",
+      "useIndices" : [
+        300,
+        304
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 325,
+      "inputID" : "x@31",
+      "useIndices" : [
+        331,
+        335
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 356,
+      "inputID" : "x@34",
+      "useIndices" : [
+        362,
+        366
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 387,
+      "inputID" : "x@37",
+      "useIndices" : [
+        393,
+        397
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 418,
+      "inputID" : "x@40",
+      "useIndices" : [
+        424,
+        428
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 449,
+      "inputID" : "x@43",
+      "useIndices" : [
+        455,
+        459
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 480,
+      "inputID" : "x@46",
+      "useIndices" : [
+        486,
+        490
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 511,
+      "inputID" : "x@49",
+      "useIndices" : [
+        517,
+        521
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 542,
+      "inputID" : "x@52",
+      "useIndices" : [
+        548,
+        552
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 573,
+      "inputID" : "x@55",
+      "useIndices" : [
+        579,
+        583
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 604,
+      "inputID" : "x@58",
+      "useIndices" : [
+        610,
+        614
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 635,
+      "inputID" : "x@61",
+      "useIndices" : [
+        641,
+        645
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 666,
+      "inputID" : "x@64",
+      "useIndices" : [
+        672,
+        676
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 697,
+      "inputID" : "x@67",
+      "useIndices" : [
+        703,
+        707
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 728,
+      "inputID" : "x@70",
+      "useIndices" : [
+        734,
+        738
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 759,
+      "inputID" : "x@73",
+      "useIndices" : [
+        765,
+        769
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 790,
+      "inputID" : "x@76",
+      "useIndices" : [
+        796,
+        800
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 821,
+      "inputID" : "x@79",
+      "useIndices" : [
+        827,
+        831
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 852,
+      "inputID" : "x@82",
+      "useIndices" : [
+        858,
+        862
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 883,
+      "inputID" : "x@85",
+      "useIndices" : [
+        889,
+        893
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    },
+    {
+      "epsilonBits" : 897988541,
+      "firstInstructionIndex" : 914,
+      "inputID" : "x@88",
+      "useIndices" : [
+        920,
+        924
+      ],
+      "vectors" : 1,
+      "width" : 2816
+    }
+  ],
+  "planGroupCount" : 30,
+  "planReuseCount" : 60,
+  "rows" : [
+    {
+      "allThreeOutputsBitExact" : true,
+      "round" : 1,
+      "shared" : false,
+      "timing" : {
+        "encodeMicros" : 124.9169921875,
+        "gpuMicros" : 26837.499812245369,
+        "wallMicros" : 27281.3330078125
+      }
+    },
+    {
+      "allThreeOutputsBitExact" : true,
+      "round" : 1,
+      "shared" : true,
+      "timing" : {
+        "encodeMicros" : 117.3330078125,
+        "gpuMicros" : 13483.75016823411,
+        "wallMicros" : 13998.2080078125
+      }
+    },
+    {
+      "allThreeOutputsBitExact" : true,
+      "round" : 2,
+      "shared" : true,
+      "timing" : {
+        "encodeMicros" : 141.75,
+        "gpuMicros" : 14061.87517568469,
+        "wallMicros" : 14523.0419921875
+      }
+    },
+    {
+      "allThreeOutputsBitExact" : true,
+      "round" : 2,
+      "shared" : false,
+      "timing" : {
+        "encodeMicros" : 125.375,
+        "gpuMicros" : 27135.333046317101,
+        "wallMicros" : 27565.125
+      }
+    },
+    {
+      "allThreeOutputsBitExact" : true,
+      "round" : 3,
+      "shared" : false,
+      "timing" : {
+        "encodeMicros" : 128.4169921875,
+        "gpuMicros" : 26841.12498536706,
+        "wallMicros" : 27248.5
+      }
+    },
+    {
+      "allThreeOutputsBitExact" : true,
+      "round" : 3,
+      "shared" : true,
+      "timing" : {
+        "encodeMicros" : 114.708984375,
+        "gpuMicros" : 13560.20849198103,
+        "wallMicros" : 14033.6669921875
+      }
+    },
+    {
+      "allThreeOutputsBitExact" : true,
+      "round" : 4,
+      "shared" : true,
+      "timing" : {
+        "encodeMicros" : 121.4580078125,
+        "gpuMicros" : 13468.250166624784,
+        "wallMicros" : 13902.1669921875
+      }
+    },
+    {
+      "allThreeOutputsBitExact" : true,
+      "round" : 4,
+      "shared" : false,
+      "timing" : {
+        "encodeMicros" : 170,
+        "gpuMicros" : 26888.000313192606,
+        "wallMicros" : 27385.416015625
+      }
+    }
+  ],
+  "scope" : "Actual validated published SSA analyzer proof plus isolated deterministic 2816-float three-output RMS component test. Two warmups\/config, four alternating rounds,128 triples\/command. Same epsilon,distinct scaled\/unscaled outputs; GPU scalar never read to host. Not serving qualification or end-to-end throughput.",
+  "triplesPerArm" : 128,
+  "warmups" : [
+    {
+      "repetition" : 1,
+      "shared" : false,
+      "timing" : {
+        "encodeMicros" : 351.25,
+        "gpuMicros" : 38631.916977465153,
+        "wallMicros" : 40077.291015625
+      }
+    },
+    {
+      "repetition" : 2,
+      "shared" : false,
+      "timing" : {
+        "encodeMicros" : 136,
+        "gpuMicros" : 28116.833418607712,
+        "wallMicros" : 28558.9169921875
+      }
+    },
+    {
+      "repetition" : 1,
+      "shared" : true,
+      "timing" : {
+        "encodeMicros" : 150.5,
+        "gpuMicros" : 14161.542057991028,
+        "wallMicros" : 14645
+      }
+    },
+    {
+      "repetition" : 2,
+      "shared" : true,
+      "timing" : {
+        "encodeMicros" : 110.5419921875,
+        "gpuMicros" : 14335.624873638153,
+        "wallMicros" : 14757.5419921875
+      }
+    }
+  ],
+  "width" : 2816
+}

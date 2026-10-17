@@ -1,0 +1,34 @@
+{
+  "scope": "Preserved intermediate development outcomes, allfinal fixes externally authored. Full logs remain in the local phase35measurement directory.",
+  "attempts": [
+    {
+      "stage": "initial-independent-build",
+      "outcome": "Failed on four Metal property spellings; externally repaired."
+    },
+    {
+      "stage": "independent-final",
+      "passed": 1040,
+      "failed": 0
+    },
+    {
+      "stage": "runtime-integration-release-build",
+      "outcome": "Passed."
+    },
+    {
+      "stage": "runtime-integration-regression",
+      "passed": 1050,
+      "failed": 1,
+      "failure": "Illegal selected-candidate fixture lacked the new required Codable key and failed decode before its intended legality check."
+    },
+    {
+      "stage": "guarded-build",
+      "outcome": "Failed on Swift test constructor argument ordering; old test executable rerun preserved, not accepted as final validation."
+    },
+    {
+      "stage": "final-guarded-build-and-regression",
+      "outcome": "Passed",
+      "passed": 1056,
+      "failed": 0
+    }
+  ]
+}
