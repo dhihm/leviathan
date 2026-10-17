@@ -75,7 +75,7 @@ const R_CHOICES: [u32; 5] = [1, 2, 4, 8, 16];
 pub fn is_legal(s: &Q8Schedule, caps: &DeviceCaps) -> bool {
     T_CHOICES.contains(&s.t)
         && R_CHOICES.contains(&s.r)
-        && matches!(s.nb, 1 | 2 | 4 | 8 | 16)
+        && matches!(s.nb, 1 | 2 | 3 | 4 | 8 | 16)
         && s.invocations() <= caps.max_workgroup_invocations
         && (s.sg == 0 || (s.sg == 1 && s.t <= caps.subgroup_size && caps.subgroup_size % s.t == 0))
 }
@@ -194,7 +194,7 @@ pub const Q4K_CODEGEN_VERSION: &str = "q4kq8gen-glsl-v1";
 /// all loads are 16-byte. Bindings: 0 weights, 1 xq (ivec4), 2 y
 /// `[nb][rows]`, 3 xs (vec4 = two groups). Push: rows, blocks per row.
 pub fn emit_q4k_q8(s: &Q8Schedule) -> Result<String, EmitError> {
-    if !T_CHOICES.contains(&s.t) || !R_CHOICES.contains(&s.r) || !matches!(s.nb, 1 | 2 | 4 | 8 | 16) || s.sg > 1 {
+    if !T_CHOICES.contains(&s.t) || !R_CHOICES.contains(&s.r) || !matches!(s.nb, 1 | 2 | 3 | 4 | 8 | 16) || s.sg > 1 {
         return Err(EmitError(format!("{s:?}")));
     }
     let nb = s.nb;
@@ -334,7 +334,7 @@ pub const Q6K_CODEGEN_VERSION: &str = "q6kq8gen-glsl-v2";
 /// activation sum. Bindings: 0 weights (uint), 1 xq (int), 2 y `[nb][rows]`,
 /// 3 xs (vec2). Push: rows, blocks per row.
 pub fn emit_q6k_q8(s: &Q8Schedule) -> Result<String, EmitError> {
-    if !T_CHOICES.contains(&s.t) || !R_CHOICES.contains(&s.r) || !matches!(s.nb, 1 | 2 | 4 | 8 | 16) || s.sg > 1 {
+    if !T_CHOICES.contains(&s.t) || !R_CHOICES.contains(&s.r) || !matches!(s.nb, 1 | 2 | 3 | 4 | 8 | 16) || s.sg > 1 {
         return Err(EmitError(format!("{s:?}")));
     }
     let nb = s.nb;

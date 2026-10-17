@@ -92,8 +92,10 @@ void main() { uint i = gl_GlobalInvocationID.x; d[i] = s[i]; }
 /// Causal depthwise conv (kernel `k`) over `cd` channels with a `k-1` deep
 /// state, followed by SiLU, for `nb` consecutive columns. One thread per
 /// channel. Bindings: 0 input `[nb][cd]`, 1 state buffer 0, 2 state buffer 1,
-/// 3 weights `[cd][k]`, 4 output `[nb][cd]`, 5 ctrl.
+/// 3 weights `[cd][k]`, 4 output `[nb][cd]`, 5 ctrl, 6 state buffer 2 (`nb = 3`
+/// only; then `ctrl[0]` is the index 0..2 of the buffer holding the valid state).
 pub fn ssm_conv(cd: usize, k: usize, nb: usize) -> String {
+    assert!((1..=3).contains(&nb));
     let mut body = String::from(
         r#"layout(local_size_x = 256) in;
 layout(std430, set = 0, binding = 0) readonly buffer In { float xin[]; };
@@ -109,6 +111,18 @@ void main() {
     for (uint i = 0u; i < @KM1@u; i++) { s[i] = sel ? st1[i * @CD@u + c] : st0[i * @CD@u + c]; }
 "#,
     );
+    if nb == 3 {
+        // Three states: a counter replaces the flag, and binding 6 is the third buffer.
+        body = body.replace(
+            "layout(std430, set = 0, binding = 5) readonly buffer Ctrl { uint ctrl[]; };",
+            "layout(std430, set = 0, binding = 5) readonly buffer Ctrl { uint ctrl[]; };\nlayout(std430, set = 0, binding = 6) buffer S2 { float st2[]; };",
+        );
+        body = body.replace("bool sel = ctrl[0] != 0u;", "uint sel = ctrl[0];");
+        body = body.replace(
+            "s[i] = sel ? st1[i * @CD@u + c] : st0[i * @CD@u + c];",
+            "s[i] = sel == 2u ? st2[i * @CD@u + c] : (sel == 1u ? st1[i * @CD@u + c] : st0[i * @CD@u + c]);",
+        );
+    }
     for col in 0..nb {
         body += &format!(
             "    {{
@@ -166,7 +180,7 @@ void main() {
 /// 6 state buffer 0, 7 state buffer 1, 8 z `[nb][vh*hs]`, 9 norm weight `[hs]`,
 /// 10 output `[nb][vh*hs]`, 11 ctrl.
 pub fn ssm_delta(kh: usize, vh: usize, hs: usize, eps: f32, cd: usize, nb: usize) -> String {
-    assert!(vh % kh == 0 && (1..=2).contains(&nb));
+    assert!(vh % kh == 0 && (1..=3).contains(&nb));
     let mut body = String::from(
         r#"layout(local_size_x = @HS@) in;
 layout(std430, set = 0, binding = 0) readonly buffer QK { float qk[]; };
@@ -203,28 +217,43 @@ void main() {
         );
     }
     body += "    barrier();\n";
+    // With three states the selector is an index and binding 12 is the third buffer.
+    if nb == 3 {
+        body = body.replace(
+            "layout(std430, set = 0, binding = 11) readonly buffer Ctrl { uint ctrl[]; };",
+            "layout(std430, set = 0, binding = 11) readonly buffer Ctrl { uint ctrl[]; };\nlayout(std430, set = 0, binding = 12) buffer S2 { float st2[]; };",
+        );
+        body = body.replace("bool sel = ctrl[0] != 0u;", "uint sel = ctrl[0];");
+    }
+    let old = if nb == 3 {
+        "(sel == 2u ? st2[base + i * @HS@u + j] : (sel == 1u ? st1[base + i * @HS@u + j] : st0[base + i * @HS@u + j]))"
+    } else {
+        "(sel ? st1[base + i * @HS@u + j] : st0[base + i * @HS@u + j])"
+    };
     // Pass 1: kv for column 0 from the old state.
-    body += "    float kv0 = 0.0;
+    body += &"    float kv0 = 0.0;
     for (uint i = 0u; i < @HS@u; i++) {
-        float so = sel ? st1[base + i * @HS@u + j] : st0[base + i * @HS@u + j];
+        float so = @OLD@;
         kv0 += so * decay0 * kq[i];
     }
     float delta0 = beta0 * (v0 - kv0);
     float acc0 = 0.0;
-";
+"
+    .replace("@OLD@", old);
     if nb == 1 {
-        body += "    for (uint i = 0u; i < @HS@u; i++) {
-        float so = sel ? st1[base + i * @HS@u + j] : st0[base + i * @HS@u + j];
+        body += &"    for (uint i = 0u; i < @HS@u; i++) {
+        float so = @OLD@;
         float s = so * decay0 + kq[i] * delta0;
         st0[base + i * @HS@u + j] = s;
         acc0 += s * kq[@HS@u + i];
     }
-";
+"
+        .replace("@OLD@", old);
     } else {
         // Pass 2: state after column 0 (written to buffer 0), output 0, kv for column 1.
-        body += "    float kv1 = 0.0;
+        body += &"    float kv1 = 0.0;
     for (uint i = 0u; i < @HS@u; i++) {
-        float so = sel ? st1[base + i * @HS@u + j] : st0[base + i * @HS@u + j];
+        float so = @OLD@;
         float s = so * decay0 + kq[i] * delta0;
         st0[base + i * @HS@u + j] = s;
         acc0 += s * kq[@HS@u + i];
@@ -232,12 +261,33 @@ void main() {
     }
     float delta1 = beta1 * (v1 - kv1);
     float acc1 = 0.0;
-    for (uint i = 0u; i < @HS@u; i++) {
+"
+        .replace("@OLD@", old);
+        if nb == 2 {
+            body += "    for (uint i = 0u; i < @HS@u; i++) {
         float s = st0[base + i * @HS@u + j] * decay1 + kq[2u * @HS@u + i] * delta1;
         st1[base + i * @HS@u + j] = s;
         acc1 += s * kq[3u * @HS@u + i];
     }
 ";
+        } else {
+            // Pass 3: state after column 1 (buffer 1), output 1, kv for column 2; pass 4: state after column 2 (buffer 2).
+            body += "    float kv2 = 0.0;
+    for (uint i = 0u; i < @HS@u; i++) {
+        float s = st0[base + i * @HS@u + j] * decay1 + kq[2u * @HS@u + i] * delta1;
+        st1[base + i * @HS@u + j] = s;
+        acc1 += s * kq[3u * @HS@u + i];
+        kv2 += s * decay2 * kq[4u * @HS@u + i];
+    }
+    float delta2 = beta2 * (v2 - kv2);
+    float acc2 = 0.0;
+    for (uint i = 0u; i < @HS@u; i++) {
+        float s = st1[base + i * @HS@u + j] * decay2 + kq[4u * @HS@u + i] * delta2;
+        st2[base + i * @HS@u + j] = s;
+        acc2 += s * kq[5u * @HS@u + i];
+    }
+";
+        }
     }
     for c in 0..nb {
         body += &format!(

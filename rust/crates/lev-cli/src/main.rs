@@ -207,6 +207,14 @@ fn main() -> ExitCode {
             }
             Err(_) => ExitCode::from(2),
         },
+        Some("gpu-triple") if args.len() == 4 => match gpu_triple(&args[2], &args[3]) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Some("gpu-dbg") if args.len() == 4 => match gpu_dbg(&args[2], &args[3]) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
@@ -532,6 +540,85 @@ fn gpu_pair(path: &str, ids: &str) -> Result<bool, Box<dyn std::error::Error>> {
     Ok(pass)
 }
 
+/// Three-column pass against single-token passes on the last three tokens, for each number of
+/// kept columns (the state after that many must continue correctly through another three-column pass).
+fn gpu_triple(path: &str, ids: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    let tokens = parse_ids(ids)?;
+    if tokens.len() < 6 {
+        return Err("need at least six tokens".into());
+    }
+    let mut gpu = lev_model::gpu::GpuModel::open(path, 512, true)?;
+    let n = tokens.len();
+    let (head, rest) = tokens.split_at(n - 6);
+    let (t3, t3b) = (&rest[..3], &rest[3..]);
+    for &t in head {
+        gpu.forward(t)?;
+    }
+    let mut seq = Vec::new();
+    for &t in &rest[..3] {
+        seq.push(gpu.forward(t)?);
+    }
+    let seq_layers = gpu.layer_outputs_col(0).unwrap();
+    gpu.reset();
+    for &t in head {
+        gpu.forward(t)?;
+    }
+    let both = gpu.forward_triple([t3[0], t3[1], t3[2]], 3)?;
+    let tri_layers = [gpu.layer_outputs_col(0).unwrap(), gpu.layer_outputs_col(1).unwrap(), gpu.layer_outputs_col(2).unwrap()];
+    let mut worst = 0f64;
+    for (l, (a, b)) in seq_layers.iter().zip(&tri_layers[2]).enumerate() {
+        let a64: Vec<f64> = a.iter().map(|&v| v as f64).collect();
+        let e = max_rel_err(b, &a64).unwrap_or(f64::INFINITY);
+        worst = worst.max(e);
+        if l % 8 == 7 || l < 2 {
+            println!("layer {l:>2}: triple column 2 vs sequential third token max_rel_err {e:.2e}");
+        }
+    }
+    println!("worst layer error of column 2: {worst:.2e}");
+    let mut pass = true;
+    for (c, (a, b)) in seq.iter().zip(&both).enumerate() {
+        let a64: Vec<f64> = a.iter().map(|&v| v as f64).collect();
+        let e = max_rel_err(b, &a64).unwrap_or(f64::INFINITY);
+        let same_top = lev_model::argmax(a) == lev_model::argmax(b);
+        println!("column {c}: logits max_rel_err {e:.2e}, argmax {}", if same_top { "same" } else { "DIFFERENT" });
+        // Logit errors of any two valid schedules sit at the int8 noise level of the input (see gpu-pair);
+        // the criterion is that every greedy choice agrees.
+        pass &= same_top;
+    }
+    // Every number of kept columns: state after k columns, then another three-column pass.
+    for keep in 1..=3usize {
+        gpu.reset();
+        for &t in head {
+            gpu.forward(t)?;
+        }
+        gpu.forward_triple([t3[0], t3[1], t3[2]], keep)?;
+        // The tokens after the kept ones: the remaining original tokens, then the next block.
+        let follow: Vec<usize> = rest[keep..].to_vec();
+        let cont = gpu.forward_triple([follow[0], follow[1], follow[2]], 3)?;
+        gpu.reset();
+        for &t in head {
+            gpu.forward(t)?;
+        }
+        for &t in &rest[..keep] {
+            gpu.forward(t)?;
+        }
+        let mut want = Vec::new();
+        for &t in &follow[..3] {
+            want.push(gpu.forward(t)?);
+        }
+        for c in 0..3 {
+            let a64: Vec<f64> = want[c].iter().map(|&v| v as f64).collect();
+            let e = max_rel_err(&cont[c], &a64).unwrap_or(f64::INFINITY);
+            let same_top = lev_model::argmax(&want[c]) == lev_model::argmax(&cont[c]);
+            println!("keep {keep}, continuation column {c}: logits max_rel_err {e:.2e}, argmax {}", if same_top { "same" } else { "DIFFERENT" });
+            pass &= same_top;
+        }
+    }
+    let _ = t3b;
+    println!("{}", if pass { "PASS" } else { "FAIL" });
+    Ok(pass)
+}
+
 /// Plain greedy decoding against MTP speculative decoding on the same prompt.
 fn gpu_spec(path: &str, ids: &str, n: usize) -> Result<bool, Box<dyn std::error::Error>> {
     let prompt = parse_ids(ids)?;
@@ -542,7 +629,7 @@ fn gpu_spec(path: &str, ids: &str, n: usize) -> Result<bool, Box<dyn std::error:
     let (spec, ss) = gpu.generate(&prompt, n, true)?;
     println!("plain: {} tokens in {:.2} s (GPU {:.1} ms)", ps.tokens, ps.seconds, ps.main_us / 1000.0);
     println!("prefill: {} prompt tokens in {:.2} s = {:.1} tok/s", prompt.len(), ps.prefill_seconds, prompt.len() as f64 / ps.prefill_seconds);
-    println!("spec : {} tokens in {:.2} s, {} verify steps, {} drafts accepted ({:.0}%)", ss.tokens, ss.seconds, ss.steps, ss.accepted, 100.0 * ss.accepted as f64 / ss.steps.max(1) as f64);
+    println!("spec : {} tokens in {:.2} s, {} verify steps, {} drafts accepted ({:.2} per step)", ss.tokens, ss.seconds, ss.steps, ss.accepted, ss.accepted as f64 / ss.steps.max(1) as f64);
     println!("spec GPU time: main {:.1} ms + mtp {:.1} ms; host/other {:.1} ms", ss.main_us / 1000.0, ss.mtp_us / 1000.0, ss.seconds * 1000.0 - (ss.main_us + ss.mtp_us) / 1000.0);
     println!("plain host/other {:.1} ms", ps.seconds * 1000.0 - ps.main_us / 1000.0);
     let dec = |st: &lev_model::gpu::SpecStats| (st.tokens.saturating_sub(1)) as f64 / (st.seconds - st.prefill_seconds);
@@ -900,7 +987,57 @@ fn vk_delta() -> Result<bool, Box<dyn std::error::Error>> {
     let r_s064: Vec<f64> = r_s0.iter().map(|&v| v as f64).collect();
     let e2_state = max_rel_err(&t_s1, &r_s064).unwrap_or(f64::INFINITY);
     println!("2-column vs sequential: outputs {e2_out:.2e} (column 0 alone {e2_c0:.2e}), state after column 1 {e2_state:.2e}");
-    Ok(e_out < 1e-4 && e_state < 1e-4 && e2_out < 1e-4 && e2_state < 1e-4)
+    // Three-column kernel: outputs of all columns and the state after each of them.
+    let k3 = {
+        let (spv, _) = compile_glsl_cached(&ops::ssm_delta(KH, VH, HS, 1e-6, CD, 3), &cache_dir)?;
+        ctx.create_kernel(&spv, 13, 0)?
+    };
+    let (us0, us1, us2) = (host(&state0)?, host(&vec![0f32; VH * HS * HS])?, host(&vec![0f32; VH * HS * HS])?);
+    let uout = ctx.create_buffer((3 * VH * HS * 4) as u64)?;
+    let three_steps = vec![lev_vulkan::Step {
+        kernel: &k3,
+        bindings: vec![(&qkb, 0, (3 * 2 * KH * HS * 4) as u64), (&cvb, 0, (3 * CD * 4) as u64), (&alb, 0, (3 * VH * 4) as u64), (&beb, 0, (3 * VH * 4) as u64), (&dtb, 0, dtb.size()), (&ab, 0, ab.size()), (&us0, 0, us0.size()), (&us1, 0, us1.size()), (&zb, 0, (3 * VH * HS * 4) as u64), (&nwb, 0, nwb.size()), (&uout, 0, uout.size()), (&ctrl, 0, ctrl.size()), (&us2, 0, us2.size())],
+        push: Vec::new(),
+        groups: VH as u32,
+    }];
+    ctx.build_program(&three_steps, false)?.run()?;
+    let (qs0, qout) = (host(&state0)?, ctx.create_buffer((3 * VH * HS * 4) as u64)?);
+    let qs1 = host(&vec![0f32; VH * HS * HS])?;
+    let mut e3_state = [0f64; 3];
+    let mut snaps: Vec<Vec<f32>> = Vec::new();
+    for c in 0..3 {
+        let (al, be) = &keep[c];
+        let steps = vec![lev_vulkan::Step {
+            kernel: &k1,
+            bindings: vec![
+                (&qkb, (c * 2 * KH * HS * 4) as u64, (2 * KH * HS * 4) as u64),
+                (&cvb, (c * CD * 4) as u64, (CD * 4) as u64),
+                (al, 0, al.size()),
+                (be, 0, be.size()),
+                (&dtb, 0, dtb.size()),
+                (&ab, 0, ab.size()),
+                (&qs0, 0, qs0.size()),
+                (&qs1, 0, qs1.size()),
+                (&zb, (c * VH * HS * 4) as u64, (VH * HS * 4) as u64),
+                (&nwb, 0, nwb.size()),
+                (&qout, (c * VH * HS * 4) as u64, (VH * HS * 4) as u64),
+                (&ctrl, 0, ctrl.size()),
+            ],
+            push: Vec::new(),
+            groups: VH as u32,
+        }];
+        ctx.build_program(&steps, false)?.run()?;
+        snaps.push(qs0.read_f32(0, VH * HS * HS));
+    }
+    let (t3_out, r3_out) = (uout.read_f32(0, 3 * VH * HS), qout.read_f32(0, 3 * VH * HS));
+    let r3: Vec<f64> = r3_out.iter().map(|&v| v as f64).collect();
+    let e3_out = max_rel_err(&t3_out, &r3).unwrap_or(f64::INFINITY);
+    for (c, tb) in [&us0, &us1, &us2].iter().enumerate() {
+        let want: Vec<f64> = snaps[c].iter().map(|&v| v as f64).collect();
+        e3_state[c] = max_rel_err(&tb.read_f32(0, VH * HS * HS), &want).unwrap_or(f64::INFINITY);
+    }
+    println!("3-column vs sequential: outputs {e3_out:.2e}, state after column 0/1/2 {:.2e} / {:.2e} / {:.2e}", e3_state[0], e3_state[1], e3_state[2]);
+    Ok(e_out < 1e-4 && e_state < 1e-4 && e2_out < 1e-4 && e2_state < 1e-4 && e3_out < 1e-4 && e3_state.iter().all(|&e| e < 1e-4))
 }
 
 /// Repeats prefill + plain decode + speculative decode on one resident model

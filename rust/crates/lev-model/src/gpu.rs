@@ -51,7 +51,7 @@ fn q4_schedule(nb: u32) -> Q8Schedule {
         return Q8Schedule { t: 32, r: 1, sg: 0, nb };
     }
     match nb {
-        8 => Q8Schedule { t: 4, r: 16, sg: 1, nb },
+        8 | 3 => Q8Schedule { t: 4, r: 16, sg: 1, nb },
         _ => Q8Schedule { t: 64, r: 4, sg: 1, nb },
     }
 }
@@ -66,12 +66,13 @@ fn q6_schedule(nb: u32) -> Q8Schedule {
     }
 }
 
-/// Index of the matvec kernel variant for `nb` columns (1, 2 or 8).
+/// Index of the matvec kernel variant for `nb` columns (1, 2, 8 or 3).
 fn kidx(nb: usize) -> usize {
     match nb {
         1 => 0,
         2 => 1,
         8 => 2,
+        3 => 3,
         _ => panic!("unsupported column count {nb}"),
     }
 }
@@ -91,14 +92,14 @@ struct Kernels {
     argmax: Kernel,
     argmax_mtp: Kernel,
     embed: Kernel,
-    conv: [Kernel; 2],
-    delta: [Kernel; 2],
+    conv: [Kernel; 3],
+    delta: [Kernel; 3],
     conv_chunk: Kernel,
     delta_chunk: Kernel,
     cat_e: Kernel,
     cat_h: Kernel,
-    q4: [Kernel; 3],
-    q6: [Kernel; 3],
+    q4: [Kernel; 4],
+    q6: [Kernel; 4],
     big: Option<BigKernels>,
 }
 
@@ -112,7 +113,7 @@ struct BigKernels {
 }
 
 enum LayerRes {
-    Ssm { c0: Buf, c1: Buf, s0: Buf, s1: Buf },
+    Ssm { c0: Buf, c1: Buf, c2: Buf, s0: Buf, s1: Buf, s2: Buf },
     Attn { kc: Buf, vc: Buf },
 }
 
@@ -141,6 +142,8 @@ struct Res {
     q_out: Buf,
     attn_out: Buf,
     hfin: Buf,
+    /// MTP block output of the last draft pass (chained drafting probe).
+    hmtp: Buf,
     tok_main: Buf,
     tok_mtp: Buf,
     am_main: Buf,
@@ -162,11 +165,14 @@ pub struct GpuModel {
     // Drop order: programs first, the device context last.
     main1: Program,
     main2: Program,
+    /// Three-column pass (two chained drafts), only for speculative depth 2.
+    main3: Program,
     prefill: Program,
     mtp_fill_chunk: Program,
     bigs: Vec<(usize, Program, Program)>,
-    mtp_draft: [Program; 2],
-    mtp_fill: [Program; 2],
+    mtp_draft: [Program; 3],
+    mtp_chain: Program,
+    mtp_fill: [Program; 3],
     labels1: Vec<String>,
     labels2: Vec<String>,
     labels_prefill: Vec<String>,
@@ -328,16 +334,18 @@ fn build_main(ctx: &VulkanContext, g: &GgufFile, cfg: &Config, r: &Res, k: &Kern
         let p = |n: &str| format!("blk.{il}.{n}");
         b.norm_quant(r, k, ne, w(&p("attn_norm.weight")), nb, pending.take(), None);
         match &r.layers[il] {
-            LayerRes::Ssm { c0, c1, s0, s1 } => {
+            LayerRes::Ssm { c0, c1, c2, s0, s1, s2 } => {
                 b.matvec(g, r, k, &p("attn_qkv.weight"), nb, (&r.qkv, 0))?;
                 b.matvec(g, r, k, &p("attn_gate.weight"), nb, (&r.z, 0))?;
                 b.matvec(g, r, k, &p("ssm_beta.weight"), nb, (&r.beta, 0))?;
                 b.matvec(g, r, k, &p("ssm_alpha.weight"), nb, (&r.alpha, 0))?;
-                b.simple("ssm_conv", if big { &k.big.as_ref().unwrap().conv[bidx(nb)] } else if prefill { &k.conv_chunk } else { &k.conv[nb - 1] }, vec![part(&r.qkv, 0, nb * cd), full(c0), full(c1), full(w(&p("ssm_conv1d.weight"))), part(&r.conv_out, 0, nb * cd), full(&r.ctrl)], (cd / 256) as u32);
+                let mut conv_b = vec![part(&r.qkv, 0, nb * cd), full(c0), full(c1), full(w(&p("ssm_conv1d.weight"))), part(&r.conv_out, 0, nb * cd), full(&r.ctrl)];
+                if nb == 3 && !prefill {
+                    conv_b.push(full(c2));
+                }
+                b.simple("ssm_conv", if big { &k.big.as_ref().unwrap().conv[bidx(nb)] } else if prefill { &k.conv_chunk } else { &k.conv[nb - 1] }, conv_b, (cd / 256) as u32);
                 b.simple("ssm_qknorm", &k.qknorm, vec![part(&r.conv_out, 0, nb * cd), part(&r.qk, 0, nb * 2 * kh * hs)], (nb * 2 * kh) as u32);
-                b.simple(
-                    "ssm_delta",
-                    if big { &k.big.as_ref().unwrap().delta[bidx(nb)] } else if prefill { &k.delta_chunk } else { &k.delta[nb - 1] },
+                let mut delta_b = 
                     vec![
                         part(&r.qk, 0, nb * 2 * kh * hs),
                         part(&r.conv_out, 0, nb * cd),
@@ -351,9 +359,11 @@ fn build_main(ctx: &VulkanContext, g: &GgufFile, cfg: &Config, r: &Res, k: &Kern
                         full(w(&p("ssm_norm.weight"))),
                         part(&r.gated, 0, nb * cfg.inner),
                         full(&r.ctrl),
-                    ],
-                    vh as u32,
-                );
+                    ];
+                if nb == 3 && !prefill {
+                    delta_b.push(full(s2));
+                }
+                b.simple("ssm_delta", if big { &k.big.as_ref().unwrap().delta[bidx(nb)] } else if prefill { &k.delta_chunk } else { &k.delta[nb - 1] }, delta_b, vh as u32);
                 b.quant(r, k, &r.gated, nb * cfg.inner);
                 b.matvec(g, r, k, &p("ssm_out.weight"), nb, (&r.mixed, 0))?;
             }
@@ -370,7 +380,7 @@ fn build_main(ctx: &VulkanContext, g: &GgufFile, cfg: &Config, r: &Res, k: &Kern
             pending = Some(&r.down);
         }
         if let (Some(tb), false) = (&r.trace, prefill) {
-            b.simple("copy", &k.copy, vec![part(&r.x, 0, nb * ne), part(tb, il * 2 * ne, nb * ne)], (nb * ne / 256) as u32);
+            b.simple("copy", &k.copy, vec![part(&r.x, 0, nb * ne), part(tb, il * 3 * ne, nb * ne)], (nb * ne / 256) as u32);
         }
     }
     if pending.is_some() {
@@ -385,7 +395,18 @@ fn build_main(ctx: &VulkanContext, g: &GgufFile, cfg: &Config, r: &Res, k: &Kern
         b.matvec(g, r, k, "output.weight", nb, (&r.logits, 0))?;
         b.simple("argmax", &k.argmax, vec![part(&r.logits, 0, nb * cfg.vocab), part(&r.am_main, 0, nb), part(&r.mg_main, 0, nb)], nb as u32);
     }
-    let program = ctx.build_program(&b.steps, profile)?;
+    let program = match ctx.build_program(&b.steps, profile) {
+        Ok(p) => p,
+        Err(e) => {
+            // Name the failing step: the error text starts with its index.
+            let msg = e.to_string();
+            let idx = msg.split_whitespace().nth(1).and_then(|t| t.trim_end_matches(':').parse::<usize>().ok());
+            return Err(match idx.and_then(|i| b.labels.get(i)) {
+                Some(l) => format!("{msg} ({l})").into(),
+                None => msg.into(),
+            });
+        }
+    };
     Ok((program, b.labels))
 }
 
@@ -459,7 +480,9 @@ fn build_mtp_fill_chunk(ctx: &VulkanContext, g: &GgufFile, cfg: &Config, r: &Res
 }
 /// MTP head (layer `n_trunk`): `cat = [rmsnorm(embed), rmsnorm(h)]`, `eh_proj`,
 /// one full-attention block with FFN, then (if `draft`) the shared output head.
-fn build_mtp(ctx: &VulkanContext, g: &GgufFile, cfg: &Config, r: &Res, k: &Kernels, draft: bool, hcol: usize) -> Result<Program, Error> {
+/// `h_src` replaces the main hidden state by another buffer (chained draft); `save` copies the
+/// block's output hidden state (before the shared head norm with LEV_CHAIN_SRC=x, after it otherwise) there.
+fn build_mtp(ctx: &VulkanContext, g: &GgufFile, cfg: &Config, r: &Res, k: &Kernels, draft: bool, hcol: usize, h_src: Option<&Buf>, save: Option<&Buf>) -> Result<Program, Error> {
     let ne = cfg.n_embd;
     let il = cfg.n_trunk;
     let p = |n: &str| format!("blk.{il}.{n}");
@@ -467,7 +490,7 @@ fn build_mtp(ctx: &VulkanContext, g: &GgufFile, cfg: &Config, r: &Res, k: &Kerne
     let mut b = Builder::new();
     b.simple("embed", &k.embed, vec![full(w("token_embd.weight")), part(&r.tok_mtp, 0, 1), part(&r.e_in, 0, ne)], (ne / 256) as u32);
     b.simple("rmsnorm", &k.norm, vec![part(&r.e_in, 0, ne), full(w(&p("nextn.enorm.weight"))), part(&r.cat, 0, ne)], 1);
-    b.simple("rmsnorm", &k.norm, vec![part(&r.hfin, hcol * ne, ne), full(w(&p("nextn.hnorm.weight"))), part(&r.cat, ne, ne)], 1);
+    b.simple("rmsnorm", &k.norm, vec![match h_src { Some(h) => part(h, 0, ne), None => part(&r.hfin, hcol * ne, ne) }, full(w(&p("nextn.hnorm.weight"))), part(&r.cat, ne, ne)], 1);
     b.quant(r, k, &r.cat, 2 * ne);
     b.matvec(g, r, k, &p("nextn.eh_proj.weight"), 1, (&r.x, 0))?;
     b.simple("rmsnorm", &k.norm, vec![part(&r.x, 0, ne), full(w(&p("attn_norm.weight"))), part(&r.xn, 0, ne)], 1);
@@ -483,6 +506,10 @@ fn build_mtp(ctx: &VulkanContext, g: &GgufFile, cfg: &Config, r: &Res, k: &Kerne
         b.matvec(g, r, k, &p("attn_output.weight"), 1, (&r.mixed, 0))?;
         ffn_block(&mut b, g, r, k, cfg, 1, il, false)?;
         b.simple("rmsnorm", &k.norm, vec![part(&r.x, 0, ne), full(w(&p("nextn.shared_head_norm.weight"))), part(&r.xn, 0, ne)], 1);
+        if let Some(sv) = save {
+            let from = if std::env::var("LEV_CHAIN_SRC").as_deref() == Ok("x") { &r.x } else { &r.xn };
+            b.simple("copy", &k.copy, vec![part(from, 0, ne), part(sv, 0, ne)], (ne / 256) as u32);
+        }
         b.quant(r, k, &r.xn, ne);
         b.matvec_rows(g, r, k, "output.weight", 1, (&r.mtp_logits, 0), mtp_vocab(cfg))?;
         b.simple("argmax", &k.argmax_mtp, vec![part(&r.mtp_logits, 0, mtp_vocab(cfg)), part(&r.am_mtp, 0, 1), part(&r.mg_mtp, 0, 1)], 1);
@@ -565,8 +592,8 @@ impl GpuModel {
             argmax: mk(&ops::argmax(cfg.vocab), 3, 0)?,
             argmax_mtp: mk(&ops::argmax(mtp_vocab(&cfg)), 3, 0)?,
             embed: mk(&ops::embed_q4k(cfg.n_embd), 3, 0)?,
-            conv: [mk(&ops::ssm_conv(cd, cfg.conv_k, 1), 6, 0)?, mk(&ops::ssm_conv(cd, cfg.conv_k, 2), 6, 0)?],
-            delta: [mk(&ops::ssm_delta(kh, vh, hs, cfg.eps, cd, 1), 12, 0)?, mk(&ops::ssm_delta(kh, vh, hs, cfg.eps, cd, 2), 12, 0)?],
+            conv: [mk(&ops::ssm_conv(cd, cfg.conv_k, 1), 6, 0)?, mk(&ops::ssm_conv(cd, cfg.conv_k, 2), 6, 0)?, mk(&ops::ssm_conv(cd, cfg.conv_k, 3), 7, 0)?],
+            delta: [mk(&ops::ssm_delta(kh, vh, hs, cfg.eps, cd, 1), 12, 0)?, mk(&ops::ssm_delta(kh, vh, hs, cfg.eps, cd, 2), 12, 0)?, mk(&ops::ssm_delta(kh, vh, hs, cfg.eps, cd, 3), 13, 0)?],
             conv_chunk: mk(&ops::ssm_conv_chunk(cd, cfg.conv_k, MAX_COLS), 6, 0)?,
             delta_chunk: mk(&ops::ssm_delta_chunk(kh, vh, hs, cfg.eps, cd, MAX_COLS), 12, 0)?,
             cat_e: mk(&ops::copy_cols(cfg.n_embd, 2 * cfg.n_embd, 0), 2, 0)?,
@@ -582,8 +609,8 @@ impl GpuModel {
             } else {
                 None
             },
-            q4: [mk(&q8::emit_q4k_q8(&q4_schedule(1))?, 4, 8)?, mk(&q8::emit_q4k_q8(&q4_schedule(2))?, 4, 8)?, mk(&q8::emit_q4k_q8(&q4_schedule(8))?, 4, 8)?],
-            q6: [mk(&q8::emit_q6k_q8(&q6_schedule(1))?, 4, 8)?, mk(&q8::emit_q6k_q8(&q6_schedule(2))?, 4, 8)?, mk(&q8::emit_q6k_q8(&q6_schedule(8))?, 4, 8)?],
+            q4: [mk(&q8::emit_q4k_q8(&q4_schedule(1))?, 4, 8)?, mk(&q8::emit_q4k_q8(&q4_schedule(2))?, 4, 8)?, mk(&q8::emit_q4k_q8(&q4_schedule(8))?, 4, 8)?, mk(&q8::emit_q4k_q8(&q4_schedule(3))?, 4, 8)?],
+            q6: [mk(&q8::emit_q6k_q8(&q6_schedule(1))?, 4, 8)?, mk(&q8::emit_q6k_q8(&q6_schedule(2))?, 4, 8)?, mk(&q8::emit_q6k_q8(&q6_schedule(8))?, 4, 8)?, mk(&q8::emit_q6k_q8(&q6_schedule(3))?, 4, 8)?],
         };
 
         // Weights: one buffer per tensor.
@@ -635,7 +662,7 @@ impl GpuModel {
         let mut layers = Vec::new();
         for il in 0..cfg.n_trunk {
             if cfg.is_recurrent(il) {
-                layers.push(LayerRes::Ssm { c0: zb((cfg.conv_k - 1) * cd)?, c1: zb((cfg.conv_k - 1) * cd)?, s0: zb(vh * hs * hs)?, s1: zb(vh * hs * hs)? });
+                layers.push(LayerRes::Ssm { c0: zb((cfg.conv_k - 1) * cd)?, c1: zb((cfg.conv_k - 1) * cd)?, c2: zb((cfg.conv_k - 1) * cd)?, s0: zb(vh * hs * hs)?, s1: zb(vh * hs * hs)?, s2: zb(vh * hs * hs)? });
             } else {
                 layers.push(LayerRes::Attn { kc: zb(ctx_len * nkv * hd)?, vc: zb(ctx_len * nkv * hd)? });
             }
@@ -666,25 +693,27 @@ impl GpuModel {
             q_out: zb(m * nh * hd)?,
             attn_out: zb(m * nh * hd)?,
             hfin: fb(m * ne)?,
+            hmtp: fb(ne)?,
             tok_main: fb(m)?,
             tok_mtp: fb(m)?,
-            am_main: fb(2)?,
-            mg_main: fb(2)?,
+            am_main: fb(3)?,
+            mg_main: fb(3)?,
             am_mtp: fb(1)?,
             mg_mtp: fb(1)?,
             xq: zb(MAX_COLS * nff.max(2 * ne))?,
             xs: zb(MAX_COLS * nff.max(2 * ne) / 32 * 2)?,
             xh: zb(m * nff.max(2 * ne) / 2)?,
-            logits: fb(2 * cfg.vocab)?,
+            logits: fb(3 * cfg.vocab)?,
             ctrl,
             e_in: zb(m * ne)?,
             cat: zb(m * 2 * ne)?,
             mtp_logits: fb(cfg.vocab)?,
-            trace: if trace { Some(fb(cfg.n_trunk * 2 * ne)?) } else { None },
+            trace: if trace { Some(fb(cfg.n_trunk * 3 * ne)?) } else { None },
         };
 
         let (main1, labels1) = build_main(&ctx, &gguf, &cfg, &res, &kernels, 1, profile, false, false)?;
         let (main2, labels2) = build_main(&ctx, &gguf, &cfg, &res, &kernels, 2, profile, false, false)?;
+        let (main3, _) = build_main(&ctx, &gguf, &cfg, &res, &kernels, 3, false, false, false)?;
         let (prefill, labels_prefill) = build_main(&ctx, &gguf, &cfg, &res, &kernels, MAX_COLS, profile, true, false)?;
         let mtp_fill_chunk = build_mtp_fill_chunk(&ctx, &gguf, &cfg, &res, &kernels, MAX_COLS, false)?;
         let mut bigs: Vec<(usize, Program, Program)> = Vec::new();
@@ -699,9 +728,11 @@ impl GpuModel {
                 bigs.push((n, p, f));
             }
         }
-        let mtp_draft = [build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 0)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 1)?];
-        let mtp_fill = [build_mtp(&ctx, &gguf, &cfg, &res, &kernels, false, 0)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, false, 1)?];
-        Ok(GpuModel { main1, main2, prefill, mtp_fill_chunk, bigs, mtp_draft, mtp_fill, labels1, labels2, labels_prefill, labels_big, res, _kernels: kernels, gguf, file, cfg, ctx_len, pos: 0, sel: 0, last_gpu_us: 0.0, last_mtp_us: 0.0, ctx })
+        let save = Some(&res.hmtp);
+        let mtp_draft = [build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 0, None, save)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 1, None, save)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 2, None, save)?];
+        let mtp_fill = [build_mtp(&ctx, &gguf, &cfg, &res, &kernels, false, 0, None, None)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, false, 1, None, None)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, false, 2, None, None)?];
+        let mtp_chain = build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 0, Some(&res.hmtp), None)?;
+        Ok(GpuModel { main1, main2, main3, prefill, mtp_fill_chunk, bigs, mtp_draft, mtp_chain, mtp_fill, labels1, labels2, labels_prefill, labels_big, res, _kernels: kernels, gguf, file, cfg, ctx_len, pos: 0, sel: 0, last_gpu_us: 0.0, last_mtp_us: 0.0, ctx })
     }
 
     pub fn dispatch_count(&self) -> usize {
@@ -719,8 +750,8 @@ impl GpuModel {
     /// Forgets the sequence: zeroes the recurrent state and rewinds to position 0.
     pub fn reset(&mut self) {
         for l in &self.res.layers {
-            if let LayerRes::Ssm { c0, c1, s0, s1 } = l {
-                for b in [c0, c1, s0, s1] {
+            if let LayerRes::Ssm { c0, c1, c2, s0, s1, s2 } = l {
+                for b in [c0, c1, c2, s0, s1, s2] {
                     let _ = self.ctx.zero_buffer(b);
                 }
             }
@@ -823,7 +854,12 @@ impl GpuModel {
         }
         self.res.tok_main.write_u32(0, &tokens.iter().map(|&t| t as u32).collect::<Vec<_>>());
         self.set_ctrl(self.pos, cols);
-        self.last_gpu_us = if cols == 1 { self.main1.run()? } else { self.main2.run()? };
+        self.last_gpu_us = match cols {
+            1 => self.main1.run()?,
+            2 => self.main2.run()?,
+            3 => self.main3.run()?,
+            _ => return Err("unsupported column count".into()),
+        };
         Ok(())
     }
 
@@ -882,7 +918,7 @@ impl GpuModel {
     pub fn layer_outputs_col(&self, c: usize) -> Option<Vec<Vec<f32>>> {
         let t = self.res.trace.as_ref()?;
         let n = self.cfg.n_embd;
-        Some((0..self.cfg.n_trunk).map(|il| t.read_f32((il * 2 + c) * n, n)).collect())
+        Some((0..self.cfg.n_trunk).map(|il| t.read_f32((il * 3 + c) * n, n)).collect())
     }
 
     /// Two tokens in one weight pass at the next two positions, then keeps
@@ -892,6 +928,15 @@ impl GpuModel {
         self.pos += 2;
         self.sel = 1;
         Ok(vec![self.main_logits(0), self.main_logits(1)])
+    }
+
+    /// Three tokens in one weight pass at the next three positions, then keeps the first `keep`
+    /// (1..=3). Returns the logits of all three columns. For tests against single-token passes.
+    pub fn forward_triple(&mut self, toks: [usize; 3], keep: usize) -> Result<Vec<Vec<f32>>, Error> {
+        self.run_main(&toks)?;
+        self.pos += keep;
+        self.sel = (keep - 1) as u32;
+        Ok(vec![self.main_logits(0), self.main_logits(1), self.main_logits(2)])
     }
 
     /// MTP head at position `pos`: embeds `token`, takes the main hidden state
@@ -909,6 +954,17 @@ impl GpuModel {
             self.last_mtp_us = self.mtp_fill[hcol].run()?;
             Ok(None)
         }
+    }
+
+    /// Second draft chained from the block's own output (saved by the last draft pass): the token
+    /// after `d1`, with the head's KV entry at position `pos`.
+    fn chain(&mut self, d1: usize, pos: usize) -> Result<usize, Error> {
+        self.res.tok_mtp.write_u32(0, &[d1 as u32]);
+        self.set_ctrl(pos, 1);
+        self.mtp_chain.run()?;
+        let mut tok = [0u8; 4];
+        self.res.am_mtp.read_bytes(0, &mut tok);
+        Ok(u32::from_le_bytes(tok) as usize)
     }
 
     /// Chunk size to use next with `remaining` tokens left: the matrix-core
@@ -1029,11 +1085,59 @@ impl GpuModel {
             return Ok((out, stats));
         }
         // Draft for the token after `next`, from the last prompt position.
+        let depth: usize = std::env::var("LEV_SPEC_DEPTH").ok().and_then(|v| v.parse().ok()).unwrap_or(2);
         let last = self.pos - 1;
         let mut draft = self.mtp(0, next, last, true)?.unwrap();
         stats.mtp_us += self.last_mtp_us;
+        let mut d2 = if depth >= 2 { Some(self.chain(draft, last + 1)?) } else { None };
         while out.len() < n_new {
             let base = self.pos;
+            if let Some(second) = d2 {
+                // Three columns: next, draft, second draft. Accepting k tokens keeps the state
+                // after column k - 1 (`sel`), and column c's hidden state feeds the next draft.
+                self.run_main(&[next, draft, second])?;
+                let (a0, a1, a2) = (self.main_choice(0).0, self.main_choice(1).0, self.main_choice(2).0);
+                stats.steps += 1;
+                stats.main_us += self.last_gpu_us;
+                if std::env::var_os("LEV_TRACE_SPEC").is_some() {
+                    eprintln!("step base={base} next={next} draft={draft},{second} a={a0},{a1},{a2}");
+                }
+                let kept;
+                if a0 != draft {
+                    kept = 1;
+                    out.push(a0);
+                    next = a0;
+                } else if a1 != second {
+                    kept = 2;
+                    stats.accepted += 1;
+                    out.push(draft);
+                    out.push(a1);
+                    next = a1;
+                } else {
+                    kept = 3;
+                    stats.accepted += 2;
+                    out.push(draft);
+                    out.push(second);
+                    out.push(a2);
+                    next = a2;
+                }
+                self.pos += kept;
+                self.sel = (kept - 1) as u32;
+                // KV entries of the accepted drafts, then the draft chain from the last kept column.
+                if kept >= 2 {
+                    self.mtp(0, draft, base, false)?;
+                    stats.mtp_us += self.last_mtp_us;
+                }
+                if kept >= 3 {
+                    self.mtp(1, second, base + 1, false)?;
+                    stats.mtp_us += self.last_mtp_us;
+                }
+                let at = base + kept - 1;
+                draft = self.mtp(kept - 1, next, at, true)?.unwrap();
+                stats.mtp_us += self.last_mtp_us;
+                d2 = Some(self.chain(draft, at + 1)?);
+                continue;
+            }
             self.run_main(&[next, draft])?;
             let (a0, a1) = (self.main_choice(0).0, self.main_choice(1).0);
             stats.steps += 1;
@@ -1061,8 +1165,7 @@ impl GpuModel {
                 draft = self.mtp(0, a0, base, true)?.unwrap();
                 stats.mtp_us += self.last_mtp_us;
             }
-        }
-        out.truncate(n_new);
+        }        out.truncate(n_new);
         stats.tokens = out.len();
         stats.seconds = t0.elapsed().as_secs_f64();
         Ok((out, stats))
