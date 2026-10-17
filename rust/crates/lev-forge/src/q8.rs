@@ -325,7 +325,7 @@ void main() {{
     Ok(o)
 }
 
-pub const Q6K_CODEGEN_VERSION: &str = "q6kq8gen-glsl-v1";
+pub const Q6K_CODEGEN_VERSION: &str = "q6kq8gen-glsl-v2";
 
 /// Q6_K weights (210-byte blocks, 2-byte aligned) times int8 activations. A
 /// block is 16 units of 4 bytes per quant plane; the four planes of a unit
@@ -354,20 +354,15 @@ layout(push_constant) uniform Params {{ uint rows; uint blocks_per_row; }} p;
         s.t, s.r, s.sg, nb, s.t, s.r
     );
     o += r#"
-uint word(uint bo) {
-    uint i = bo >> 2u;
-    uint sh = (bo & 3u) * 8u;
-    uint lo = w[i];
-    if (sh == 0u) { return lo; }
-    return (lo >> sh) | (w[i + 1u] << (32u - sh));
+// Word at word index i of a stream that starts `sh` bits (0 or 16) into word 0.
+uint ldw(uint i, uint sh) {
+    if (sh == 0u) { return w[i]; }
+    return (w[i] >> 16u) | (w[i + 1u] << 16u);
 }
 
-uint byt(uint bo) {
-    return (w[bo >> 2u] >> ((bo & 3u) * 8u)) & 255u;
-}
-
-float sbyte(uint bo) {
-    return float(int(byt(bo) << 24u) >> 24);
+// Signed byte k (0..3) of a word.
+float sb8(uint v, uint k) {
+    return float(int(v << (24u - 8u * k)) >> 24);
 }
 "#;
     if s.sg == 0 {
@@ -381,55 +376,70 @@ void main() {{
     uint row = gl_WorkGroupID.x * {r}u + ly;
     uint rowc = min(row, p.rows - 1u);
     uint bpr = p.blocks_per_row;
-    uint units = bpr * 16u;
-    uint rowbyte = rowc * bpr * 210u;
+    uint pairs = bpr >> 1u;
+    uint rowword = rowc * pairs * 105u;
 ",
         r = s.r
     );
     for c in 0..nb {
         o += &format!("    float sum{c} = 0.0;\n");
     }
-    o += &format!("    for (uint n = t; n < units; n += {}u) {{\n", s.t);
-    o += "        uint b = n >> 4u;
+    // Two blocks (420 bytes, word aligned) per step: the first is word aligned, the second
+    // starts 2 bytes into a word, so both alignments are static in the generated code.
+    o += &format!("    for (uint n = t; n < pairs * 16u; n += {}u) {{\n", s.t);
+    o += "        uint pidx = n >> 4u;
         uint nn = (n >> 3u) & 1u;
         uint g = n & 7u;
-        uint base = rowbyte + b * 210u;
-        uint qa = word(base + 64u * nn + 4u * g);
-        uint qb = word(base + 64u * nn + 4u * g + 32u);
-        uint qh = word(base + 128u + 32u * nn + 4u * g);
-        uint sb = base + 192u + 8u * nn + (g >> 2u);
-        float s0 = sbyte(sb);
-        float s1 = sbyte(sb + 2u);
-        float s2 = sbyte(sb + 4u);
-        float s3 = sbyte(sb + 6u);
-        float d = unpackHalf2x16(byt(base + 208u) | (byt(base + 209u) << 8u)).x;
-        uint mk = 0x0F0F0F0Fu;
-        uint hk = 0x03030303u;
-        int q0 = int((qa & mk) | (((qh) & hk) << 4u));
-        int q1 = int((qb & mk) | (((qh >> 2u) & hk) << 4u));
-        int q2 = int(((qa >> 4u) & mk) | (((qh >> 4u) & hk) << 4u));
-        int q3 = int(((qb >> 4u) & mk) | (((qh >> 6u) & hk) << 4u));
-        uint xw = (b * 256u + 128u * nn + 4u * g) >> 2u;
-        uint gi = b * 8u + 4u * nn;
+        uint gg = g >> 2u;
+        uint wb = rowword + pidx * 105u;
 ";
-    for col in 0..nb {
+    for blk in 0..2u32 {
+        let (bw, sh) = if blk == 0 { ("wb".to_string(), 0) } else { ("(wb + 52u)".to_string(), 16) };
+        let d = if blk == 0 { "unpackHalf2x16(w[wb + 52u]).x" } else { "unpackHalf2x16(w[wb + 104u] >> 16u).x" };
         o += &format!(
             "        {{
-            uint xo = {col}u * bpr * 64u + xw;
-            uint go = {col}u * bpr * 8u + gi;
-            int x0 = xq[xo];
-            int x1 = xq[xo + 8u];
-            int x2 = xq[xo + 16u];
-            int x3 = xq[xo + 24u];
-            int ones = 0x01010101;
-            float r0 = s0 * xs[go].x * float(dotPacked4x8EXT(q0, x0) - 32 * dotPacked4x8EXT(ones, x0));
-            float r1 = s1 * xs[go + 1u].x * float(dotPacked4x8EXT(q1, x1) - 32 * dotPacked4x8EXT(ones, x1));
-            float r2 = s2 * xs[go + 2u].x * float(dotPacked4x8EXT(q2, x2) - 32 * dotPacked4x8EXT(ones, x2));
-            float r3 = s3 * xs[go + 3u].x * float(dotPacked4x8EXT(q3, x3) - 32 * dotPacked4x8EXT(ones, x3));
-            sum{col} += d * (r0 + r1 + r2 + r3);
-        }}
+            uint bw = {bw};
+            uint qa = ldw(bw + 16u * nn + g, {sh}u);
+            uint qb = ldw(bw + 16u * nn + g + 8u, {sh}u);
+            uint qh = ldw(bw + 32u + 8u * nn + g, {sh}u);
+            uint sl = ldw(bw + 48u + 2u * nn, {sh}u);
+            uint sh2 = ldw(bw + 49u + 2u * nn, {sh}u);
+            float s0 = sb8(sl, gg);
+            float s1 = sb8(sl, gg + 2u);
+            float s2 = sb8(sh2, gg);
+            float s3 = sb8(sh2, gg + 2u);
+            float d = {d};
+            uint mk = 0x0F0F0F0Fu;
+            uint hk = 0x03030303u;
+            int q0 = int((qa & mk) | (((qh) & hk) << 4u));
+            int q1 = int((qb & mk) | (((qh >> 2u) & hk) << 4u));
+            int q2 = int(((qa >> 4u) & mk) | (((qh >> 4u) & hk) << 4u));
+            int q3 = int(((qb >> 4u) & mk) | (((qh >> 6u) & hk) << 4u));
+            uint b = pidx * 2u + {blk}u;
+            uint xw = (b * 256u + 128u * nn + 4u * g) >> 2u;
+            uint gi = b * 8u + 4u * nn;
 "
         );
+        for col in 0..nb {
+            o += &format!(
+                "            {{
+                uint xo = {col}u * bpr * 64u + xw;
+                uint go = {col}u * bpr * 8u + gi;
+                int x0 = xq[xo];
+                int x1 = xq[xo + 8u];
+                int x2 = xq[xo + 16u];
+                int x3 = xq[xo + 24u];
+                int ones = 0x01010101;
+                float r0 = s0 * xs[go].x * float(dotPacked4x8EXT(q0, x0) - 32 * dotPacked4x8EXT(ones, x0));
+                float r1 = s1 * xs[go + 1u].x * float(dotPacked4x8EXT(q1, x1) - 32 * dotPacked4x8EXT(ones, x1));
+                float r2 = s2 * xs[go + 2u].x * float(dotPacked4x8EXT(q2, x2) - 32 * dotPacked4x8EXT(ones, x2));
+                float r3 = s3 * xs[go + 3u].x * float(dotPacked4x8EXT(q3, x3) - 32 * dotPacked4x8EXT(ones, x3));
+                sum{col} += d * (r0 + r1 + r2 + r3);
+            }}
+"
+            );
+        }
+        o += "        }\n";
     }
     o += "    }\n";
     o += &reduction(s);

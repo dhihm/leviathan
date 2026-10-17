@@ -61,9 +61,8 @@ fn q6_schedule(nb: u32) -> Q8Schedule {
         return Q8Schedule { t: 32, r: 4, sg: 1, nb };
     }
     match nb {
-        8 => Q8Schedule { t: 4, r: 16, sg: 0, nb },
-        2 => Q8Schedule { t: 64, r: 1, sg: 1, nb },
-        _ => Q8Schedule { t: 64, r: 4, sg: 1, nb },
+        8 => Q8Schedule { t: 64, r: 1, sg: 1, nb },
+        _ => Q8Schedule { t: 32, r: 1, sg: 0, nb },
     }
 }
 
