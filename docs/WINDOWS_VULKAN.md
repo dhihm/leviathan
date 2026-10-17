@@ -27,17 +27,17 @@ All numbers below were measured on the ROG Ally X above (a power-limited handhel
 
 | | this engine | llama.cpp | ratio |
 | :--- | :--- | :--- | :--- |
-| prefill (tok/s) | 296 - 301 | 312.5 | 0.95 |
-| plain decode (tok/s) | 18.3 - 18.4 | 18.4 | 0.99 - 1.0 |
-| MTP speculative decode (tok/s) | 27.2 (acceptance 0.73) | not applicable | 1.48 vs. llama.cpp plain |
+| prefill (tok/s) | 292 - 294 | 312 | 0.94 |
+| plain decode (tok/s) | 18.7 | 18.4 | 1.02 |
+| MTP speculative decode (tok/s) | 30.4 (acceptance 0.88) | not applicable | 1.65 vs. llama.cpp plain |
 
 In a short cold-GPU run (boost power state, before the sustained state is reached) prefill is 305 tok/s here against 406 - 415 tok/s for llama.cpp (0.75). Under sustained load llama.cpp drops to about 312 tok/s; the cause of the larger drop was not investigated.
 
 Caveats:
 
 - One synthetic prompt and three rounds. Numbers describe this one ROG Ally X in the sustained 35 W state only.
-- The speculative-decode rate depends on draft acceptance, which depends on the prompt (0.73 on this prompt, 0.86 on another that reached 29.7 tok/s). Use natural-language prompts when comparing.
-- Decode is memory-bandwidth bound (about 92 - 95 GB/s effective here); plain decode is at parity, not ahead.
+- The speculative-decode rate depends on draft acceptance, which depends on the prompt (0.88 on this prompt in the latest run, 0.73 in an earlier run of the same prompt before a numerically different kernel change). Use natural-language prompts when comparing.
+- Decode is memory-bandwidth bound (about 98 GB/s effective here, against a measured read ceiling of about 103 GB/s); plain decode is 2% ahead of llama.cpp, within what one prompt and one machine can show.
 - Int8 activation quantization amplifies floating-point accumulation-order differences on some inputs: two correct matvec schedules produced residual streams that differ by more than 10x at layer 10 on a repetitive synthetic prompt. Spec-versus-plain divergences on such inputs come from this and are not specific to the 2-column pass (the kernels match their sequential references to 1e-7 or exactly).
 
 ## Reproduce

@@ -16,9 +16,9 @@ Ornith-1.5-9B (Q4_K_M) runs on the Radeon 890M of an ASUS ROG Ally X through Vul
 
 | | Leviathan | llama.cpp | ratio |
 | :--- | :--- | :--- | :--- |
-| prefill (tok/s) | 296 - 301 | 312.5 | 0.95 |
-| plain decode (tok/s) | 18.3 - 18.4 | 18.4 | 0.99 - 1.0 |
-| MTP speculative decode (tok/s) | 27.2 | not applicable | 1.48 vs. llama.cpp plain |
+| prefill (tok/s) | 292 - 294 | 312 | 0.94 |
+| plain decode (tok/s) | 18.7 | 18.4 | 1.02 |
+| MTP speculative decode (tok/s) | 30.4 (draft acceptance 0.88) | not applicable | 1.65 vs. llama.cpp plain |
 
 One synthetic prompt, three rounds, one ROG Ally X; speculative decode depends on draft acceptance. Details, caveats and reproduction commands: [Windows / Vulkan](docs/WINDOWS_VULKAN.md).
 
