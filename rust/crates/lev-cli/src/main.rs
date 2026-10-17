@@ -717,12 +717,13 @@ fn vk_gemm(path: &str, max_rows: usize, name: &str) -> Result<bool, Box<dyn std:
     let (cspv, _) = compile_glsl_cached(&coopmat::emit_act_f16(), &cache_dir)?;
     let (gspv, hit) = compile_glsl_cached(&{
         let wave: usize = std::env::var("LEV_WAVE").ok().and_then(|v| v.parse().ok()).unwrap_or(32);
-        let src = if is_q6 && std::env::var_os("LEV_GEMM_PLAIN").is_none() { coopmat::emit_q6k_gemm_blocked_tokens(ntok) } else if is_q6 { coopmat::emit_q6k_gemm(wave) } else if std::env::var_os("LEV_GEMM_PLAIN").is_none() { coopmat::emit_q4k_gemm_blocked_tokens(ntok) } else { coopmat::emit_q4k_gemm(wave) };
-        if std::env::var_os("LEV_GEMM_NOLOAD").is_some() {
-            // Experiment only: replace the weight loads by constants to bound the matrix-core path.
-            src.replace("vec2 dm = unpackHalf2x16(w[bi]);", "vec2 dm = vec2(0.01, 0.0);").replace("scale_min(bi, j, sc, m);", "sc = 3u; m = 1u;").replace("uint word = w[bi + (byteoff >> 2u)] >> ((j & 1u) * 4u);", "uint word = 0x05060708u + step;")
-        } else {
-            src
+        // LEV_GEMM_PLAIN selects the older per-32-element kernels for comparison.
+        let plain = std::env::var_os("LEV_GEMM_PLAIN").is_some();
+        match (is_q6, plain) {
+            (true, false) => coopmat::emit_q6k_gemm_blocked_tokens(ntok),
+            (true, true) => coopmat::emit_q6k_gemm(wave),
+            (false, false) => coopmat::emit_q4k_gemm_blocked_tokens(ntok),
+            (false, true) => coopmat::emit_q4k_gemm(wave),
         }
     }, &cache_dir)?;
     let wave: u32 = std::env::var("LEV_WAVE").ok().and_then(|v| v.parse().ok()).unwrap_or(32);
