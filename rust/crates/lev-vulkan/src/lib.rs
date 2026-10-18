@@ -77,7 +77,7 @@ pub struct VulkanContext {
     _entry: Entry,
     instance: Instance,
     phys: vk::PhysicalDevice,
-    device: Device,
+    device: std::sync::Arc<Device>,
     queue: vk::Queue,
     cmd_pool: vk::CommandPool,
     mem_props: vk::PhysicalDeviceMemoryProperties,
@@ -264,7 +264,7 @@ impl VulkanContext {
             _entry: entry,
             instance: instance.clone(),
             phys,
-            device,
+            device: std::sync::Arc::new(device),
             queue,
             cmd_pool,
             mem_props,
@@ -389,7 +389,7 @@ fn create_instance() -> Result<(Entry, Instance), VkError> {
 
 /// Host-visible, host-coherent storage buffer, mapped for its whole lifetime.
 struct GpuBuffer {
-    device: Device,
+    device: std::sync::Arc<Device>,
     buffer: vk::Buffer,
     memory: vk::DeviceMemory,
     ptr: *mut c_void,

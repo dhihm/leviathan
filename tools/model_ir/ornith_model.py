@@ -15,7 +15,7 @@ import torch.nn as nn
 
 from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5DecoderLayer
 
-from ornith_layers import AttnDecoderLayer, GdnDecoderLayer, rmsnorm
+from ornith_layers import AttnDecoderLayer, AttnDecoderLayerRagged, GdnDecoderLayer, GdnDecoderLayerRagged, rmsnorm
 
 
 class _Trunk(nn.Module):
@@ -63,6 +63,49 @@ class OrnithModel(nn.Module):
                 outs += [c, r]
             else:
                 x, k, v = w(x, cos, sin, states[i], states[i + 1])
+                outs += [k, v]
+            i += 2
+        x = rmsnorm(x, self.model.norm.weight, self.model.norm.eps)
+        return (self.lm_head(x), *outs)
+
+
+class OrnithModelRagged(OrnithModel):
+    """The same model over a flat batch of tokens from several sequences.
+
+    Inputs:  token_ids [T], cos [T, rd], sin [T, rd], slot [T], pos [T], then per layer in order:
+             conv_pool [S, K-1, C] and rec_pool [S, H, dk, dv] for linear-attention layers,
+             k_pool and v_pool [S, L, Hkv, d] for full-attention layers.
+    Outputs: logits [T, V], then the updated pools in the same order.
+    """
+
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self.ragged = [
+            GdnDecoderLayerRagged(l) if l.block_type == "linear_attention" else AttnDecoderLayerRagged(l) for l in self.model.layers
+        ]
+
+    def pool_layout(self, slots, max_len):
+        """Per layer: ('linear', conv_pool_shape, rec_pool_shape) or ('full', kv_pool_shape)."""
+        out = []
+        for l in self.model.layers:
+            if l.block_type == "linear_attention":
+                m = l.linear_attn
+                out.append(("linear", (slots, m.conv_kernel_size - 1, m.conv_dim), (slots, m.num_v_heads, m.head_k_dim, m.head_v_dim)))
+            else:
+                a = l.self_attn
+                out.append(("full", (slots, max_len, self.cfg.num_key_value_heads, a.head_dim)))
+        return out
+
+    def forward(self, token_ids, cos, sin, slot, pos, *pools):
+        x = self.model.embed_tokens(token_ids)
+        outs = []
+        i = 0
+        for w, l in zip(self.ragged, self.model.layers):
+            if l.block_type == "linear_attention":
+                x, c, r = w(x, pools[i], pools[i + 1], slot)
+                outs += [c, r]
+            else:
+                x, k, v = w(x, cos, sin, pools[i], pools[i + 1], slot, pos)
                 outs += [k, v]
             i += 2
         x = rmsnorm(x, self.model.norm.weight, self.model.norm.eps)

@@ -155,3 +155,97 @@ def _rope_impl(x, cos, sin):
 @torch.library.impl(_LIB, "rope", "Meta")
 def _rope_meta(x, cos, sin):
     return x.new_empty(x.shape)
+
+# ---- ragged multi-sequence operators ----
+#
+# A batch is a flat list of T tokens. Token t belongs to the sequence in state slot slot[t] and sits
+# at position pos[t]. The tokens of one sequence appear in increasing position order. Per-sequence
+# state lives in pools indexed by slot; the operators take a pool and return the updated pool
+# (functional here; the runtime updates the pool in place).
+
+_LIB.define("ssm_conv_ragged(Tensor x, Tensor pool, Tensor slot, Tensor w) -> (Tensor, Tensor)")
+_LIB.define("gated_delta_ragged(Tensor q, Tensor k, Tensor v, Tensor g, Tensor beta, Tensor pool, Tensor slot) -> (Tensor, Tensor)")
+_LIB.define("slab_kv_write(Tensor k, Tensor v, Tensor k_pool, Tensor v_pool, Tensor slot, Tensor pos) -> (Tensor, Tensor)")
+_LIB.define("slab_attention(Tensor q, Tensor k_pool, Tensor v_pool, Tensor slot, Tensor pos, float scale) -> Tensor")
+
+
+@torch.library.impl(_LIB, "ssm_conv_ragged", "CompositeExplicitAutograd")
+def _conv_ragged_impl(x, pool, slot, w):
+    """x [T, C], pool [S, K-1, C], slot [T], w [C, K]; token by token, per its slot's state."""
+    pool = pool.clone()
+    k = w.shape[1]
+    ys = []
+    for t in range(x.shape[0]):
+        s = int(slot[t])
+        xx = torch.cat([pool[s], x[t : t + 1]], dim=0)  # [K, C]
+        acc = (xx * w.t()).sum(dim=0)
+        ys.append(F.silu(acc))
+        pool[s] = xx[1:]
+    return torch.stack(ys), pool
+
+
+@torch.library.impl(_LIB, "ssm_conv_ragged", "Meta")
+def _conv_ragged_meta(x, pool, slot, w):
+    return x.new_empty(x.shape), pool.new_empty(pool.shape)
+
+
+@torch.library.impl(_LIB, "gated_delta_ragged", "CompositeExplicitAutograd")
+def _gdr_ragged_impl(q, k, v, g, beta, pool, slot):
+    """q, k [T, H, dk] (expanded to the value heads), v [T, H, dv], g and beta [T, H],
+    pool [S, H, dk, dv]; same per-token recurrence as gated_delta_rule on the slot's state."""
+    dt = q.dtype
+    q, k, v, g, beta = (a.float() for a in (q, k, v, g, beta))
+    pool = pool.clone().float()
+    q = _l2norm(q) * (q.shape[-1] ** -0.5)
+    k = _l2norm(k)
+    outs = []
+    for t in range(q.shape[0]):
+        sl = int(slot[t])
+        s = pool[sl] * g[t].exp()[:, None, None]
+        kv = (s * k[t][:, :, None]).sum(dim=1)
+        delta = (v[t] - kv) * beta[t][:, None]
+        s = s + k[t][:, :, None] * delta[:, None, :]
+        pool[sl] = s
+        outs.append((s * q[t][:, :, None]).sum(dim=1))
+    return torch.stack(outs).to(dt), pool
+
+
+@torch.library.impl(_LIB, "gated_delta_ragged", "Meta")
+def _gdr_ragged_meta(q, k, v, g, beta, pool, slot):
+    return v.new_empty(v.shape), pool.new_empty(pool.shape)
+
+
+@torch.library.impl(_LIB, "slab_kv_write", "CompositeExplicitAutograd")
+def _kv_write_impl(k, v, k_pool, v_pool, slot, pos):
+    """k, v [T, Hkv, d]; pools [S, L, Hkv, d]: pool[slot[t], pos[t]] = k[t]."""
+    k_pool, v_pool = k_pool.clone(), v_pool.clone()
+    for t in range(k.shape[0]):
+        k_pool[int(slot[t]), int(pos[t])] = k[t]
+        v_pool[int(slot[t]), int(pos[t])] = v[t]
+    return k_pool, v_pool
+
+
+@torch.library.impl(_LIB, "slab_kv_write", "Meta")
+def _kv_write_meta(k, v, k_pool, v_pool, slot, pos):
+    return k_pool.new_empty(k_pool.shape), v_pool.new_empty(v_pool.shape)
+
+
+@torch.library.impl(_LIB, "slab_attention", "CompositeExplicitAutograd")
+def _slab_attn_impl(q, k_pool, v_pool, slot, pos, scale):
+    """q [T, Hq, d]; attends positions 0..pos[t] (inclusive) of the token's own slot."""
+    t_n, hq, d = q.shape
+    hkv = k_pool.shape[2]
+    rep = hq // hkv
+    out = torch.zeros_like(q)
+    for t in range(t_n):
+        n = int(pos[t]) + 1
+        k = k_pool[int(slot[t]), :n].repeat_interleave(rep, dim=1)  # [n, Hq, d]
+        v = v_pool[int(slot[t]), :n].repeat_interleave(rep, dim=1)
+        sc = torch.einsum("hd,nhd->hn", q[t], k) * scale
+        out[t] = torch.einsum("hn,nhd->hd", sc.softmax(dim=-1), v)
+    return out
+
+
+@torch.library.impl(_LIB, "slab_attention", "Meta")
+def _slab_attn_meta(q, k_pool, v_pool, slot, pos, scale):
+    return q.new_empty(q.shape)

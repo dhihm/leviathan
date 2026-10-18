@@ -8,20 +8,29 @@ use lev_ir::interp::{self, V};
 use lev_ir::ir::Graph;
 use lev_ir::pack::{self, Packed};
 
-fn fixture(name: &str) -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/tiny").join(name)
+fn fixture(dir: &str, name: &str) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(dir).join(name)
 }
 
 #[test]
 fn tiny_model_matches_pytorch() {
-    let g = Graph::parse(&std::fs::read_to_string(fixture("ir.json")).unwrap()).unwrap();
+    check("tiny");
+}
+
+#[test]
+fn tiny_ragged_batch_matches_pytorch() {
+    check("tiny_ragged");
+}
+
+fn check(dir: &str) {
+    let g = Graph::parse(&std::fs::read_to_string(fixture(dir, "ir.json")).unwrap()).unwrap();
     g.validate().unwrap();
     for (op, _) in g.op_counts() {
         assert!(interp::is_supported(&op), "unsupported operator {op}");
     }
-    let params = pack::read(&std::fs::read(fixture("weights.pack")).unwrap()).unwrap();
-    let inputs = pack::read(&std::fs::read(fixture("inputs.pack")).unwrap()).unwrap();
-    let expected = pack::read(&std::fs::read(fixture("expected.pack")).unwrap()).unwrap();
+    let params = pack::read(&std::fs::read(fixture(dir, "weights.pack")).unwrap()).unwrap();
+    let inputs = pack::read(&std::fs::read(fixture(dir, "inputs.pack")).unwrap()).unwrap();
+    let expected = pack::read(&std::fs::read(fixture(dir, "expected.pack")).unwrap()).unwrap();
     let outs = interp::run(&g, &params, &inputs).unwrap();
     assert_eq!(outs.len(), expected.len());
     for (i, o) in outs.iter().enumerate() {

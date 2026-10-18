@@ -56,7 +56,7 @@ impl Buf {
 }
 
 pub struct Kernel {
-    device: Device,
+    device: std::sync::Arc<Device>,
     module: vk::ShaderModule,
     set_layout: vk::DescriptorSetLayout,
     pipe_layout: vk::PipelineLayout,
@@ -92,7 +92,7 @@ pub struct Step<'a> {
 }
 
 pub struct Program {
-    device: Device,
+    device: std::sync::Arc<Device>,
     queue: vk::Queue,
     pool: vk::DescriptorPool,
     cmd_pool: vk::CommandPool,
@@ -213,6 +213,17 @@ impl VulkanContext {
         let mut out = vec![0u8; len as usize];
         unsafe { std::ptr::copy_nonoverlapping(staging.ptr as *const u8, out.as_mut_ptr(), len as usize) };
         Ok(out)
+    }
+
+    /// Copies `len` bytes between two buffers on the device.
+    pub fn copy_buffer(&self, src: &Buf, src_offset: u64, dst: &Buf, dst_offset: u64, len: u64) -> Result<(), VkError> {
+        if src_offset + len > src.size() || dst_offset + len > dst.size() {
+            return err("copy outside the buffers");
+        }
+        let (sb, db) = (src.0.buffer, dst.0.buffer);
+        self.submit_once(|d, cmd| unsafe {
+            d.cmd_copy_buffer(cmd, sb, db, &[vk::BufferCopy::default().src_offset(src_offset).dst_offset(dst_offset).size(len)]);
+        })
     }
 
     /// Fills a device-local buffer with zeros.

@@ -111,3 +111,86 @@ class AttnDecoderLayer(nn.Module):
         x = x + h
         x = x + mlp(l, rmsnorm(x, l.post_attention_layernorm.weight, l.post_attention_layernorm.eps))
         return x, k_new, v_new
+
+
+class GatedDeltaMixerRagged(nn.Module):
+    """GatedDeltaMixer over a flat batch: per-token state slot, state pools in and out."""
+
+    def __init__(self, m):
+        super().__init__()
+        self.m = m
+
+    def forward(self, x, conv_pool, rec_pool, slot):
+        m = self.m
+        t = x.shape[0]
+        mixed = m.in_proj_qkv(x)
+        z = m.in_proj_z(x)
+        b = m.in_proj_b(x)
+        a = m.in_proj_a(x)
+        mixed, conv_out = torch.ops.lev.ssm_conv_ragged(mixed, conv_pool, slot, m.conv1d.weight.squeeze(1))
+        q, k, v = torch.split(mixed, [m.key_dim, m.key_dim, m.value_dim], dim=-1)
+        q = q.reshape(t, -1, m.head_k_dim)
+        k = k.reshape(t, -1, m.head_k_dim)
+        v = v.reshape(t, -1, m.head_v_dim)
+        beta = b.sigmoid()
+        g = -m.A_log.float().exp() * F.softplus(a.float() + m.dt_bias)
+        rep = m.num_v_heads // m.num_k_heads
+        if rep > 1:
+            q = q.repeat_interleave(rep, dim=1)
+            k = k.repeat_interleave(rep, dim=1)
+        core, rec_out = torch.ops.lev.gated_delta_ragged(q, k, v, g, beta, rec_pool, slot)
+        core = torch.ops.lev.rmsnorm_gated(core.reshape(-1, m.head_v_dim), z.reshape(-1, m.head_v_dim), m.norm.weight, m.norm.variance_epsilon)
+        return m.out_proj(core.reshape(t, -1)), conv_out, rec_out
+
+
+class FullAttentionMixerRagged(nn.Module):
+    """FullAttentionMixer over a flat batch with a per-slot KV slab."""
+
+    def __init__(self, m):
+        super().__init__()
+        self.m = m
+
+    def forward(self, x, cos, sin, k_pool, v_pool, slot, pos):
+        m = self.m
+        t = x.shape[0]
+        hd = m.head_dim
+        qg = m.q_proj(x).view(t, -1, hd * 2)
+        q, gate = torch.chunk(qg, 2, dim=-1)
+        gate = gate.reshape(t, -1)
+        q = rmsnorm(q, m.q_norm.weight, m.q_norm.eps)
+        k = rmsnorm(m.k_proj(x).view(t, -1, hd), m.k_norm.weight, m.k_norm.eps)
+        v = m.v_proj(x).view(t, -1, hd)
+        q = torch.ops.lev.rope(q, cos, sin)
+        k = torch.ops.lev.rope(k, cos, sin)
+        k_pool, v_pool = torch.ops.lev.slab_kv_write(k, v, k_pool, v_pool, slot, pos)
+        out = torch.ops.lev.slab_attention(q, k_pool, v_pool, slot, pos, m.scaling)
+        out = out.reshape(t, -1) * torch.sigmoid(gate)
+        return m.o_proj(out), k_pool, v_pool
+
+
+class GdnDecoderLayerRagged(nn.Module):
+    def __init__(self, layer):
+        super().__init__()
+        self.layer = layer
+        self.mixer = GatedDeltaMixerRagged(layer.linear_attn)
+
+    def forward(self, x, conv_pool, rec_pool, slot):
+        l = self.layer
+        h, conv_out, rec_out = self.mixer(rmsnorm(x, l.input_layernorm.weight, l.input_layernorm.eps), conv_pool, rec_pool, slot)
+        x = x + h
+        x = x + mlp(l, rmsnorm(x, l.post_attention_layernorm.weight, l.post_attention_layernorm.eps))
+        return x, conv_out, rec_out
+
+
+class AttnDecoderLayerRagged(nn.Module):
+    def __init__(self, layer):
+        super().__init__()
+        self.layer = layer
+        self.mixer = FullAttentionMixerRagged(layer.self_attn)
+
+    def forward(self, x, cos, sin, k_pool, v_pool, slot, pos):
+        l = self.layer
+        h, k_pool, v_pool = self.mixer(rmsnorm(x, l.input_layernorm.weight, l.input_layernorm.eps), cos, sin, k_pool, v_pool, slot, pos)
+        x = x + h
+        x = x + mlp(l, rmsnorm(x, l.post_attention_layernorm.weight, l.post_attention_layernorm.eps))
+        return x, k_pool, v_pool

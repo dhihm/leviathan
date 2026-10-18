@@ -207,6 +207,14 @@ fn main() -> ExitCode {
             }
             Err(_) => ExitCode::from(2),
         },
+        Some("gpu-batch") if args.len() == 5 => match gpu_batch(&args[2], &args[3], &args[4]) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Some("ir-run") if args.len() == 3 => match ir_run(&args[2]) {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::FAILURE,
@@ -571,6 +579,94 @@ fn gpu_pair(path: &str, ids: &str) -> Result<bool, Box<dyn std::error::Error>> {
     Ok(pass)
 }
 
+/// Decodes several prompts together in one ragged batch (one slot each) and compares every
+/// sequence with the same prompt decoded alone: `prompts` are token id lists separated by `;`.
+fn gpu_batch(path: &str, prompts: &str, n: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    use lev_model::gpu::{BatchItem, GpuModel};
+    let n: usize = n.parse()?;
+    let prompts: Vec<Vec<usize>> = prompts.split(';').map(parse_ids).collect::<Result<_, _>>()?;
+    let b = prompts.len();
+    std::env::set_var("LEV_BATCH_SLOTS", b.to_string());
+    let ctx: usize = std::env::var("LEV_CTX").ok().and_then(|v| v.parse().ok()).unwrap_or(1024);
+    let mut gpu = GpuModel::open(path, ctx, false)?;
+
+    // Each prompt alone (with the logit margin of every token it chose).
+    let mut solo: Vec<Vec<usize>> = Vec::new();
+    let mut margins: Vec<Vec<f32>> = Vec::new();
+    let mut solo_secs = 0.0;
+    let mut seen: Vec<(Vec<usize>, usize)> = Vec::new(); // distinct prompt -> index of its solo run
+    for p in &prompts {
+        if let Some((_, at)) = seen.iter().find(|(q, _)| q == p) {
+            let (o, m) = (solo[*at].clone(), margins[*at].clone());
+            solo.push(o);
+            margins.push(m);
+            continue;
+        }
+        gpu.reset();
+        let (out, st) = gpu.generate(p, n, false)?;
+        solo_secs += st.seconds - st.prefill_seconds;
+        seen.push((p.clone(), solo.len()));
+        solo.push(out);
+        margins.push(st.margins);
+    }
+    let solo_runs = seen.len();
+
+    // Prefill each into the main engine, import into its slot.
+    let mut pos: Vec<usize> = Vec::new();
+    // LEV_BATCH_REVERSE=1 gives the first prompt the last slot (to tell column and slot effects apart).
+    let slot_of = |i: usize| if std::env::var_os("LEV_BATCH_REVERSE").is_some() { b - 1 - i } else { i };
+    for (i, p) in prompts.iter().enumerate() {
+        gpu.prefill_prompt(p)?;
+        gpu.batch_import(slot_of(i))?;
+        pos.push(p.len());
+    }
+
+    // Teacher forcing: every step feeds the solo run's token, so a near tie cannot compound. The
+    // batch output at step k must be the solo token k + 1 unless that choice was a near tie.
+    let t0 = std::time::Instant::now();
+    let mut gpu_us = 0.0;
+    let (mut total, mut equal, mut worst_tie) = (0usize, 0usize, 0f32);
+    let mut unexplained = 0usize;
+    for k in 0..n - 1 {
+        let items: Vec<BatchItem> = (0..b).map(|i| BatchItem { slot: slot_of(i), token: solo[i][k], pos: pos[i] + k }).collect();
+        let res = gpu.batch_step(&items)?;
+        gpu_us += gpu.last_gpu_us;
+        if k == 0 && std::env::var_os("LEV_BATCH_DEBUG").is_some() {
+            // Identical sequences must give identical columns: where does column 16 differ from column 0?
+            for (name, v) in gpu.debug_buffers()? {
+                let stride = v.len() / lev_model::gpu::DEBUG_COLS;
+                if stride == 0 {
+                    continue;
+                }
+                let col = |c: usize| &v[c * stride..(c + 1) * stride];
+                let d = |a: usize, b: usize| col(a).iter().zip(col(b)).fold(0f32, |m, (x, y)| m.max((x - y).abs()));
+                println!("debug {name:<9} column 0 vs 1: {:.3e}   vs 15: {:.3e}   vs 16: {:.3e}   vs 17: {:.3e}   (16 vs 17: {:.3e}, 16 vs 18: {:.3e})", d(0, 1), d(0, 15), d(0, 16), d(0, 17), d(16, 17), d(16, 18));
+            }
+        }
+        for i in 0..b {
+            total += 1;
+            if res[i].0 == solo[i][k + 1] {
+                equal += 1;
+            } else {
+                // The solo margin of token k + 1 is how far the best choice led the second best.
+                let m = margins[i][k + 1];
+                worst_tie = worst_tie.max(m);
+                if m > 0.1 {
+                    unexplained += 1;
+                }
+                println!("sequence {i}, step {k}: batch {} solo {} (solo margin {m:.3}, batch margin {:.3})", res[i].0, solo[i][k + 1], res[i].1);
+            }
+        }
+    }
+    let secs = t0.elapsed().as_secs_f64();
+    println!("{equal} of {total} next tokens equal the solo run; the {} differing ones are near ties (largest solo margin {worst_tie:.3})", total - equal);
+    let steps = (n - 1) as f64;
+    println!("batch of {b}: {:.1} aggregate tok/s ({:.1} tok/s per sequence), {:.1} ms per step ({:.1} ms GPU)", b as f64 * steps / secs, steps / secs, secs / steps * 1e3, gpu_us / steps / 1e3);
+    println!("solo: {:.1} tok/s per sequence", steps * solo_runs as f64 / solo_secs.max(1e-9));
+    let ok = unexplained == 0;
+    println!("{}", if ok { "PASS" } else { "FAIL: differences where the solo run was not a near tie" });
+    Ok(ok)
+}
 /// Runs a fixture (ir.json, weights.pack, inputs.pack, expected.pack from tools/model_ir/make_fixture.py)
 /// through the IR interpreter and compares every output with the PyTorch result.
 fn ir_run(dir: &str) -> Result<bool, Box<dyn std::error::Error>> {

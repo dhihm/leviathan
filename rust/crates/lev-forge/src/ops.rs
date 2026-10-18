@@ -18,6 +18,11 @@
 
 pub const OPS_VERSION: &str = "opsgen-glsl-v2";
 pub const CTRL_WORDS_PER_COL: usize = 64;
+/// Columns whose rope tables and batch metadata fit in `ctrl`.
+pub const CTRL_COLS: usize = 128;
+/// Batch metadata in `ctrl`: slot of column `c` at `BATCH_META + c`, its position at
+/// `BATCH_META + CTRL_COLS + c` (ragged batch kernels).
+pub const BATCH_META: usize = 2 + CTRL_COLS * CTRL_WORDS_PER_COL;
 /// Columns per prefill chunk.
 pub const CHUNK_COLS: usize = 8;
 
@@ -701,4 +706,255 @@ mod tests {
         assert_ne!(ssm_delta(16, 32, 128, 1e-6, 8192, 1), ssm_delta(16, 32, 128, 1e-6, 8192, 2));
         assert!(ssm_delta(16, 32, 128, 1e-6, 8192, 2).contains("st1[base + i * 128u + j] = s;"));
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Ragged batch kernels: column `c` is one token of the sequence in state slot `ctrl[BATCH_META + c]`
+// at position `ctrl[BATCH_META + CTRL_COLS + c]`. State lives in per-layer pools indexed by slot and
+// is updated in place. The recurrent kernels need distinct slots among the columns of one dispatch
+// where they run columns in parallel (delta), and apply same-slot columns in order where one thread
+// handles all columns (conv).
+// ---------------------------------------------------------------------------------------------
+
+fn batch_vars(vars: &mut Vec<(&str, String)>) {
+    vars.push(("BM", BATCH_META.to_string()));
+    vars.push(("BP", (BATCH_META + CTRL_COLS).to_string()));
+}
+
+/// Causal depthwise conv with SiLU for `nb` columns over the conv-state pool of one layer.
+/// Bindings: 0 input `[nb][cd]`, 1 pool `[slots][k-1][cd]`, 2 weights `[cd][k]`, 3 output `[nb][cd]`,
+/// 4 ctrl. Workgroups: `nb * cd / 256`, one thread per (column, channel); the columns must use
+/// distinct slots (padding columns share the scratch slot, whose state is never read back).
+pub fn ssm_conv_batch(cd: usize, k: usize, nb: usize) -> String {
+    assert!(cd % 256 == 0 && nb >= 1);
+    let body = r#"layout(local_size_x = 256) in;
+layout(std430, set = 0, binding = 0) readonly buffer In { float xin[]; };
+layout(std430, set = 0, binding = 1) buffer Pool { float pool[]; };
+layout(std430, set = 0, binding = 2) readonly buffer W { float w[]; };
+layout(std430, set = 0, binding = 3) writeonly buffer Out { float o[]; };
+layout(std430, set = 0, binding = 4) readonly buffer Ctrl { uint ctrl[]; };
+void main() {
+    uint g = gl_GlobalInvocationID.x;
+    uint col = g / @CD@u;
+    uint c = g % @CD@u;
+    uint pb = ctrl[@BM@u + col] * @KM1@u * @CD@u;
+    float s[@KM1@];
+    for (uint i = 0u; i < @KM1@u; i++) { s[i] = pool[pb + i * @CD@u + c]; }
+    float cur = xin[col * @CD@u + c];
+    float acc = 0.0;
+    for (uint i = 0u; i < @KM1@u; i++) { acc += s[i] * w[c * @K@u + i]; }
+    acc += cur * w[c * @K@u + @KM1@u];
+    o[col * @CD@u + c] = acc / (1.0 + exp(-acc));
+    for (uint i = 0u; i + 1u < @KM1@u; i++) { pool[pb + i * @CD@u + c] = s[i + 1u]; }
+    pool[pb + (@KM1@u - 1u) * @CD@u + c] = cur;
+}
+"#;
+    let _ = nb;
+    let mut vars = vec![("CD", cd.to_string()), ("K", k.to_string()), ("KM1", (k - 1).to_string())];
+    batch_vars(&mut vars);
+    finish(&[HEAD, body].concat(), &vars)
+}
+/// Gated delta rule for `nb` columns, one workgroup per (column, value head), thread per value
+/// index; the state of the column's slot is read and written in place. Same bindings as
+/// `ssm_delta` except 6 is the state pool `[slots][vh][hs][hs]` and there is no second state.
+/// Bindings: 0 qk, 1 conv output, 2 alpha `[nb][vh]`, 3 beta, 4 dt bias, 5 a, 6 pool, 7 z, 8 norm
+/// weight, 9 output `[nb][vh*hs]`, 10 ctrl. Distinct slots among the columns.
+pub fn ssm_delta_batch(kh: usize, vh: usize, hs: usize, eps: f32, cd: usize) -> String {
+    assert!(vh % kh == 0);
+    let body = r#"layout(local_size_x = @HS@) in;
+layout(std430, set = 0, binding = 0) readonly buffer QK { float qk[]; };
+layout(std430, set = 0, binding = 1) readonly buffer Conv { float cv[]; };
+layout(std430, set = 0, binding = 2) readonly buffer Alpha { float alpha[]; };
+layout(std430, set = 0, binding = 3) readonly buffer Beta { float beta_raw[]; };
+layout(std430, set = 0, binding = 4) readonly buffer Dt { float dt[]; };
+layout(std430, set = 0, binding = 5) readonly buffer A { float a[]; };
+layout(std430, set = 0, binding = 6) buffer Pool { float pool[]; };
+layout(std430, set = 0, binding = 7) readonly buffer Z { float z[]; };
+layout(std430, set = 0, binding = 8) readonly buffer NW { float nw[]; };
+layout(std430, set = 0, binding = 9) writeonly buffer Out { float o[]; };
+layout(std430, set = 0, binding = 10) readonly buffer Ctrl { uint ctrl[]; };
+shared float kq[2 * @HS@];
+shared float red[@HS@];
+float softplus(float x) { return x > 20.0 ? x : log(1.0 + exp(x)); }
+void main() {
+    uint wg = gl_WorkGroupID.x;
+    uint col = wg / @VH@u;
+    uint h = wg % @VH@u;
+    uint j = gl_LocalInvocationID.x;
+    uint kh = h % @KH@u;
+    uint base = (ctrl[@BM@u + col] * @VH@u + h) * @HS@u * @HS@u;
+    kq[j] = qk[col * 2u * @KH@u * @HS@u + (@KH@u + kh) * @HS@u + j];
+    kq[@HS@u + j] = qk[col * 2u * @KH@u * @HS@u + kh * @HS@u + j];
+    float decay = exp(softplus(alpha[col * @VH@u + h] + dt[h]) * a[h]);
+    float beta = 1.0 / (1.0 + exp(-beta_raw[col * @VH@u + h]));
+    float v = cv[col * @CD@u + 2u * @KH@u * @HS@u + h * @HS@u + j];
+    barrier();
+    float kv = 0.0;
+    for (uint i = 0u; i < @HS@u; i++) { kv += pool[base + i * @HS@u + j] * decay * kq[i]; }
+    float delta = beta * (v - kv);
+    float acc = 0.0;
+    for (uint i = 0u; i < @HS@u; i++) {
+        float s = pool[base + i * @HS@u + j] * decay + kq[i] * delta;
+        pool[base + i * @HS@u + j] = s;
+        acc += s * kq[@HS@u + i];
+    }
+    red[j] = acc * acc;
+    barrier();
+    for (uint k = @HS@u / 2u; k > 0u; k >>= 1u) {
+        if (j < k) { red[j] += red[j + k]; }
+        barrier();
+    }
+    float inv = 1.0 / sqrt(red[0] / float(@HS@) + @EPS@);
+    float zz = z[col * @VH@u * @HS@u + h * @HS@u + j];
+    o[col * @VH@u * @HS@u + h * @HS@u + j] = acc * inv * nw[j] * (zz / (1.0 + exp(-zz)));
+}
+"#;
+    let mut vars = vec![
+        ("HS", hs.to_string()),
+        ("KH", kh.to_string()),
+        ("VH", vh.to_string()),
+        ("CD", cd.to_string()),
+        ("EPS", format!("{:e}", eps)),
+    ];
+    batch_vars(&mut vars);
+    finish(&[HEAD, body].concat(), &vars)
+}
+
+/// `attn_prep` for a ragged batch: the K and V rows of column `c` go to the slab of its slot at its
+/// position (`[slots][ctx][nkv][hd]`). Bindings as `attn_prep`; 6 and 7 are the K and V slabs.
+pub fn attn_prep_batch(nh: usize, nkv: usize, hd: usize, rope_dim: usize, eps: f32, ctx: usize) -> String {
+    let body = r#"layout(local_size_x = @HD@) in;
+layout(std430, set = 0, binding = 0) readonly buffer QF { float qfull[]; };
+layout(std430, set = 0, binding = 1) readonly buffer K { float kin[]; };
+layout(std430, set = 0, binding = 2) readonly buffer V { float vin[]; };
+layout(std430, set = 0, binding = 3) readonly buffer QN { float qn[]; };
+layout(std430, set = 0, binding = 4) readonly buffer KN { float kn[]; };
+layout(std430, set = 0, binding = 5) writeonly buffer QO { float qo[]; };
+layout(std430, set = 0, binding = 6) buffer KC { float kc[]; };
+layout(std430, set = 0, binding = 7) buffer VC { float vc[]; };
+layout(std430, set = 0, binding = 8) readonly buffer Ctrl { uint ctrl[]; };
+shared float red[@HD@];
+shared float buf[@HD@];
+void main() {
+    uint wg = gl_WorkGroupID.x;
+    uint col = wg / (@NH@u + 2u * @NKV@u);
+    uint hh = wg % (@NH@u + 2u * @NKV@u);
+    uint t = gl_LocalInvocationID.x;
+    uint pos = ctrl[@BP@u + col];
+    uint slab = ctrl[@BM@u + col] * @CTX@u + pos;
+    uint cbase = 2u + col * 64u;
+    if (hh >= @NH@u + @NKV@u) {
+        uint kvh = hh - @NH@u - @NKV@u;
+        vc[(slab * @NKV@u + kvh) * @HD@u + t] = vin[col * @NKV@u * @HD@u + kvh * @HD@u + t];
+        return;
+    }
+    bool isq = hh < @NH@u;
+    float val = isq ? qfull[col * @NH@u * @HD2@u + hh * @HD2@u + t] : kin[col * @NKV@u * @HD@u + (hh - @NH@u) * @HD@u + t];
+    red[t] = val * val;
+    barrier();
+    for (uint k = @HD@u / 2u; k > 0u; k >>= 1u) {
+        if (t < k) { red[t] += red[t + k]; }
+        barrier();
+    }
+    float inv = 1.0 / sqrt(red[0] / float(@HD@) + @EPS@);
+    buf[t] = val * inv * (isq ? qn[t] : kn[t]);
+    barrier();
+    float outv = buf[t];
+    if (t < @RD@u) {
+        uint i = t % @RH@u;
+        float c = uintBitsToFloat(ctrl[cbase + i]);
+        float s = uintBitsToFloat(ctrl[cbase + @RH@u + i]);
+        float a = buf[i];
+        float b = buf[i + @RH@u];
+        outv = t < @RH@u ? a * c - b * s : a * s + b * c;
+    }
+    if (isq) { qo[col * @NH@u * @HD@u + hh * @HD@u + t] = outv; }
+    else { kc[(slab * @NKV@u + (hh - @NH@u)) * @HD@u + t] = outv; }
+}
+"#;
+    assert!(rope_dim / 2 <= 32, "ctrl rope table holds 32 pairs per column");
+    let mut vars = vec![
+        ("HD", hd.to_string()),
+        ("HD2", (2 * hd).to_string()),
+        ("NH", nh.to_string()),
+        ("NKV", nkv.to_string()),
+        ("RD", rope_dim.to_string()),
+        ("RH", (rope_dim / 2).to_string()),
+        ("EPS", format!("{:e}", eps)),
+        ("CTX", ctx.to_string()),
+    ];
+    batch_vars(&mut vars);
+    finish(&[HEAD, body].concat(), &vars)
+}
+
+/// `attn_decode` for a ragged batch: column `c` attends to positions `0..=pos` of its own slab.
+/// Bindings as `attn_decode` (1 and 2 are the K and V slabs `[slots][ctx][nkv][hd]`).
+pub fn attn_decode_batch(nh: usize, nkv: usize, hd: usize, ctx: usize) -> String {
+    let body = r#"layout(local_size_x = @HD@) in;
+layout(std430, set = 0, binding = 0) readonly buffer Q { float q[]; };
+layout(std430, set = 0, binding = 1) readonly buffer KC { float kc[]; };
+layout(std430, set = 0, binding = 2) readonly buffer VC { float vc[]; };
+layout(std430, set = 0, binding = 3) readonly buffer QF { float qfull[]; };
+layout(std430, set = 0, binding = 4) writeonly buffer O { float o[]; };
+layout(std430, set = 0, binding = 5) readonly buffer Ctrl { uint ctrl[]; };
+shared float qh[@HD@];
+shared float sc[@CTX@];
+shared float red[@HD@];
+void main() {
+    uint wg = gl_WorkGroupID.x;
+    uint col = wg / @NH@u;
+    uint h = wg % @NH@u;
+    uint t = gl_LocalInvocationID.x;
+    uint kvh = h / @GROUP@u;
+    uint n = ctrl[@BP@u + col] + 1u;
+    uint slab = ctrl[@BM@u + col] * @CTX@u;
+    qh[t] = q[col * @NH@u * @HD@u + h * @HD@u + t];
+    barrier();
+    float m = -3.0e38;
+    for (uint p = t; p < n; p += @HD@u) {
+        uint base = ((slab + p) * @NKV@u + kvh) * @HD@u;
+        float s = 0.0;
+        for (uint d = 0u; d < @HD@u; d++) { s += qh[d] * kc[base + d]; }
+        s *= @SCALE@;
+        sc[p] = s;
+        m = max(m, s);
+    }
+    red[t] = m;
+    barrier();
+    for (uint k = @HD@u / 2u; k > 0u; k >>= 1u) {
+        if (t < k) { red[t] = max(red[t], red[t + k]); }
+        barrier();
+    }
+    float mx = red[0];
+    barrier();
+    float sum = 0.0;
+    for (uint p = t; p < n; p += @HD@u) {
+        float e = exp(sc[p] - mx);
+        sc[p] = e;
+        sum += e;
+    }
+    red[t] = sum;
+    barrier();
+    for (uint k = @HD@u / 2u; k > 0u; k >>= 1u) {
+        if (t < k) { red[t] += red[t + k]; }
+        barrier();
+    }
+    float total = red[0];
+    float acc = 0.0;
+    for (uint p = 0u; p < n; p++) { acc += sc[p] * vc[((slab + p) * @NKV@u + kvh) * @HD@u + t]; }
+    float gate = qfull[col * @NH@u * @HD2@u + h * @HD2@u + @HD@u + t];
+    o[col * @NH@u * @HD@u + h * @HD@u + t] = acc / total * (1.0 / (1.0 + exp(-gate)));
+}
+"#;
+    let mut vars = vec![
+        ("HD", hd.to_string()),
+        ("HD2", (2 * hd).to_string()),
+        ("NH", nh.to_string()),
+        ("NKV", nkv.to_string()),
+        ("GROUP", (nh / nkv).to_string()),
+        ("CTX", ctx.to_string()),
+        ("SCALE", format!("{:e}", 1.0 / (hd as f32).sqrt())),
+    ];
+    batch_vars(&mut vars);
+    finish(&[HEAD, body].concat(), &vars)
 }

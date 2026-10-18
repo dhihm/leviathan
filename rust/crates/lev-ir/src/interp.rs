@@ -67,6 +67,10 @@ pub const SUPPORTED_OPS: &[&str] = &[
     "lev::causal_conv1d_state.default",
     "lev::gated_delta_rule.default",
     "lev::causal_attention.default",
+    "lev::ssm_conv_ragged.default",
+    "lev::gated_delta_ragged.default",
+    "lev::slab_kv_write.default",
+    "lev::slab_attention.default",
 ];
 
 pub fn is_supported(op: &str) -> bool {
@@ -139,6 +143,13 @@ fn resolve_arg(a: &Arg, vals: &[Option<Rc<V>>], params: &dyn ParamSource, inputs
         Arg::Str(_) | Arg::Dtype(_) | Arg::Sym(_) => Rc::new(V::None),
         Arg::List(l) => Rc::new(V::List(l.iter().map(|x| resolve_arg(x, vals, params, inputs)).collect::<Result<_, _>>()?)),
     })
+}
+
+fn ints(v: &V) -> Result<&[i64], String> {
+    match v {
+        V::I(t) => Ok(&t.data),
+        other => Err(format!("expected an int tensor, got {}", kind(other))),
+    }
 }
 
 fn int(v: &V) -> Result<i64, String> {
@@ -328,6 +339,20 @@ fn exec(n: &Node, a: &[Rc<V>]) -> Result<V, String> {
             let (o, s) = gated_delta_rule(t[0], t[1], t[2], t[3], t[4], t[5]);
             V::List(vec![Rc::new(V::T(o)), Rc::new(V::T(s))])
         }
+        "lev::ssm_conv_ragged.default" => {
+            let (y, pool) = conv_ragged(tensor(&a[0])?, tensor(&a[1])?, ints(&a[2])?, tensor(&a[3])?);
+            V::List(vec![Rc::new(V::T(y)), Rc::new(V::T(pool))])
+        }
+        "lev::gated_delta_ragged.default" => {
+            let t: Vec<&Tensor> = a[..6].iter().map(|v| tensor(v)).collect::<Result<_, _>>()?;
+            let (o, pool) = gated_delta_ragged(t[0], t[1], t[2], t[3], t[4], t[5], ints(&a[6])?);
+            V::List(vec![Rc::new(V::T(o)), Rc::new(V::T(pool))])
+        }
+        "lev::slab_kv_write.default" => {
+            let (kp, vp) = slab_kv_write(tensor(&a[0])?, tensor(&a[1])?, tensor(&a[2])?, tensor(&a[3])?, ints(&a[4])?, ints(&a[5])?)?;
+            V::List(vec![Rc::new(V::T(kp)), Rc::new(V::T(vp))])
+        }
+        "lev::slab_attention.default" => V::T(slab_attention(tensor(&a[0])?, tensor(&a[1])?, tensor(&a[2])?, ints(&a[3])?, ints(&a[4])?, float(&a[5])? as f32)),
         "lev::causal_attention.default" => {
             V::T(causal_attention(tensor(&a[0])?, tensor(&a[1])?, tensor(&a[2])?, int(&a[3])? as usize, float(&a[4])? as f32))
         }
@@ -613,6 +638,137 @@ fn causal_attention(q: &Tensor, k: &Tensor, v: &Tensor, past: usize, scale: f32)
             for p in 0..limit {
                 let w = scores[p] / sum;
                 let vv = &v.data[(p * hkv + kvh) * d..(p * hkv + kvh + 1) * d];
+                for j in 0..d {
+                    o[j] += w * vv[j];
+                }
+            }
+        }
+    }
+    Tensor::new(vec![t, hq, d], out)
+}
+
+/// One token of the gated delta rule on one head's state `sh` [dk, dv]; returns the output [dv].
+#[allow(clippy::too_many_arguments)]
+fn delta_step(sh: &mut [f32], qh: &[f32], kh: &[f32], vh: &[f32], decay: f32, beta: f32, dk: usize, dv: usize, scale: f32) -> Vec<f32> {
+    let q: Vec<f32> = l2norm(qh).iter().map(|x| x * scale).collect();
+    let k = l2norm(kh);
+    for x in sh.iter_mut() {
+        *x *= decay;
+    }
+    let mut kv = vec![0f32; dv];
+    for i in 0..dk {
+        for j in 0..dv {
+            kv[j] += sh[i * dv + j] * k[i];
+        }
+    }
+    let delta: Vec<f32> = (0..dv).map(|j| (vh[j] - kv[j]) * beta).collect();
+    let mut o = vec![0f32; dv];
+    for i in 0..dk {
+        for j in 0..dv {
+            sh[i * dv + j] += k[i] * delta[j];
+            o[j] += sh[i * dv + j] * q[i];
+        }
+    }
+    o
+}
+
+/// Per-token causal convolution on the state pool slot of each token (see lev_ops.py).
+fn conv_ragged(x: &Tensor, pool: &Tensor, slot: &[i64], w: &Tensor) -> (Tensor, Tensor) {
+    let (t, c) = (x.shape[0], x.shape[1]);
+    let k = w.shape[1];
+    let km1 = k - 1;
+    let mut pool = pool.clone();
+    let mut y = vec![0f32; t * c];
+    for ti in 0..t {
+        let base = slot[ti] as usize * km1 * c;
+        for ci in 0..c {
+            let mut acc = 0f32;
+            for i in 0..k {
+                let v = if i < km1 { pool.data[base + i * c + ci] } else { x.data[ti * c + ci] };
+                acc += v * w.data[ci * k + i];
+            }
+            y[ti * c + ci] = acc / (1.0 + (-acc).exp());
+        }
+        // shift the window: the slot keeps the last K-1 inputs
+        for i in 0..km1 {
+            for ci in 0..c {
+                pool.data[base + i * c + ci] = if i + 1 < km1 { pool.data[base + (i + 1) * c + ci] } else { x.data[ti * c + ci] };
+            }
+        }
+    }
+    (Tensor::new(vec![t, c], y), pool)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn gated_delta_ragged(q: &Tensor, k: &Tensor, v: &Tensor, g: &Tensor, beta: &Tensor, pool: &Tensor, slot: &[i64]) -> (Tensor, Tensor) {
+    let (t, h, dk) = (q.shape[0], q.shape[1], q.shape[2]);
+    let dv = v.shape[2];
+    let scale = (dk as f32).powf(-0.5);
+    let mut pool = pool.clone();
+    let mut out = vec![0f32; t * h * dv];
+    for ti in 0..t {
+        for hi in 0..h {
+            let sbase = (slot[ti] as usize * h + hi) * dk * dv;
+            let o = delta_step(
+                &mut pool.data[sbase..sbase + dk * dv],
+                &q.data[(ti * h + hi) * dk..(ti * h + hi + 1) * dk],
+                &k.data[(ti * h + hi) * dk..(ti * h + hi + 1) * dk],
+                &v.data[(ti * h + hi) * dv..(ti * h + hi + 1) * dv],
+                g.data[ti * h + hi].exp(),
+                beta.data[ti * h + hi],
+                dk,
+                dv,
+                scale,
+            );
+            out[(ti * h + hi) * dv..(ti * h + hi + 1) * dv].copy_from_slice(&o);
+        }
+    }
+    (Tensor::new(vec![t, h, dv], out), pool)
+}
+
+fn slab_kv_write(k: &Tensor, v: &Tensor, k_pool: &Tensor, v_pool: &Tensor, slot: &[i64], pos: &[i64]) -> Result<(Tensor, Tensor), String> {
+    let (l, hkv, d) = (k_pool.shape[1], k_pool.shape[2], k_pool.shape[3]);
+    let row = hkv * d;
+    let (mut kp, mut vp) = (k_pool.clone(), v_pool.clone());
+    for t in 0..k.shape[0] {
+        let p = pos[t] as usize;
+        if p >= l {
+            return Err(format!("position {p} is beyond the slab length {l}"));
+        }
+        let at = (slot[t] as usize * l + p) * row;
+        kp.data[at..at + row].copy_from_slice(&k.data[t * row..(t + 1) * row]);
+        vp.data[at..at + row].copy_from_slice(&v.data[t * row..(t + 1) * row]);
+    }
+    Ok((kp, vp))
+}
+
+fn slab_attention(q: &Tensor, k_pool: &Tensor, v_pool: &Tensor, slot: &[i64], pos: &[i64], scale: f32) -> Tensor {
+    let (t, hq, d) = (q.shape[0], q.shape[1], q.shape[2]);
+    let (l, hkv) = (k_pool.shape[1], k_pool.shape[2]);
+    let rep = hq / hkv;
+    let mut out = vec![0f32; t * hq * d];
+    for ti in 0..t {
+        let n = pos[ti] as usize + 1;
+        let sbase = slot[ti] as usize * l;
+        let mut scores = vec![0f32; n];
+        for h in 0..hq {
+            let kvh = h / rep;
+            let qv = &q.data[(ti * hq + h) * d..(ti * hq + h + 1) * d];
+            let mut max = f32::NEG_INFINITY;
+            for (p, sc) in scores.iter_mut().enumerate() {
+                let kv = &k_pool.data[((sbase + p) * hkv + kvh) * d..((sbase + p) * hkv + kvh + 1) * d];
+                *sc = qv.iter().zip(kv).map(|(a, b)| a * b).sum::<f32>() * scale;
+                max = max.max(*sc);
+            }
+            let mut sum = 0f32;
+            for sc in &mut scores {
+                *sc = (*sc - max).exp();
+                sum += *sc;
+            }
+            let o = &mut out[(ti * hq + h) * d..(ti * hq + h + 1) * d];
+            for (p, sc) in scores.iter().enumerate() {
+                let w = sc / sum;
+                let vv = &v_pool.data[((sbase + p) * hkv + kvh) * d..((sbase + p) * hkv + kvh + 1) * d];
                 for j in 0..d {
                     o[j] += w * vv[j];
                 }

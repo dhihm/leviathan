@@ -54,6 +54,14 @@ pub enum KOp {
     /// Attention over the cache followed by the output gate.
     AttnDecode { layer: usize },
     SwigluQuant,
+    /// Ragged batch: causal convolution on the state-pool slot of each column (one column per slot).
+    SsmConvBatch { layer: usize, weight: String },
+    /// Ragged batch: gated delta rule on the state-pool slot of each column, gates and gated norm inside.
+    SsmDeltaBatch { layer: usize, dt_bias: String, a: String, norm: String },
+    /// Ragged batch: q/k norms, rope and the write of K and V into each column's slab.
+    AttnPrepBatch { layer: usize, q_norm: String, k_norm: String },
+    /// Ragged batch: attention of each column over its own slab, then the output gate.
+    AttnDecodeBatch { layer: usize },
     /// Greedy token and margin of the logits (runtime epilogue, not part of the IR).
     Argmax,
 }
@@ -142,7 +150,7 @@ impl<'g> Lower<'g> {
     /// Layer index of a state input (`states_N`: two states per layer).
     fn state_layer(&self, a: &Arg) -> Result<usize, String> {
         match a {
-            Arg::Input(name) => name.strip_prefix("states_").and_then(|n| n.parse::<usize>().ok()).map(|n| n / 2).ok_or(format!("{name} is not a state input")),
+            Arg::Input(name) => name.strip_prefix("states_").or_else(|| name.strip_prefix("pools_")).and_then(|n| n.parse::<usize>().ok()).map(|n| n / 2).ok_or(format!("{name} is not a state input")),
             other => err(format!("expected a state input, got {other:?}")),
         }
     }
@@ -155,7 +163,7 @@ impl<'g> Lower<'g> {
         }
         let u = users[0];
         Ok(match self.op(u) {
-            "lev::causal_conv1d_state.default" => Slot::Qkv,
+            "lev::causal_conv1d_state.default" | "lev::ssm_conv_ragged.default" => Slot::Qkv,
             "aten::sigmoid.default" => Slot::Beta,
             "aten::to.dtype" => Slot::Alpha,
             "aten::reshape.default" => {
@@ -169,7 +177,7 @@ impl<'g> Lower<'g> {
                 match self.op(v) {
                     "aten::chunk.default" => Slot::Qfull,
                     "lev::rmsnorm.default" => Slot::Kin,
-                    "aten::cat.default" => Slot::Vin,
+                    "aten::cat.default" | "lev::slab_kv_write.default" => Slot::Vin,
                     other => return err(format!("linear {i}: its view feeds {other}")),
                 }
             }
@@ -236,16 +244,19 @@ impl<'g> Lower<'g> {
     }
 
     fn rule_conv(&mut self, i: usize) -> Result<(), String> {
+        let ragged = self.op(i) == "lev::ssm_conv_ragged.default";
         let layer = self.state_layer(self.arg(i, 1)?)?;
-        let squeeze = self.feeder(i, 2, "aten::squeeze.dim")?;
+        let squeeze = self.feeder(i, if ragged { 3 } else { 2 }, "aten::squeeze.dim")?;
         let weight = self.gguf(self.param_arg(squeeze, 0)?)?;
         let out = self.users[i].iter().copied().find(|&u| self.getitem(u, 0).is_ok()).ok_or("conv: no output getitem")?;
         let state = self.users[i].iter().copied().find(|&u| self.getitem(u, 1).is_ok()).ok_or("conv: no state getitem")?;
-        self.emit(i, 0, KOp::SsmConv { layer, weight });
+        self.emit(i, 0, if ragged { KOp::SsmConvBatch { layer, weight } } else { KOp::SsmConv { layer, weight } });
         self.claim(&[i, squeeze, out, state])
     }
 
     fn rule_delta(&mut self, d: usize) -> Result<(), String> {
+        let ragged = self.op(d) == "lev::gated_delta_ragged.default";
+        let conv_op = if ragged { "lev::ssm_conv_ragged.default" } else { "lev::causal_conv1d_state.default" };
         let state_layer = self.state_layer(self.arg(d, 5)?)?;
         // q and k: tile(reshape(getitem(split(getitem(conv, 0)), 0 or 1)))
         let mut claim = vec![d];
@@ -266,7 +277,7 @@ impl<'g> Lower<'g> {
         let split = split.unwrap();
         let conv_out = conv_out.unwrap();
         let conv = self.getitem(conv_out, 0)?;
-        self.expect(conv, "lev::causal_conv1d_state.default")?;
+        self.expect(conv, conv_op)?;
         if self.state_layer(self.arg(conv, 1)?)? != state_layer {
             return err("delta and conv state belong to different layers");
         }
@@ -307,7 +318,7 @@ impl<'g> Lower<'g> {
         self.expect(r3, "aten::reshape.default")?;
         claim.extend([out_g, st_g, r1, gn, zr, r3]);
         self.emit(d, 0, KOp::SsmQkNorm);
-        self.emit(d, 1, KOp::SsmDelta { layer: state_layer, dt_bias, a: a_param, norm });
+        self.emit(d, 1, if ragged { KOp::SsmDeltaBatch { layer: state_layer, dt_bias, a: a_param, norm } } else { KOp::SsmDelta { layer: state_layer, dt_bias, a: a_param, norm } });
         self.claim(&claim)
     }
 
@@ -360,6 +371,49 @@ impl<'g> Lower<'g> {
         self.claim(&claim)
     }
 
+    /// Ragged attention: q/k norm and rope, the write of K and V into the slab, attention over the
+    /// slab and the output gate.
+    fn rule_slab_attention(&mut self, a: usize) -> Result<(), String> {
+        let (kg, vg) = (self.node_arg(a, 1)?, self.node_arg(a, 2)?);
+        let kv_write = self.getitem(kg, 0)?;
+        self.expect(kv_write, "lev::slab_kv_write.default")?;
+        if self.getitem(vg, 1)? != kv_write {
+            return err("slab attention reads the K and V pools of different writes");
+        }
+        let layer = self.state_layer(self.arg(kv_write, 2)?)?;
+        let rope_k = self.feeder(kv_write, 0, "lev::rope.default")?;
+        let v_view = self.feeder(kv_write, 1, "aten::view.default")?;
+        let k_norm = self.feeder(rope_k, 0, "lev::rmsnorm.default")?;
+        let k_view = self.feeder(k_norm, 0, "aten::view.default")?;
+        let rope_q = self.feeder(a, 0, "lev::rope.default")?;
+        let q_norm = self.feeder(rope_q, 0, "lev::rmsnorm.default")?;
+        let q_item = self.node_arg(q_norm, 0)?;
+        let chunk = {
+            let c = self.getitem(q_item, 0)?;
+            self.expect(c, "aten::chunk.default")?
+        };
+        let q_view = self.feeder(chunk, 0, "aten::view.default")?;
+        let out_r = self.sole_user(a)?;
+        self.expect(out_r, "aten::reshape.default")?;
+        let mul = self.sole_user(out_r)?;
+        self.expect(mul, "aten::mul.Tensor")?;
+        let sig = self.feeder(mul, 1, "aten::sigmoid.default")?;
+        let gate_r = self.feeder(sig, 0, "aten::reshape.default")?;
+        let gate_i = self.node_arg(gate_r, 0)?;
+        if self.getitem(gate_i, 1)? != chunk {
+            return err("attention gate does not come from the q projection");
+        }
+        let mut items: Vec<usize> = self.users[chunk].clone();
+        items.sort_unstable();
+        let (qn, kn) = (self.param_arg(q_norm, 1)?.to_string(), self.param_arg(k_norm, 1)?.to_string());
+        let (q_norm_w, k_norm_w) = (self.gguf(&qn)?, self.gguf(&kn)?);
+        self.emit(a, 0, KOp::AttnPrepBatch { layer, q_norm: q_norm_w, k_norm: k_norm_w });
+        self.emit(a, 1, KOp::AttnDecodeBatch { layer });
+        let mut claim = vec![a, kg, vg, kv_write, rope_k, v_view, k_norm, k_view, rope_q, q_norm, q_view, chunk, out_r, mul, sig, gate_r];
+        claim.extend(items);
+        self.claim(&claim)
+    }
+
     fn rule_swiglu(&mut self, s: usize) -> Result<(), String> {
         let down = self.sole_user(s)?;
         self.expect(down, "aten::linear.default")?;
@@ -399,7 +453,7 @@ pub fn lower(g: &Graph) -> Result<Vec<KOp>, String> {
                 l.emit(i, 0, KOp::Embed);
                 l.claim(&[i])?;
             }
-            "lev::causal_conv1d_state.default" => l.rule_conv(i)?,
+            "lev::causal_conv1d_state.default" | "lev::ssm_conv_ragged.default" => l.rule_conv(i)?,
             _ => {}
         }
     }
@@ -411,8 +465,9 @@ pub fn lower(g: &Graph) -> Result<Vec<KOp>, String> {
             "lev::rmsnorm.default" => {
                 l.rule_norm_linears(i)?;
             }
-            "lev::gated_delta_rule.default" => l.rule_delta(i)?,
+            "lev::gated_delta_rule.default" | "lev::gated_delta_ragged.default" => l.rule_delta(i)?,
             "lev::causal_attention.default" => l.rule_attention(i)?,
+            "lev::slab_attention.default" => l.rule_slab_attention(i)?,
             "lev::swiglu.default" => l.rule_swiglu(i)?,
             _ => {}
         }
@@ -473,6 +528,21 @@ mod tests {
     }
 
     #[test]
+    fn lowers_the_ragged_tiny_model_completely() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../lev-ir/tests/fixtures/tiny_ragged/ir.json");
+        let g = retarget_gguf(&Graph::parse(&std::fs::read_to_string(path).unwrap()).unwrap()).unwrap();
+        assert_eq!(g.layout, "ragged-v1");
+        let ops = lower(&g).unwrap();
+        assert_eq!(count(&ops, |o| matches!(o, KOp::SsmConvBatch { .. })), 3);
+        assert_eq!(count(&ops, |o| matches!(o, KOp::SsmDeltaBatch { .. })), 3);
+        assert_eq!(count(&ops, |o| matches!(o, KOp::AttnPrepBatch { .. } | KOp::AttnDecodeBatch { .. })), 2);
+        assert_eq!(count(&ops, |o| matches!(o, KOp::Matvec { .. })), 3 * 8 + 7 + 1);
+        assert_eq!(ops.len(), lower(&tiny()).unwrap().len());
+        let plan = crate::plan::plan(&g).unwrap();
+        assert_eq!(plan.kinds.len(), 4);
+    }
+
+    #[test]
     fn lowers_the_bundled_ornith_ir_to_the_known_command_stream() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("ir/ornith-1.5-9b.json");
         let g = retarget_gguf(&Graph::parse(&std::fs::read_to_string(path).unwrap()).unwrap()).unwrap();
@@ -485,6 +555,20 @@ mod tests {
         assert_eq!(count(&ops, |o| matches!(o, KOp::SwigluQuant)), 32);
         assert_eq!(count(&ops, |o| matches!(o, KOp::Quant { .. })), 32);
         assert_eq!(count(&ops, |o| matches!(o, KOp::Matvec { .. })), 249);
+    }
+    #[test]
+    fn lowers_the_bundled_ragged_ornith_ir() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("ir/ornith-1.5-9b-ragged.json");
+        let g = retarget_gguf(&Graph::parse(&std::fs::read_to_string(path).unwrap()).unwrap()).unwrap();
+        assert_eq!(g.layout, "ragged-v1");
+        let ops = lower(&g).unwrap();
+        assert_eq!(ops.len(), 468);
+        assert_eq!(count(&ops, |o| matches!(o, KOp::SsmConvBatch { .. })), 24);
+        assert_eq!(count(&ops, |o| matches!(o, KOp::SsmDeltaBatch { .. })), 24);
+        assert_eq!(count(&ops, |o| matches!(o, KOp::AttnPrepBatch { .. } | KOp::AttnDecodeBatch { .. })), 16);
+        assert_eq!(count(&ops, |o| matches!(o, KOp::Matvec { .. })), 249);
+        // No operation of the single-sequence layout remains.
+        assert_eq!(count(&ops, |o| matches!(o, KOp::SsmConv { .. } | KOp::SsmDelta { .. } | KOp::AttnPrep { .. } | KOp::AttnDecode { .. })), 0);
     }
     #[test]
     fn rejects_a_graph_with_an_operator_no_rule_covers() {

@@ -77,7 +77,7 @@ pub fn eliminate_dead(g: &Graph) -> Graph {
     }
     outputs.iter().for_each(|a| collect_params(a, &mut used));
     let params: Vec<Value> = g.params.iter().filter(|p| used.contains(p.name.as_str())).cloned().collect();
-    Graph { inputs: g.inputs.clone(), params, nodes, outputs }
+    Graph { layout: g.layout.clone(), inputs: g.inputs.clone(), params, nodes, outputs }
 }
 
 /// Rewrites a graph exported with Hugging Face conventions to run on GGUF weights:
@@ -136,7 +136,7 @@ pub fn retarget_gguf(g: &Graph) -> Result<Graph, String> {
         n.kwargs = n.kwargs.iter().map(|(k, v)| (k.clone(), map_arg(v, &subst))).collect();
     }
     let outputs = g.outputs.iter().map(|a| map_arg(a, &subst)).collect();
-    Ok(eliminate_dead(&Graph { inputs: g.inputs.clone(), params, nodes, outputs }))
+    Ok(eliminate_dead(&Graph { layout: g.layout.clone(), inputs: g.inputs.clone(), params, nodes, outputs }))
 }
 
 #[cfg(test)]

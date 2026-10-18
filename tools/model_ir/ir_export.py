@@ -22,7 +22,7 @@ from torch.export import Dim, export
 
 from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5TextConfig
 
-from ornith_model import OrnithModel
+from ornith_model import OrnithModel, OrnithModelRagged
 
 FORMAT = "lev-model-ir-1"
 
@@ -193,12 +193,37 @@ def _ordered(model, dyn):
     return tuple(head + [tuple(states)])
 
 
+def build_and_export_ragged(cfg, meta=True):
+    """Exports OrnithModelRagged with symbolic token count T, slot count S and slab length L."""
+    t = Dim("T", min=1, max=4096)
+    s = Dim("S", min=1, max=1024)
+    l = Dim("L", min=1, max=262144)
+    ctx = torch.device("meta") if meta else torch.device("cpu")
+    with ctx:
+        model = OrnithModelRagged(cfg).eval()
+        rd = int(cfg.head_dim * (cfg.rope_parameters.get("partial_rotary_factor", 1.0)))
+        ex = [torch.zeros(3, dtype=torch.long), torch.empty(3, rd), torch.empty(3, rd), torch.zeros(3, dtype=torch.long), torch.zeros(3, dtype=torch.long)]
+        dyn = [{0: t}, {0: t}, {0: t}, {0: t}, {0: t}]
+        pools = []
+        for lay in model.pool_layout(2, 4):
+            if lay[0] == "linear":
+                ex += [torch.empty(*lay[1]), torch.empty(*lay[2])]
+                pools += [{0: s}, {0: s}]
+            else:
+                ex += [torch.empty(*lay[1]), torch.empty(*lay[1])]
+                pools += [{0: s, 1: l}, {0: s, 1: l}]
+    ep = export(model, tuple(ex), dynamic_shapes=tuple(dyn + [tuple(pools)]))
+    return model, ep
+
+
 def main():
     out = sys.argv[1]
     small = "--small" in sys.argv
+    ragged = "--ragged" in sys.argv
     cfg = small_config() if small else real_config()
-    model, ep = build_and_export(cfg, meta=not small)
+    model, ep = (build_and_export_ragged if ragged else build_and_export)(cfg, meta=not small)
     ir = serialize(ep, cfg)
+    ir["layout"] = "ragged-v1" if ragged else "single-v1"
     with open(out, "w", encoding="utf-8") as f:
         json.dump(ir, f)
     ops = Counter(n["op"] for n in ir["nodes"])

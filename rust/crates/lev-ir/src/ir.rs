@@ -41,6 +41,8 @@ pub struct Value {
 
 #[derive(Debug, Clone)]
 pub struct Graph {
+    /// `single-v1` (one sequence, explicit states) or `ragged-v1` (flat multi-sequence batch).
+    pub layout: String,
     pub inputs: Vec<Value>,
     pub params: Vec<Value>,
     pub nodes: Vec<Node>,
@@ -117,7 +119,8 @@ impl Graph {
             });
         }
         let outputs = root.get("outputs").and_then(Json::as_arr).ok_or("missing outputs")?.iter().map(arg).collect::<Result<_, _>>()?;
-        Ok(Graph { inputs: values(root.get("inputs"), "inputs")?, params: values(root.get("params"), "params")?, nodes, outputs })
+        let layout = root.get("layout").and_then(Json::as_str).unwrap_or("single-v1").to_string();
+        Ok(Graph { layout, inputs: values(root.get("inputs"), "inputs")?, params: values(root.get("params"), "params")?, nodes, outputs })
     }
 
     /// Structural checks: references point backwards, parameters and inputs exist.

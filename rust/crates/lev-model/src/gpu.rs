@@ -52,7 +52,7 @@ fn q4_schedule(nb: u32) -> Q8Schedule {
         return Q8Schedule { t: 32, r: 1, sg: 0, nb };
     }
     match nb {
-        8 | 3 => Q8Schedule { t: 4, r: 16, sg: 1, nb },
+        8 | 3 | 4 | 16 => Q8Schedule { t: 4, r: 16, sg: 1, nb },
         _ => Q8Schedule { t: 64, r: 4, sg: 1, nb },
     }
 }
@@ -62,18 +62,30 @@ fn q6_schedule(nb: u32) -> Q8Schedule {
         return Q8Schedule { t: 32, r: 4, sg: 1, nb };
     }
     match nb {
-        8 => Q8Schedule { t: 64, r: 1, sg: 1, nb },
+        8 | 16 => Q8Schedule { t: 64, r: 1, sg: 1, nb },
         _ => Q8Schedule { t: 32, r: 1, sg: 0, nb },
     }
 }
 
-/// Index of the matvec kernel variant for `nb` columns (1, 2, 8 or 3).
+/// Batch sizes of the ragged decode programs (columns of distinct sequences). Up to 8 columns use
+/// the int8 matvecs, 64 columns the matrix-core GEMMs (a smaller batch is padded with scratch
+/// columns): the int8 matvec stops scaling beyond 8 columns.
+const BATCH_SIZES: [usize; 5] = [1, 2, 4, 8, 64];
+const BATCH_MAX: usize = 64;
+
+fn bsidx(nb: usize) -> usize {
+    BATCH_SIZES.iter().position(|&s| s == nb).expect("unsupported batch size")
+}
+
+/// Index of the matvec kernel variant for `nb` columns (1, 2, 8, 3, 4 or 16).
 fn kidx(nb: usize) -> usize {
     match nb {
         1 => 0,
         2 => 1,
         8 => 2,
         3 => 3,
+        4 => 4,
+        16 => 5,
         _ => panic!("unsupported column count {nb}"),
     }
 }
@@ -99,9 +111,24 @@ struct Kernels {
     delta_chunk: Kernel,
     cat_e: Kernel,
     cat_h: Kernel,
-    q4: [Kernel; 4],
-    q6: [Kernel; 4],
+    q4: [Kernel; 6],
+    q6: [Kernel; 6],
     big: Option<BigKernels>,
+    batch: Option<BatchKernels>,
+}
+
+/// Kernels of the ragged batch decode programs.
+struct BatchKernels {
+    conv: [Kernel; 5],
+    delta: Kernel,
+    prep: Kernel,
+    decode: Kernel,
+}
+
+/// Per-layer pools of the ragged batch: one state per slot (the last slot is scratch for padding).
+enum LayerPool {
+    Ssm { conv: Buf, rec: Buf },
+    Attn { k: Buf, v: Buf },
 }
 
 /// Kernels of the matrix-core prefill path.
@@ -122,6 +149,8 @@ enum LayerRes {
 struct Res {
     weights: HashMap<String, Buf>,
     layers: Vec<LayerRes>,
+    /// Ragged batch pools (empty unless LEV_BATCH_SLOTS is set).
+    pools: Vec<LayerPool>,
     mtp_kv: (Buf, Buf),
     x: Buf,
     xn: Buf,
@@ -162,12 +191,23 @@ struct Res {
     trace: Option<Buf>,
 }
 
+/// One token of one sequence in a ragged batch: its slot, the token and its position.
+#[derive(Clone, Copy, Debug)]
+pub struct BatchItem {
+    pub slot: usize,
+    pub token: usize,
+    pub pos: usize,
+}
+
 pub struct GpuModel {
     // Drop order: programs first, the device context last.
     main1: Program,
     main2: Program,
     /// Three-column pass (two chained drafts), only for speculative depth 2.
     main3: Program,
+    /// Ragged decode programs by batch size (empty unless LEV_BATCH_SLOTS is set).
+    batch_programs: Vec<(usize, Program)>,
+    batch_slots: usize,
     prefill: Program,
     mtp_fill_chunk: Program,
     bigs: Vec<(usize, Program, Program)>,
@@ -325,11 +365,22 @@ fn build_main(ctx: &VulkanContext, g: &GgufFile, cfg: &Config, r: &Res, k: &Kern
 
 /// Structure of Ornith-1.5-9B exported by tools/model_ir/ir_export.py (no weights).
 const BUNDLED_IR: &str = include_str!("../ir/ornith-1.5-9b.json");
+/// Same model as a ragged multi-sequence batch (state pools, per-token slot and position).
+const BUNDLED_RAGGED_IR: &str = include_str!("../ir/ornith-1.5-9b-ragged.json");
 
 /// The model IR the decode passes are lowered from: `LEV_IR=<file>` names another export,
 /// `LEV_NO_IR=1` selects the hand-written passes (the regression oracle), otherwise the bundled
 /// IR is used when it describes this model file.
 type IrLowering = (crate::plan::IrPlan, Vec<KOp>);
+/// The ragged-batch IR lowered to kernel operations (always from the bundled file).
+fn load_ragged_ir(cfg: &Config) -> Result<Vec<KOp>, Error> {
+    let g = lev_ir::pass::retarget_gguf(&lev_ir::ir::Graph::parse(BUNDLED_RAGGED_IR)?)?;
+    g.validate()?;
+    let plan = crate::plan::plan(&g)?;
+    plan.check(cfg)?;
+    Ok(crate::lower::lower(&g)?)
+}
+
 fn load_ir(cfg: &Config) -> Result<Option<IrLowering>, Error> {
     if std::env::var_os("LEV_NO_IR").is_some() {
         return Ok(None);
@@ -483,6 +534,8 @@ fn emit_main_ir<'a>(g: &GgufFile, cfg: &Config, r: &'a Res, k: &'a Kernels, nb: 
     let (kh, vh, hs) = (cfg.k_heads, cfg.v_heads, cfg.state);
     let (nh, nkv) = (cfg.n_head, cfg.n_kv);
     let mut b = Builder::new();
+    // Wide batches go through the matrix-core GEMMs (f16 activations).
+    b.gemm = BIG_SIZES.contains(&nb);
     let w = |n: &str| -> &'a Buf { &r.weights[n] };
     for op in ops {
         match op {
@@ -542,6 +595,49 @@ fn emit_main_ir<'a>(g: &GgufFile, cfg: &Config, r: &'a Res, k: &'a Kernels, nb: 
                     "attn_decode",
                     &k.attn,
                     vec![part(&r.q_out, 0, nb * nh * cfg.head_dim), full(kc), full(vc), part(&r.qfull, 0, nb * nh * cfg.head_dim * 2), part(&r.attn_out, 0, nb * nh * cfg.head_dim), full(&r.ctrl)],
+                    (nb * nh) as u32,
+                );
+            }
+            KOp::SsmConvBatch { layer, weight } => {
+                let (Some(bk), Some(LayerPool::Ssm { conv, .. })) = (&k.batch, r.pools.get(*layer)) else { return Err(format!("layer {layer}: no batch pool for the convolution").into()) };
+                b.simple("ssm_conv", &bk.conv[bsidx(nb)], vec![part(&r.qkv, 0, nb * cd), full(conv), full(w(weight)), part(&r.conv_out, 0, nb * cd), full(&r.ctrl)], (nb * cd / 256) as u32);
+            }
+            KOp::SsmDeltaBatch { layer, dt_bias, a, norm } => {
+                let (Some(bk), Some(LayerPool::Ssm { rec, .. })) = (&k.batch, r.pools.get(*layer)) else { return Err(format!("layer {layer}: no batch pool for the delta state").into()) };
+                b.simple(
+                    "ssm_delta",
+                    &bk.delta,
+                    vec![
+                        part(&r.qk, 0, nb * 2 * kh * hs),
+                        part(&r.conv_out, 0, nb * cd),
+                        part(&r.alpha, 0, nb * vh),
+                        part(&r.beta, 0, nb * vh),
+                        full(w(dt_bias)),
+                        full(w(a)),
+                        full(rec),
+                        part(&r.z, 0, nb * cfg.inner),
+                        full(w(norm)),
+                        part(&r.gated, 0, nb * cfg.inner),
+                        full(&r.ctrl),
+                    ],
+                    (nb * vh) as u32,
+                );
+            }
+            KOp::AttnPrepBatch { layer, q_norm, k_norm } => {
+                let (Some(bk), Some(LayerPool::Attn { k: kp, v: vp })) = (&k.batch, r.pools.get(*layer)) else { return Err(format!("layer {layer}: no batch slab").into()) };
+                b.simple(
+                    "attn_prep",
+                    &bk.prep,
+                    vec![part(&r.qfull, 0, nb * nh * cfg.head_dim * 2), part(&r.kin, 0, nb * nkv * cfg.head_dim), part(&r.vin, 0, nb * nkv * cfg.head_dim), full(w(q_norm)), full(w(k_norm)), part(&r.q_out, 0, nb * nh * cfg.head_dim), full(kp), full(vp), full(&r.ctrl)],
+                    (nb * (nh + 2 * nkv)) as u32,
+                );
+            }
+            KOp::AttnDecodeBatch { layer } => {
+                let (Some(bk), Some(LayerPool::Attn { k: kp, v: vp })) = (&k.batch, r.pools.get(*layer)) else { return Err(format!("layer {layer}: no batch slab").into()) };
+                b.simple(
+                    "attn_decode",
+                    &bk.decode,
+                    vec![part(&r.q_out, 0, nb * nh * cfg.head_dim), full(kp), full(vp), part(&r.qfull, 0, nb * nh * cfg.head_dim * 2), part(&r.attn_out, 0, nb * nh * cfg.head_dim), full(&r.ctrl)],
                     (nb * nh) as u32,
                 );
             }
@@ -738,6 +834,8 @@ impl GpuModel {
         };
         let (hd, nh, nkv) = (cfg.head_dim, cfg.n_head, cfg.n_kv);
         let (hs, kh, vh, cd) = (cfg.state, cfg.k_heads, cfg.v_heads, cfg.conv_dim());
+        // Ragged batch decoding: number of sequence slots (LEV_BATCH_SLOTS, 0 = off).
+        let batch_slots: usize = std::env::var("LEV_BATCH_SLOTS").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
         let kernels = Kernels {
             norm: mk(&ops::rmsnorm(cfg.n_embd, cfg.eps), 3, 0)?,
             add: mk(&ops::add_inplace(), 2, 0)?,
@@ -771,8 +869,19 @@ impl GpuModel {
             } else {
                 None
             },
-            q4: [mk(&q8::emit_q4k_q8(&q4_schedule(1))?, 4, 8)?, mk(&q8::emit_q4k_q8(&q4_schedule(2))?, 4, 8)?, mk(&q8::emit_q4k_q8(&q4_schedule(8))?, 4, 8)?, mk(&q8::emit_q4k_q8(&q4_schedule(3))?, 4, 8)?],
-            q6: [mk(&q8::emit_q6k_q8(&q6_schedule(1))?, 4, 8)?, mk(&q8::emit_q6k_q8(&q6_schedule(2))?, 4, 8)?, mk(&q8::emit_q6k_q8(&q6_schedule(8))?, 4, 8)?, mk(&q8::emit_q6k_q8(&q6_schedule(3))?, 4, 8)?],
+            q4: [mk(&q8::emit_q4k_q8(&q4_schedule(1))?, 4, 8)?, mk(&q8::emit_q4k_q8(&q4_schedule(2))?, 4, 8)?, mk(&q8::emit_q4k_q8(&q4_schedule(8))?, 4, 8)?, mk(&q8::emit_q4k_q8(&q4_schedule(3))?, 4, 8)?, mk(&q8::emit_q4k_q8(&q4_schedule(4))?, 4, 8)?, mk(&q8::emit_q4k_q8(&q4_schedule(16))?, 4, 8)?],
+            q6: [mk(&q8::emit_q6k_q8(&q6_schedule(1))?, 4, 8)?, mk(&q8::emit_q6k_q8(&q6_schedule(2))?, 4, 8)?, mk(&q8::emit_q6k_q8(&q6_schedule(8))?, 4, 8)?, mk(&q8::emit_q6k_q8(&q6_schedule(3))?, 4, 8)?, mk(&q8::emit_q6k_q8(&q6_schedule(4))?, 4, 8)?, mk(&q8::emit_q6k_q8(&q6_schedule(16))?, 4, 8)?],
+            batch: if batch_slots > 0 {
+                let conv = |nb: usize| mk(&ops::ssm_conv_batch(cd, cfg.conv_k, nb), 5, 0);
+                Some(BatchKernels {
+                    conv: [conv(1)?, conv(2)?, conv(4)?, conv(8)?, conv(16)?],
+                    delta: mk(&ops::ssm_delta_batch(kh, vh, hs, cfg.eps, cd), 11, 0)?,
+                    prep: mk(&ops::attn_prep_batch(nh, nkv, hd, cfg.rope_dim, cfg.eps, ctx_len), 9, 0)?,
+                    decode: mk(&ops::attn_decode_batch(nh, nkv, hd, ctx_len), 6, 0)?,
+                })
+            } else {
+                None
+            },
         };
 
         // Weights: one buffer per tensor.
@@ -859,9 +968,21 @@ impl GpuModel {
         }
         let ctrl = ctx.create_buffer(65536)?;
         ctrl.zero();
+        let mut pools = Vec::new();
+        if batch_slots > 0 {
+            let n = batch_slots + 1; // the last slot absorbs the padding columns
+            for il in 0..cfg.n_trunk {
+                if cfg.is_recurrent(il) {
+                    pools.push(LayerPool::Ssm { conv: zb(n * (cfg.conv_k - 1) * cd)?, rec: zb(n * vh * hs * hs)? });
+                } else {
+                    pools.push(LayerPool::Attn { k: zb(n * ctx_len * nkv * hd)?, v: zb(n * ctx_len * nkv * hd)? });
+                }
+            }
+        }
         let res = Res {
             weights,
             layers,
+            pools,
             mtp_kv: (zb(ctx_len * nkv * hd)?, zb(ctx_len * nkv * hd)?),
             x: fb(m * ne)?,
             xn: zb(m * ne)?,
@@ -886,14 +1007,14 @@ impl GpuModel {
             hmtp: fb(ne)?,
             tok_main: fb(m)?,
             tok_mtp: fb(m)?,
-            am_main: fb(3)?,
-            mg_main: fb(3)?,
+            am_main: fb(BATCH_MAX)?,
+            mg_main: fb(BATCH_MAX)?,
             am_mtp: fb(1)?,
             mg_mtp: fb(1)?,
-            xq: zb(MAX_COLS * nff.max(2 * ne))?,
-            xs: zb(MAX_COLS * nff.max(2 * ne) / 32 * 2)?,
+            xq: zb(BATCH_MAX.max(MAX_COLS) * nff.max(2 * ne))?,
+            xs: zb(BATCH_MAX.max(MAX_COLS) * nff.max(2 * ne) / 32 * 2)?,
             xh: zb(m * nff.max(2 * ne) / 2)?,
-            logits: fb(3 * cfg.vocab)?,
+            logits: fb(BATCH_MAX * cfg.vocab)?,
             ctrl,
             e_in: zb(m * ne)?,
             cat: zb(m * 2 * ne)?,
@@ -917,6 +1038,21 @@ impl GpuModel {
         let (main1, labels1) = mk_main(1, profile)?;
         let (main2, labels2) = mk_main(2, profile)?;
         let (main3, _) = mk_main(3, false)?;
+        let mut batch_programs = Vec::new();
+        if batch_slots > 0 {
+            let mut ragged = load_ragged_ir(&cfg)?;
+            // Debug aid: keep only the first LEV_BATCH_TRUNC kernel operations.
+            if let Some(n) = std::env::var("LEV_BATCH_TRUNC").ok().and_then(|v| v.parse::<usize>().ok()) {
+                ragged.truncate(n);
+            }
+            for nb in BATCH_SIZES {
+                if BIG_SIZES.contains(&nb) && kernels.big.is_none() {
+                    continue; // no matrix cores: only the int8 sizes
+                }
+                let b = emit_main_ir(&gguf, &cfg, &res, &kernels, nb, &ragged)?;
+                batch_programs.push((nb, finish_program(&ctx, b, false)?.0));
+            }
+        }
         let (prefill, labels_prefill) = build_main(&ctx, &gguf, &cfg, &res, &kernels, MAX_COLS, profile, true, false)?;
         let mtp_fill_chunk = build_mtp_fill_chunk(&ctx, &gguf, &cfg, &res, &kernels, MAX_COLS, false)?;
         let mut bigs: Vec<(usize, Program, Program)> = Vec::new();
@@ -935,7 +1071,7 @@ impl GpuModel {
         let mtp_draft = [build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 0, None, save)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 1, None, save)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 2, None, save)?];
         let mtp_fill = [build_mtp(&ctx, &gguf, &cfg, &res, &kernels, false, 0, None, None)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, false, 1, None, None)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, false, 2, None, None)?];
         let mtp_chain = build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 0, Some(&res.hmtp), None)?;
-        Ok(GpuModel { main1, main2, main3, prefill, mtp_fill_chunk, bigs, mtp_draft, mtp_chain, mtp_fill, labels1, labels2, labels_prefill, labels_big, res, _kernels: kernels, gguf, file, cfg, ctx_len, pos: 0, sel: 0, last_gpu_us: 0.0, last_mtp_us: 0.0, ctx })
+        Ok(GpuModel { main1, main2, main3, batch_programs, batch_slots, prefill, mtp_fill_chunk, bigs, mtp_draft, mtp_chain, mtp_fill, labels1, labels2, labels_prefill, labels_big, res, _kernels: kernels, gguf, file, cfg, ctx_len, pos: 0, sel: 0, last_gpu_us: 0.0, last_mtp_us: 0.0, ctx })
     }
 
     pub fn dispatch_count(&self) -> usize {
@@ -1025,6 +1161,112 @@ impl GpuModel {
 
     pub fn position(&self) -> usize {
         self.pos
+    }
+
+    // ---- ragged batch decoding ----
+
+    pub fn batch_slots(&self) -> usize {
+        self.batch_slots
+    }
+
+    pub fn context_len(&self) -> usize {
+        self.ctx_len
+    }
+
+    fn set_ctrl_batch(&self, items: &[BatchItem], nb: usize) {
+        let half = self.cfg.rope_dim / 2;
+        let mut words = vec![0u32; ops::BATCH_META + 2 * ops::CTRL_COLS];
+        for c in 0..nb {
+            // Columns beyond the batch are padding: the scratch slot at position 0.
+            let it = items.get(c).copied().unwrap_or(BatchItem { slot: self.batch_slots, token: 0, pos: 0 });
+            for i in 0..half {
+                let theta = it.pos as f64 * self.cfg.rope_base.powf(-2.0 * i as f64 / self.cfg.rope_dim as f64);
+                let (s, co) = theta.sin_cos();
+                words[2 + c * ops::CTRL_WORDS_PER_COL + i] = (co as f32).to_bits();
+                words[2 + c * ops::CTRL_WORDS_PER_COL + half + i] = (s as f32).to_bits();
+            }
+            words[ops::BATCH_META + c] = it.slot as u32;
+            words[ops::BATCH_META + ops::CTRL_COLS + c] = it.pos as u32;
+        }
+        self.res.ctrl.write_u32(0, &words);
+    }
+
+    /// One decode step for up to 16 sequences, each contributing its next token (distinct slots).
+    /// Returns the greedy token and its logit margin per item. Needs LEV_BATCH_SLOTS.
+    pub fn batch_step(&mut self, items: &[BatchItem]) -> Result<Vec<(usize, f32)>, Error> {
+        if self.batch_slots == 0 {
+            return Err("batch decoding is off (set LEV_BATCH_SLOTS)".into());
+        }
+        if items.is_empty() || items.len() > BATCH_MAX {
+            return Err(format!("a batch holds 1 to {BATCH_MAX} tokens").into());
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for it in items {
+            if it.slot >= self.batch_slots || !seen.insert(it.slot) {
+                return Err(format!("slot {} is out of range or used twice in one step", it.slot).into());
+            }
+            if it.pos >= self.ctx_len || it.token >= self.cfg.vocab {
+                return Err("position or token out of range".into());
+            }
+        }
+        let nb = self.batch_programs.iter().map(|(s, _)| *s).find(|&s| s >= items.len()).ok_or("the batch is wider than the available programs")?;
+        let mut toks: Vec<u32> = items.iter().map(|i| i.token as u32).collect();
+        toks.resize(nb, 0);
+        self.res.tok_main.write_u32(0, &toks);
+        self.set_ctrl_batch(items, nb);
+        self.last_gpu_us = self.batch_programs.iter().find(|(s, _)| *s == nb).unwrap().1.run()?;
+        Ok((0..items.len()).map(|c| self.main_choice(c)).collect())
+    }
+
+    /// Prefills `prompt` into the main engine (fresh state) and returns the first generated token.
+    pub fn prefill_prompt(&mut self, prompt: &[usize]) -> Result<usize, Error> {
+        if prompt.is_empty() {
+            return Err("empty prompt".into());
+        }
+        self.reset();
+        let mut i = 0;
+        loop {
+            let c = self.chunk_size(prompt.len() - i, true);
+            if c == 0 {
+                break;
+            }
+            self.prefill_chunk(&prompt[i..i + c], None)?;
+            i += c;
+        }
+        for &t in &prompt[i..] {
+            self.step(t)?;
+        }
+        Ok(self.main_choice(0).0)
+    }
+
+    /// Copies the main engine's current sequence (state after its prompt) into batch slot `slot`.
+    pub fn batch_import(&mut self, slot: usize) -> Result<(), Error> {
+        if slot >= self.batch_slots {
+            return Err("slot out of range".into());
+        }
+        let c = &self.cfg;
+        let (cd, kvrow) = (c.conv_dim(), c.n_kv * c.head_dim);
+        let (conv_bytes, rec_bytes) = (((c.conv_k - 1) * cd * 4) as u64, (c.v_heads * c.state * c.state * 4) as u64);
+        let slab = (self.ctx_len * kvrow * 4) as u64;
+        let used = (self.pos * kvrow * 4) as u64;
+        let sel = self.sel as usize;
+        for (layer, pool) in self.res.layers.iter().zip(&self.res.pools) {
+            match (layer, pool) {
+                (LayerRes::Ssm { c0, c1, c2, s0, s1, s2 }, LayerPool::Ssm { conv, rec }) => {
+                    let (cb, sb) = ([c0, c1, c2][sel], [s0, s1, s2][sel]);
+                    self.ctx.copy_buffer(cb, 0, conv, slot as u64 * conv_bytes, conv_bytes)?;
+                    self.ctx.copy_buffer(sb, 0, rec, slot as u64 * rec_bytes, rec_bytes)?;
+                }
+                (LayerRes::Attn { kc, vc }, LayerPool::Attn { k, v }) => {
+                    if used > 0 {
+                        self.ctx.copy_buffer(kc, 0, k, slot as u64 * slab, used)?;
+                        self.ctx.copy_buffer(vc, 0, v, slot as u64 * slab, used)?;
+                    }
+                }
+                _ => return Err("layer and pool kinds differ".into()),
+            }
+        }
+        Ok(())
     }
 
     fn set_ctrl(&self, pos_base: usize, cols: usize) {

@@ -91,6 +91,81 @@ pub const ATTN_TEMPLATE: &[&str] = &[
     "aten::add.Tensor",
 ];
 
+/// Operator sequences of the ragged (multi-sequence) layout: state pools, per-token slot and position.
+pub const SSM_RAGGED_TEMPLATE: &[&str] = &[
+    "lev::rmsnorm.default",
+    "aten::linear.default",
+    "aten::linear.default",
+    "aten::linear.default",
+    "aten::linear.default",
+    "aten::squeeze.dim",
+    "lev::ssm_conv_ragged.default",
+    "getitem",
+    "getitem",
+    "aten::split_with_sizes.default",
+    "getitem",
+    "getitem",
+    "getitem",
+    "aten::reshape.default",
+    "aten::reshape.default",
+    "aten::reshape.default",
+    "aten::sigmoid.default",
+    "aten::to.dtype",
+    "aten::add.Tensor",
+    "aten::softplus.default",
+    "aten::mul.Tensor",
+    "lev::tile_heads.default",
+    "lev::tile_heads.default",
+    "lev::gated_delta_ragged.default",
+    "getitem",
+    "getitem",
+    "aten::reshape.default",
+    "aten::reshape.default",
+    "lev::rmsnorm_gated.default",
+    "aten::reshape.default",
+    "aten::linear.default",
+    "aten::add.Tensor",
+    "lev::rmsnorm.default",
+    "aten::linear.default",
+    "aten::linear.default",
+    "lev::swiglu.default",
+    "aten::linear.default",
+    "aten::add.Tensor",
+];
+
+pub const ATTN_RAGGED_TEMPLATE: &[&str] = &[
+    "lev::rmsnorm.default",
+    "aten::linear.default",
+    "aten::view.default",
+    "aten::chunk.default",
+    "getitem",
+    "getitem",
+    "aten::reshape.default",
+    "lev::rmsnorm.default",
+    "aten::linear.default",
+    "aten::view.default",
+    "lev::rmsnorm.default",
+    "aten::linear.default",
+    "aten::view.default",
+    "lev::rope.default",
+    "lev::rope.default",
+    "lev::slab_kv_write.default",
+    "getitem",
+    "getitem",
+    "lev::slab_attention.default",
+    "aten::reshape.default",
+    "aten::sigmoid.default",
+    "aten::mul.Tensor",
+    "aten::linear.default",
+    "aten::add.Tensor",
+    "lev::rmsnorm.default",
+    "aten::linear.default",
+    "aten::linear.default",
+    "lev::swiglu.default",
+    "aten::linear.default",
+    "aten::add.Tensor",
+];
+
 #[derive(Debug, Clone)]
 pub struct IrPlan {
     pub kinds: Vec<LayerKind>,
@@ -108,7 +183,14 @@ pub fn plan(g: &Graph) -> Result<IrPlan, Error> {
     for l in 0..n {
         let (first, end) = g.layer_segment(l).ok_or_else(|| format!("layer {l}: no nodes"))?;
         let ops: Vec<&str> = g.nodes[first..end].iter().map(|x| if x.op.ends_with("getitem") { "getitem" } else { x.op.as_str() }).collect();
-        let (kind, template) = if ops.contains(&"lev::gated_delta_rule.default") { (LayerKind::Ssm, SSM_TEMPLATE) } else { (LayerKind::Attn, ATTN_TEMPLATE) };
+        let ragged = g.layout == "ragged-v1";
+        let ssm = ops.contains(&"lev::gated_delta_rule.default") || ops.contains(&"lev::gated_delta_ragged.default");
+        let (kind, template) = match (ssm, ragged) {
+            (true, false) => (LayerKind::Ssm, SSM_TEMPLATE),
+            (false, false) => (LayerKind::Attn, ATTN_TEMPLATE),
+            (true, true) => (LayerKind::Ssm, SSM_RAGGED_TEMPLATE),
+            (false, true) => (LayerKind::Attn, ATTN_RAGGED_TEMPLATE),
+        };
         if ops != template {
             let at = ops.iter().zip(template).position(|(a, b)| a != b).unwrap_or(ops.len().min(template.len()));
             return Err(format!(
