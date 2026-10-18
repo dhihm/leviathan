@@ -1,0 +1,94 @@
+"""Custom operators of the model IR, registered with torch.library.
+
+Every operator has a CPU reference implementation (the semantics of the IR),
+and a fake (meta) kernel so torch.export can trace shapes without data. The
+recurrent state is functional: it goes in and a new state comes out, nothing
+is mutated, so the exported graph stays pure.
+
+Single sequence of T tokens for now; the flat multi-sequence layout (per-token
+sequence ids, state slots, block tables) replaces these shapes later.
+
+Reference semantics follow the Hugging Face Qwen3.5 implementation
+(transformers.models.qwen3_5): the gated delta rule is evaluated by its
+recurrent form, which equals the chunked form up to rounding.
+"""
+import torch
+import torch.nn.functional as F
+
+_LIB = torch.library.Library("lev", "DEF")
+
+_LIB.define("causal_conv1d_state(Tensor x, Tensor state, Tensor w) -> (Tensor, Tensor)")
+_LIB.define("gated_delta_rule(Tensor q, Tensor k, Tensor v, Tensor g, Tensor beta, Tensor state) -> (Tensor, Tensor)")
+# past_len is a SymInt: the cache length is dynamic in the exported graph, and a plain int
+# argument would specialize it to the example's value.
+_LIB.define("causal_attention(Tensor q, Tensor k_all, Tensor v_all, SymInt past_len, float scale) -> Tensor")
+
+
+def _l2norm(x: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+    return x * torch.rsqrt((x * x).sum(dim=-1, keepdim=True) + eps)
+
+
+@torch.library.impl(_LIB, "causal_conv1d_state", "CompositeExplicitAutograd")
+def _conv_impl(x, state, w):
+    """x [T, C], state [K-1, C] (the last K-1 inputs before x), w [C, K].
+
+    y[t, c] = silu(sum_i w[c, i] * xx[t + i, c]) over xx = cat(state, x); the new state is the
+    last K-1 rows of xx.
+    """
+    t, c = x.shape
+    k = w.shape[1]
+    xx = torch.cat([state, x], dim=0)  # [K-1+T, C]
+    acc = torch.zeros(t, c, dtype=x.dtype)
+    for i in range(k):
+        acc = acc + xx[i : i + t] * w[:, i]
+    return F.silu(acc), xx[t:].clone()
+
+
+@torch.library.impl(_LIB, "causal_conv1d_state", "Meta")
+def _conv_meta(x, state, w):
+    return x.new_empty(x.shape), state.new_empty(state.shape)
+
+
+@torch.library.impl(_LIB, "gated_delta_rule", "CompositeExplicitAutograd")
+def _gdr_impl(q, k, v, g, beta, state):
+    """q, k [T, H, dk] (already expanded to the value heads), v [T, H, dv], g and beta [T, H],
+    state [H, dk, dv]. q and k are L2-normalized and q is scaled by dk^-0.5 inside. Computed in
+    float32 whatever the input dtype (the decay gate is exponentiated).
+    """
+    dt = q.dtype
+    q, k, v, g, beta, s = (a.float() for a in (q, k, v, g, beta, state))
+    q = _l2norm(q) * (q.shape[-1] ** -0.5)
+    k = _l2norm(k)
+    outs = []
+    for t in range(q.shape[0]):
+        s = s * g[t].exp()[:, None, None]
+        kv = (s * k[t][:, :, None]).sum(dim=1)  # [H, dv]
+        delta = (v[t] - kv) * beta[t][:, None]
+        s = s + k[t][:, :, None] * delta[:, None, :]
+        outs.append((s * q[t][:, :, None]).sum(dim=1))
+    return torch.stack(outs).to(dt), s.to(state.dtype)
+
+
+@torch.library.impl(_LIB, "gated_delta_rule", "Meta")
+def _gdr_meta(q, k, v, g, beta, state):
+    return v.new_empty(v.shape), state.new_empty(state.shape)
+
+
+@torch.library.impl(_LIB, "causal_attention", "CompositeExplicitAutograd")
+def _attn_impl(q, k_all, v_all, past_len, scale):
+    """q [T, Hq, d] at positions past_len..past_len+T-1; k_all, v_all [past_len+T, Hkv, d]."""
+    t, hq, d = q.shape
+    s, hkv, _ = k_all.shape
+    rep = hq // hkv
+    k_all = k_all.repeat_interleave(rep, dim=1)
+    v_all = v_all.repeat_interleave(rep, dim=1)
+    scores = torch.einsum("thd,shd->hts", q, k_all) * scale
+    pos_q = torch.arange(t)[:, None] + past_len
+    pos_k = torch.arange(s)[None, :]
+    scores = scores.masked_fill((pos_k > pos_q)[None], float("-inf"))
+    return torch.einsum("hts,shd->thd", scores.softmax(dim=-1), v_all)
+
+
+@torch.library.impl(_LIB, "causal_attention", "Meta")
+def _attn_meta(q, k_all, v_all, past_len, scale):
+    return q.new_empty(q.shape)

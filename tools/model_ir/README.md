@@ -1,0 +1,23 @@
+# model_ir: torch.export capture of the Ornith (Qwen3.5) layers
+
+Build-time Python side of the Forge pipeline for the Vulkan backend: the model
+is captured with `torch.export` into a graph whose token mixers are custom
+operators (`lev.causal_conv1d_state`, `lev.gated_delta_rule`,
+`lev.causal_attention`), so a later stage can lower and optimize them as units.
+
+- `lev_ops.py`: the custom operators with CPU reference semantics and fake
+  (meta) kernels. State is functional (in and out), nothing is mutated.
+- `ornith_layers.py`: export-friendly wrappers of the Hugging Face decoder
+  layers (same parameters, flat `[T, D]` tokens, explicit state).
+- `export_layers.py`: exports both layer types at real size on the meta device
+  (no weights needed) with a symbolic token count.
+- `test_layers.py`, `test_export.py`: the wrappers and the exported graphs equal
+  the Hugging Face layers (small random config, several token counts).
+
+Python 3.12 with torch (CPU build) and transformers; any virtual environment:
+
+    python -m unittest test_layers test_export
+    python export_layers.py [nodes.json]
+
+Status: single sequence per call. The multi-sequence flat layout, paged KV
+attention and state slots are not implemented yet.
