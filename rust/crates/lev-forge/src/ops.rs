@@ -23,6 +23,10 @@ pub const CTRL_COLS: usize = 128;
 /// Batch metadata in `ctrl`: slot of column `c` at `BATCH_META + c`, its position at
 /// `BATCH_META + CTRL_COLS + c` (ragged batch kernels).
 pub const BATCH_META: usize = 2 + CTRL_COLS * CTRL_WORDS_PER_COL;
+/// Paged KV: flat pool position (block * PAGE_SIZE + offset) of column `c` at `BATCH_SLOT_MAP + c`.
+pub const BATCH_SLOT_MAP: usize = BATCH_META + 2 * CTRL_COLS;
+/// Positions per KV block.
+pub const PAGE_SIZE: usize = 16;
 /// Columns per prefill chunk.
 pub const CHUNK_COLS: usize = 8;
 
@@ -953,6 +957,155 @@ void main() {
         ("NKV", nkv.to_string()),
         ("GROUP", (nh / nkv).to_string()),
         ("CTX", ctx.to_string()),
+        ("SCALE", format!("{:e}", 1.0 / (hd as f32).sqrt())),
+    ];
+    batch_vars(&mut vars);
+    finish(&[HEAD, body].concat(), &vars)
+}
+
+/// `attn_prep` for a paged KV cache: the K and V rows of column `c` go to flat pool position
+/// `ctrl[BATCH_SLOT_MAP + c]` of the layer's block pools `[blocks][PAGE_SIZE][nkv][hd]`.
+/// Bindings as `attn_prep`; 6 and 7 are the K and V pools.
+pub fn attn_prep_paged(nh: usize, nkv: usize, hd: usize, rope_dim: usize, eps: f32) -> String {
+    let body = r#"layout(local_size_x = @HD@) in;
+layout(std430, set = 0, binding = 0) readonly buffer QF { float qfull[]; };
+layout(std430, set = 0, binding = 1) readonly buffer K { float kin[]; };
+layout(std430, set = 0, binding = 2) readonly buffer V { float vin[]; };
+layout(std430, set = 0, binding = 3) readonly buffer QN { float qn[]; };
+layout(std430, set = 0, binding = 4) readonly buffer KN { float kn[]; };
+layout(std430, set = 0, binding = 5) writeonly buffer QO { float qo[]; };
+layout(std430, set = 0, binding = 6) buffer KC { float kc[]; };
+layout(std430, set = 0, binding = 7) buffer VC { float vc[]; };
+layout(std430, set = 0, binding = 8) readonly buffer Ctrl { uint ctrl[]; };
+shared float red[@HD@];
+shared float buf[@HD@];
+void main() {
+    uint wg = gl_WorkGroupID.x;
+    uint col = wg / (@NH@u + 2u * @NKV@u);
+    uint hh = wg % (@NH@u + 2u * @NKV@u);
+    uint t = gl_LocalInvocationID.x;
+    uint flat_pos = ctrl[@SM@u + col];
+    uint cbase = 2u + col * 64u;
+    if (hh >= @NH@u + @NKV@u) {
+        uint kvh = hh - @NH@u - @NKV@u;
+        vc[(flat_pos * @NKV@u + kvh) * @HD@u + t] = vin[col * @NKV@u * @HD@u + kvh * @HD@u + t];
+        return;
+    }
+    bool isq = hh < @NH@u;
+    float val = isq ? qfull[col * @NH@u * @HD2@u + hh * @HD2@u + t] : kin[col * @NKV@u * @HD@u + (hh - @NH@u) * @HD@u + t];
+    red[t] = val * val;
+    barrier();
+    for (uint k = @HD@u / 2u; k > 0u; k >>= 1u) {
+        if (t < k) { red[t] += red[t + k]; }
+        barrier();
+    }
+    float inv = 1.0 / sqrt(red[0] / float(@HD@) + @EPS@);
+    buf[t] = val * inv * (isq ? qn[t] : kn[t]);
+    barrier();
+    float outv = buf[t];
+    if (t < @RD@u) {
+        uint i = t % @RH@u;
+        float c = uintBitsToFloat(ctrl[cbase + i]);
+        float s = uintBitsToFloat(ctrl[cbase + @RH@u + i]);
+        float a = buf[i];
+        float b = buf[i + @RH@u];
+        outv = t < @RH@u ? a * c - b * s : a * s + b * c;
+    }
+    if (isq) { qo[col * @NH@u * @HD@u + hh * @HD@u + t] = outv; }
+    else { kc[(flat_pos * @NKV@u + (hh - @NH@u)) * @HD@u + t] = outv; }
+}
+"#;
+    assert!(rope_dim / 2 <= 32, "ctrl rope table holds 32 pairs per column");
+    let mut vars = vec![
+        ("HD", hd.to_string()),
+        ("HD2", (2 * hd).to_string()),
+        ("NH", nh.to_string()),
+        ("NKV", nkv.to_string()),
+        ("RD", rope_dim.to_string()),
+        ("RH", (rope_dim / 2).to_string()),
+        ("EPS", format!("{:e}", eps)),
+        ("SM", BATCH_SLOT_MAP.to_string()),
+    ];
+    batch_vars(&mut vars);
+    finish(&[HEAD, body].concat(), &vars)
+}
+/// `attn_decode` for a paged KV cache with an online softmax: column `c` attends to positions
+/// `0..=pos` of its sequence, whose blocks are listed in row `slot` of the block table
+/// (`[slots][max_blocks]`, binding 6). Positions are processed in tiles of `hd`, so the context
+/// length is not bounded by shared memory. Bindings as `attn_decode`, 1 and 2 are the block pools.
+pub fn attn_decode_paged(nh: usize, nkv: usize, hd: usize, max_blocks: usize) -> String {
+    let body = r#"layout(local_size_x = @HD@) in;
+layout(std430, set = 0, binding = 0) readonly buffer Q { float q[]; };
+layout(std430, set = 0, binding = 1) readonly buffer KC { float kc[]; };
+layout(std430, set = 0, binding = 2) readonly buffer VC { float vc[]; };
+layout(std430, set = 0, binding = 3) readonly buffer QF { float qfull[]; };
+layout(std430, set = 0, binding = 4) writeonly buffer O { float o[]; };
+layout(std430, set = 0, binding = 5) readonly buffer Ctrl { uint ctrl[]; };
+layout(std430, set = 0, binding = 6) readonly buffer Table { uint table[]; };
+shared float qh[@HD@];
+shared float sc[@HD@];
+shared float red[@HD@];
+void main() {
+    uint wg = gl_WorkGroupID.x;
+    uint col = wg / @NH@u;
+    uint h = wg % @NH@u;
+    uint t = gl_LocalInvocationID.x;
+    uint kvh = h / @GROUP@u;
+    uint n = ctrl[@BP@u + col] + 1u;
+    uint trow = ctrl[@BM@u + col] * @MB@u;
+    qh[t] = q[col * @NH@u * @HD@u + h * @HD@u + t];
+    barrier();
+    float m_run = -3.0e38;
+    float l_run = 0.0;
+    float acc = 0.0;
+    for (uint base = 0u; base < n; base += @HD@u) {
+        uint p = base + t;
+        float s = -3.0e38;
+        if (p < n) {
+            uint kb = ((table[trow + p / @PS@u] * @PS@u + p % @PS@u) * @NKV@u + kvh) * @HD@u;
+            float d = 0.0;
+            for (uint i = 0u; i < @HD@u; i++) { d += qh[i] * kc[kb + i]; }
+            s = d * @SCALE@;
+        }
+        red[t] = s;
+        barrier();
+        for (uint k = @HD@u / 2u; k > 0u; k >>= 1u) {
+            if (t < k) { red[t] = max(red[t], red[t + k]); }
+            barrier();
+        }
+        float m_new = max(m_run, red[0]);
+        barrier();
+        float e = p < n ? exp(s - m_new) : 0.0;
+        sc[t] = e;
+        red[t] = e;
+        barrier();
+        for (uint k = @HD@u / 2u; k > 0u; k >>= 1u) {
+            if (t < k) { red[t] += red[t + k]; }
+            barrier();
+        }
+        float corr = exp(m_run - m_new);
+        l_run = l_run * corr + red[0];
+        acc *= corr;
+        uint cnt = min(@HD@u, n - base);
+        for (uint i = 0u; i < cnt; i++) {
+            uint pp = base + i;
+            acc += sc[i] * vc[((table[trow + pp / @PS@u] * @PS@u + pp % @PS@u) * @NKV@u + kvh) * @HD@u + t];
+        }
+        m_run = m_new;
+        barrier();
+    }
+    float gate = qfull[col * @NH@u * @HD2@u + h * @HD2@u + @HD@u + t];
+    o[col * @NH@u * @HD@u + h * @HD@u + t] = acc / l_run * (1.0 / (1.0 + exp(-gate)));
+}
+"#;
+    let mut vars = vec![
+        ("HD", hd.to_string()),
+        ("HD2", (2 * hd).to_string()),
+        ("NH", nh.to_string()),
+        ("NKV", nkv.to_string()),
+        ("GROUP", (nh / nkv).to_string()),
+        ("MB", max_blocks.to_string()),
+        ("PS", PAGE_SIZE.to_string()),
         ("SCALE", format!("{:e}", 1.0 / (hd as f32).sqrt())),
     ];
     batch_vars(&mut vars);

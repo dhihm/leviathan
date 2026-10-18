@@ -249,3 +249,53 @@ def _slab_attn_impl(q, k_pool, v_pool, slot, pos, scale):
 @torch.library.impl(_LIB, "slab_attention", "Meta")
 def _slab_attn_meta(q, k_pool, v_pool, slot, pos, scale):
     return q.new_empty(q.shape)
+
+# ---- paged KV cache ----
+#
+# The K and V caches of an attention layer are pools of fixed-size blocks, [blocks, block_size,
+# Hkv, d]. A sequence owns a list of blocks; block_table[slot, i] is the physical block holding its
+# positions i * block_size .. (i + 1) * block_size - 1. slot_mapping[t] is the flat pool position
+# (block * block_size + offset) that token t writes to.
+
+_LIB.define("paged_kv_write(Tensor k, Tensor v, Tensor k_pool, Tensor v_pool, Tensor slot_mapping) -> (Tensor, Tensor)")
+_LIB.define("paged_attention(Tensor q, Tensor k_pool, Tensor v_pool, Tensor block_table, Tensor slot, Tensor pos, float scale) -> Tensor")
+
+
+@torch.library.impl(_LIB, "paged_kv_write", "CompositeExplicitAutograd")
+def _paged_write_impl(k, v, k_pool, v_pool, slot_mapping):
+    """k, v [T, Hkv, d]; pools [NB, BS, Hkv, d]: flat position slot_mapping[t] receives token t."""
+    k_pool, v_pool = k_pool.clone(), v_pool.clone()
+    nb, bs, hkv, d = k_pool.shape
+    kf, vf = k_pool.view(nb * bs, hkv, d), v_pool.view(nb * bs, hkv, d)
+    for t in range(k.shape[0]):
+        kf[int(slot_mapping[t])] = k[t]
+        vf[int(slot_mapping[t])] = v[t]
+    return k_pool, v_pool
+
+
+@torch.library.impl(_LIB, "paged_kv_write", "Meta")
+def _paged_write_meta(k, v, k_pool, v_pool, slot_mapping):
+    return k_pool.new_empty(k_pool.shape), v_pool.new_empty(v_pool.shape)
+
+
+@torch.library.impl(_LIB, "paged_attention", "CompositeExplicitAutograd")
+def _paged_attn_impl(q, k_pool, v_pool, block_table, slot, pos, scale):
+    """q [T, Hq, d]; attends positions 0..pos[t] of the token's sequence through its block table."""
+    t_n, hq, d = q.shape
+    bs, hkv = k_pool.shape[1], k_pool.shape[2]
+    rep = hq // hkv
+    out = torch.zeros_like(q)
+    for t in range(t_n):
+        n = int(pos[t]) + 1
+        idx = torch.arange(n)
+        blocks = block_table[int(slot[t]), idx // bs].long()
+        k = k_pool[blocks, idx % bs].repeat_interleave(rep, dim=1)  # [n, Hq, d]
+        v = v_pool[blocks, idx % bs].repeat_interleave(rep, dim=1)
+        sc = torch.einsum("hd,nhd->hn", q[t], k) * scale
+        out[t] = torch.einsum("hn,nhd->hd", sc.softmax(dim=-1), v)
+    return out
+
+
+@torch.library.impl(_LIB, "paged_attention", "Meta")
+def _paged_attn_meta(q, k_pool, v_pool, block_table, slot, pos, scale):
+    return q.new_empty(q.shape)

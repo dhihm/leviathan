@@ -35,5 +35,7 @@ after changing the operators or the layer wrappers (the Rust tests pin the lower
 
 `make_fixture_ragged.py` and `--ragged` give the multi-sequence layout (`ragged-v1`: per-token slot and position, per-layer state pools); the Rust runtime bundles it as `ornith-1.5-9b-ragged.json`.
 
-Status: the single-sequence layout and the ragged slab layout work. The multi-sequence flat layout, paged KV
+`make_fixture_paged.py` and `--paged` give the paged-KV layout (`paged-v1`: block pools, block table, per-token pool position), bundled as `ornith-1.5-9b-paged.json`.
+
+Status: the single-sequence, ragged slab and paged layouts work. The multi-sequence flat layout, paged KV
 attention and state slots are not implemented yet.

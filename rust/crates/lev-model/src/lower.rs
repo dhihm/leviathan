@@ -62,6 +62,10 @@ pub enum KOp {
     AttnPrepBatch { layer: usize, q_norm: String, k_norm: String },
     /// Ragged batch: attention of each column over its own slab, then the output gate.
     AttnDecodeBatch { layer: usize },
+    /// Paged KV: q/k norms, rope and the write of K and V into the block pool.
+    AttnPrepPaged { layer: usize, q_norm: String, k_norm: String },
+    /// Paged KV: attention over the blocks of the column's sequence, then the output gate.
+    AttnDecodePaged { layer: usize },
     /// Greedy token and margin of the logits (runtime epilogue, not part of the IR).
     Argmax,
 }
@@ -177,7 +181,7 @@ impl<'g> Lower<'g> {
                 match self.op(v) {
                     "aten::chunk.default" => Slot::Qfull,
                     "lev::rmsnorm.default" => Slot::Kin,
-                    "aten::cat.default" | "lev::slab_kv_write.default" => Slot::Vin,
+                    "aten::cat.default" | "lev::slab_kv_write.default" | "lev::paged_kv_write.default" => Slot::Vin,
                     other => return err(format!("linear {i}: its view feeds {other}")),
                 }
             }
@@ -374,9 +378,17 @@ impl<'g> Lower<'g> {
     /// Ragged attention: q/k norm and rope, the write of K and V into the slab, attention over the
     /// slab and the output gate.
     fn rule_slab_attention(&mut self, a: usize) -> Result<(), String> {
+        self.rule_attention_over_pool(a, false)
+    }
+
+    fn rule_paged_attention(&mut self, a: usize) -> Result<(), String> {
+        self.rule_attention_over_pool(a, true)
+    }
+
+    fn rule_attention_over_pool(&mut self, a: usize, paged: bool) -> Result<(), String> {
         let (kg, vg) = (self.node_arg(a, 1)?, self.node_arg(a, 2)?);
         let kv_write = self.getitem(kg, 0)?;
-        self.expect(kv_write, "lev::slab_kv_write.default")?;
+        self.expect(kv_write, if paged { "lev::paged_kv_write.default" } else { "lev::slab_kv_write.default" })?;
         if self.getitem(vg, 1)? != kv_write {
             return err("slab attention reads the K and V pools of different writes");
         }
@@ -407,8 +419,13 @@ impl<'g> Lower<'g> {
         items.sort_unstable();
         let (qn, kn) = (self.param_arg(q_norm, 1)?.to_string(), self.param_arg(k_norm, 1)?.to_string());
         let (q_norm_w, k_norm_w) = (self.gguf(&qn)?, self.gguf(&kn)?);
-        self.emit(a, 0, KOp::AttnPrepBatch { layer, q_norm: q_norm_w, k_norm: k_norm_w });
-        self.emit(a, 1, KOp::AttnDecodeBatch { layer });
+        if paged {
+            self.emit(a, 0, KOp::AttnPrepPaged { layer, q_norm: q_norm_w, k_norm: k_norm_w });
+            self.emit(a, 1, KOp::AttnDecodePaged { layer });
+        } else {
+            self.emit(a, 0, KOp::AttnPrepBatch { layer, q_norm: q_norm_w, k_norm: k_norm_w });
+            self.emit(a, 1, KOp::AttnDecodeBatch { layer });
+        }
         let mut claim = vec![a, kg, vg, kv_write, rope_k, v_view, k_norm, k_view, rope_q, q_norm, q_view, chunk, out_r, mul, sig, gate_r];
         claim.extend(items);
         self.claim(&claim)
@@ -468,6 +485,7 @@ pub fn lower(g: &Graph) -> Result<Vec<KOp>, String> {
             "lev::gated_delta_rule.default" | "lev::gated_delta_ragged.default" => l.rule_delta(i)?,
             "lev::causal_attention.default" => l.rule_attention(i)?,
             "lev::slab_attention.default" => l.rule_slab_attention(i)?,
+            "lev::paged_attention.default" => l.rule_paged_attention(i)?,
             "lev::swiglu.default" => l.rule_swiglu(i)?,
             _ => {}
         }
@@ -540,6 +558,18 @@ mod tests {
         assert_eq!(ops.len(), lower(&tiny()).unwrap().len());
         let plan = crate::plan::plan(&g).unwrap();
         assert_eq!(plan.kinds.len(), 4);
+    }
+
+    #[test]
+    fn lowers_the_paged_tiny_model_completely() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../lev-ir/tests/fixtures/tiny_paged/ir.json");
+        let g = retarget_gguf(&Graph::parse(&std::fs::read_to_string(path).unwrap()).unwrap()).unwrap();
+        assert_eq!(g.layout, "paged-v1");
+        let ops = lower(&g).unwrap();
+        assert_eq!(count(&ops, |o| matches!(o, KOp::AttnPrepPaged { .. } | KOp::AttnDecodePaged { .. })), 2);
+        assert_eq!(count(&ops, |o| matches!(o, KOp::AttnPrepBatch { .. } | KOp::AttnDecodeBatch { .. })), 0);
+        assert_eq!(ops.len(), lower(&tiny()).unwrap().len());
+        assert_eq!(crate::plan::plan(&g).unwrap().kinds.len(), 4);
     }
 
     #[test]

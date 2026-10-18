@@ -166,6 +166,40 @@ pub const ATTN_RAGGED_TEMPLATE: &[&str] = &[
     "aten::add.Tensor",
 ];
 
+/// Attention layer of the paged-KV layout (the gated delta layers equal the ragged ones).
+pub const ATTN_PAGED_TEMPLATE: &[&str] = &[
+    "lev::rmsnorm.default",
+    "aten::linear.default",
+    "aten::view.default",
+    "aten::chunk.default",
+    "getitem",
+    "getitem",
+    "aten::reshape.default",
+    "lev::rmsnorm.default",
+    "aten::linear.default",
+    "aten::view.default",
+    "lev::rmsnorm.default",
+    "aten::linear.default",
+    "aten::view.default",
+    "lev::rope.default",
+    "lev::rope.default",
+    "lev::paged_kv_write.default",
+    "getitem",
+    "getitem",
+    "lev::paged_attention.default",
+    "aten::reshape.default",
+    "aten::sigmoid.default",
+    "aten::mul.Tensor",
+    "aten::linear.default",
+    "aten::add.Tensor",
+    "lev::rmsnorm.default",
+    "aten::linear.default",
+    "aten::linear.default",
+    "lev::swiglu.default",
+    "aten::linear.default",
+    "aten::add.Tensor",
+];
+
 #[derive(Debug, Clone)]
 pub struct IrPlan {
     pub kinds: Vec<LayerKind>,
@@ -183,12 +217,14 @@ pub fn plan(g: &Graph) -> Result<IrPlan, Error> {
     for l in 0..n {
         let (first, end) = g.layer_segment(l).ok_or_else(|| format!("layer {l}: no nodes"))?;
         let ops: Vec<&str> = g.nodes[first..end].iter().map(|x| if x.op.ends_with("getitem") { "getitem" } else { x.op.as_str() }).collect();
-        let ragged = g.layout == "ragged-v1";
+        let paged = g.layout == "paged-v1";
+        let ragged = g.layout == "ragged-v1" || paged;
         let ssm = ops.contains(&"lev::gated_delta_rule.default") || ops.contains(&"lev::gated_delta_ragged.default");
         let (kind, template) = match (ssm, ragged) {
             (true, false) => (LayerKind::Ssm, SSM_TEMPLATE),
             (false, false) => (LayerKind::Attn, ATTN_TEMPLATE),
             (true, true) => (LayerKind::Ssm, SSM_RAGGED_TEMPLATE),
+            (false, true) if paged => (LayerKind::Attn, ATTN_PAGED_TEMPLATE),
             (false, true) => (LayerKind::Attn, ATTN_RAGGED_TEMPLATE),
         };
         if ops != template {

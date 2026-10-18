@@ -12,6 +12,7 @@ use lev_cpu::{matvec_q4k_f32, matvec_q6k_f32, QK_K};
 use lev_gguf::{GgmlType, GgufFile};
 
 pub mod gpu;
+pub mod kv;
 pub mod lower;
 pub mod plan;
 pub mod weights;

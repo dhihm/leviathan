@@ -194,3 +194,41 @@ class AttnDecoderLayerRagged(nn.Module):
         x = x + h
         x = x + mlp(l, rmsnorm(x, l.post_attention_layernorm.weight, l.post_attention_layernorm.eps))
         return x, k_pool, v_pool
+
+class PagedAttentionMixer(nn.Module):
+    """FullAttentionMixer over a flat batch with a paged KV cache."""
+
+    def __init__(self, m):
+        super().__init__()
+        self.m = m
+
+    def forward(self, x, cos, sin, k_pool, v_pool, block_table, slot, pos, slot_mapping):
+        m = self.m
+        t = x.shape[0]
+        hd = m.head_dim
+        qg = m.q_proj(x).view(t, -1, hd * 2)
+        q, gate = torch.chunk(qg, 2, dim=-1)
+        gate = gate.reshape(t, -1)
+        q = rmsnorm(q, m.q_norm.weight, m.q_norm.eps)
+        k = rmsnorm(m.k_proj(x).view(t, -1, hd), m.k_norm.weight, m.k_norm.eps)
+        v = m.v_proj(x).view(t, -1, hd)
+        q = torch.ops.lev.rope(q, cos, sin)
+        k = torch.ops.lev.rope(k, cos, sin)
+        k_pool, v_pool = torch.ops.lev.paged_kv_write(k, v, k_pool, v_pool, slot_mapping)
+        out = torch.ops.lev.paged_attention(q, k_pool, v_pool, block_table, slot, pos, m.scaling)
+        out = out.reshape(t, -1) * torch.sigmoid(gate)
+        return m.o_proj(out), k_pool, v_pool
+
+
+class PagedAttnDecoderLayer(nn.Module):
+    def __init__(self, layer):
+        super().__init__()
+        self.layer = layer
+        self.mixer = PagedAttentionMixer(layer.self_attn)
+
+    def forward(self, x, cos, sin, k_pool, v_pool, block_table, slot, pos, slot_mapping):
+        l = self.layer
+        h, k_pool, v_pool = self.mixer(rmsnorm(x, l.input_layernorm.weight, l.input_layernorm.eps), cos, sin, k_pool, v_pool, block_table, slot, pos, slot_mapping)
+        x = x + h
+        x = x + mlp(l, rmsnorm(x, l.post_attention_layernorm.weight, l.post_attention_layernorm.eps))
+        return x, k_pool, v_pool

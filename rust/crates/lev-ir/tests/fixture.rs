@@ -22,6 +22,11 @@ fn tiny_ragged_batch_matches_pytorch() {
     check("tiny_ragged");
 }
 
+#[test]
+fn tiny_paged_batch_matches_pytorch() {
+    check("tiny_paged");
+}
+
 fn check(dir: &str) {
     let g = Graph::parse(&std::fs::read_to_string(fixture(dir, "ir.json")).unwrap()).unwrap();
     g.validate().unwrap();

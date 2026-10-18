@@ -215,6 +215,14 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Some("vk-paged") if args.len() == 2 => match vk_paged() {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Some("ir-run") if args.len() == 3 => match ir_run(&args[2]) {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::FAILURE,
@@ -616,11 +624,34 @@ fn gpu_batch(path: &str, prompts: &str, n: &str) -> Result<bool, Box<dyn std::er
     // LEV_BATCH_REVERSE=1 gives the first prompt the last slot (to tell column and slot effects apart).
     let slot_of = |i: usize| if std::env::var_os("LEV_BATCH_REVERSE").is_some() { b - 1 - i } else { i };
     for (i, p) in prompts.iter().enumerate() {
-        gpu.prefill_prompt(p)?;
+        let first = gpu.prefill_prompt(p)?;
+        if std::env::var_os("LEV_BATCH_DEBUG").is_some() {
+            let logits = gpu.last_logits();
+            let s: f64 = logits.iter().map(|&v| v as f64).sum();
+            println!("prefill {i}: first token {first}, logit sum {s:.6}");
+        }
         gpu.batch_import(slot_of(i))?;
         pos.push(p.len());
     }
 
+    if std::env::var_os("LEV_BATCH_REPEAT").is_some() {
+        // The same first step from the same imported state, three times: do the columns repeat?
+        for run in 0..3 {
+            for (i, p) in prompts.iter().enumerate() {
+                gpu.prefill_prompt(p)?;
+                gpu.batch_import(slot_of(i))?;
+            }
+            let items: Vec<BatchItem> = (0..b).map(|i| BatchItem { slot: slot_of(i), token: solo[i][0], pos: pos[i] }).collect();
+            let res = gpu.batch_step(&items)?;
+            let sums: Vec<String> = (0..b).map(|c| format!("{}/{:.3}", res[c].0, res[c].1)).collect();
+            println!("run {run}: columns (token/margin) {}", sums.join("  "));
+        }
+    }
+    if std::env::var_os("LEV_BATCH_DEBUG").is_some() && b >= 2 {
+        for (name, d) in gpu.debug_slot_diff(slot_of(0), slot_of(1), pos[0].min(pos[1]))? {
+            println!("slot state difference {name}: {d:.3e}");
+        }
+    }
     // Teacher forcing: every step feeds the solo run's token, so a near tie cannot compound. The
     // batch output at step k must be the solo token k + 1 unless that choice was a near tie.
     let t0 = std::time::Instant::now();
@@ -1236,6 +1267,112 @@ fn vk_gemm(path: &str, max_rows: usize, name: &str) -> Result<bool, Box<dyn std:
 /// Equivalence test of the chunk gated-delta kernel: 8 columns in one dispatch
 /// against the single-column kernel applied 8 times, same random inputs and
 /// initial state; compares outputs and the final state.
+/// Paged attention (online softmax over scattered blocks) against the slab kernel and an f64 CPU
+/// reference on random data, for short and long contexts and several columns.
+fn vk_paged() -> Result<bool, Box<dyn std::error::Error>> {
+    use lev_forge::ops;
+    const NH: usize = 16;
+    const NKV: usize = 4;
+    const HD: usize = 256;
+    // LEV_PAGED_CTX raises the context length (the slab kernel is only built up to 8192 positions:
+    // its scores live in shared memory).
+    let CTX: usize = std::env::var("LEV_PAGED_CTX").ok().and_then(|v| v.parse().ok()).unwrap_or(4096);
+    const SLOTS: usize = 4;
+    let ctx = VulkanContext::open(&DeviceSelector::Auto)?;
+    let cache_dir = std::env::var_os("LEV_CACHE_DIR").map(|p| std::path::PathBuf::from(p).join("spv")).unwrap_or_else(|| std::env::temp_dir().join("lev-forge").join("spv"));
+    let mk = |src: &str, n: usize| -> Result<lev_vulkan::Kernel, Box<dyn std::error::Error>> {
+        let (spv, _) = compile_glsl_cached(src, &cache_dir)?;
+        Ok(ctx.create_kernel(&spv, n, 0)?)
+    };
+    let slab = if CTX <= 8192 { Some(mk(&ops::attn_decode_batch(NH, NKV, HD, CTX), 6)?) } else { None };
+    let paged = mk(&ops::attn_decode_paged(NH, NKV, HD, CTX / ops::PAGE_SIZE), 7)?;
+    let mut rng = SplitMix64(0x50414745);
+    let mut rnd = |n: usize, scale: f32| -> Vec<f32> { (0..n).map(|_| rng.next_signed_unit() * scale).collect() };
+    let positions = [5usize, 200, CTX / 4, CTX - 96]; // one per slot/column: positions 0..=pos are attended
+    let nb = positions.len();
+    let row = NKV * HD;
+    // K and V of every slot, positions 0..CTX.
+    let k_all = rnd(SLOTS * CTX * row, 1.0);
+    let v_all = rnd(SLOTS * CTX * row, 1.0);
+    let q = rnd(nb * NH * HD, 1.0);
+    let qfull = rnd(nb * NH * HD * 2, 1.0);
+    // Paged pools: the blocks of all slots scattered over a pool in a shuffled order.
+    let max_blocks = CTX / ops::PAGE_SIZE;
+    let total = SLOTS * max_blocks + 1; // block 0 unused
+    let mut order: Vec<u32> = (1..total as u32).collect();
+    let mut sh = SplitMix64(7);
+    for i in (1..order.len()).rev() {
+        order.swap(i, (sh.next_u64() % (i as u64 + 1)) as usize);
+    }
+    let mut table = vec![0u32; SLOTS * max_blocks];
+    let (mut kp, mut vp) = (vec![0f32; total * ops::PAGE_SIZE * row], vec![0f32; total * ops::PAGE_SIZE * row]);
+    for s in 0..SLOTS {
+        for b in 0..max_blocks {
+            let blk = order[s * max_blocks + b] as usize;
+            table[s * max_blocks + b] = blk as u32;
+            for o in 0..ops::PAGE_SIZE {
+                let src = (s * CTX + b * ops::PAGE_SIZE + o) * row;
+                let dst = (blk * ops::PAGE_SIZE + o) * row;
+                kp[dst..dst + row].copy_from_slice(&k_all[src..src + row]);
+                vp[dst..dst + row].copy_from_slice(&v_all[src..src + row]);
+            }
+        }
+    }
+    let host = |v: &[f32]| -> Result<lev_vulkan::Buf, Box<dyn std::error::Error>> {
+        let b = ctx.create_buffer((v.len() * 4) as u64)?;
+        b.write_f32(0, v);
+        Ok(b)
+    };
+    let (qb, qfb, kab, vab, kpb, vpb) = (host(&q)?, host(&qfull)?, host(&k_all)?, host(&v_all)?, host(&kp)?, host(&vp)?);
+    let tb = ctx.create_buffer((table.len() * 4) as u64)?;
+    tb.write_u32(0, &table);
+    let ctrl = ctx.create_buffer(65536)?;
+    ctrl.zero();
+    let mut words = vec![0u32; ops::BATCH_SLOT_MAP + ops::CTRL_COLS];
+    for (c, &pos) in positions.iter().enumerate() {
+        words[ops::BATCH_META + c] = c as u32; // slot c
+        words[ops::BATCH_META + ops::CTRL_COLS + c] = pos as u32;
+    }
+    ctrl.write_u32(0, &words);
+    let (o_slab, o_paged) = (ctx.create_buffer((nb * NH * HD * 4) as u64)?, ctx.create_buffer((nb * NH * HD * 4) as u64)?);
+    let mut steps = Vec::new();
+    if let Some(slab) = &slab {
+        steps.push(lev_vulkan::Step { kernel: slab, bindings: vec![(&qb, 0, qb.size()), (&kab, 0, kab.size()), (&vab, 0, vab.size()), (&qfb, 0, qfb.size()), (&o_slab, 0, o_slab.size()), (&ctrl, 0, ctrl.size())], push: Vec::new(), groups: (nb * NH) as u32 });
+    }
+    steps.push(lev_vulkan::Step { kernel: &paged, bindings: vec![(&qb, 0, qb.size()), (&kpb, 0, kpb.size()), (&vpb, 0, vpb.size()), (&qfb, 0, qfb.size()), (&o_paged, 0, o_paged.size()), (&ctrl, 0, ctrl.size()), (&tb, 0, tb.size())], push: Vec::new(), groups: (nb * NH) as u32 });
+    ctx.build_program(&steps, false)?.run()?;
+    let (got_slab, got_paged) = if slab.is_some() { (o_slab.read_f32(0, nb * NH * HD), o_paged.read_f32(0, nb * NH * HD)) } else { (o_paged.read_f32(0, nb * NH * HD), o_paged.read_f32(0, nb * NH * HD)) };
+    // f64 reference
+    let scale = 1.0 / (HD as f64).sqrt();
+    let mut ok = true;
+    for (c, &pos) in positions.iter().enumerate() {
+        let n = pos + 1;
+        let (mut e_slab, mut e_paged, mut e_between) = (0f64, 0f64, 0f64);
+        for h in 0..NH {
+            let kvh = h / (NH / NKV);
+            let qv = &q[(c * NH + h) * HD..(c * NH + h + 1) * HD];
+            let sc: Vec<f64> = (0..n).map(|p| (0..HD).map(|d| qv[d] as f64 * k_all[(c * CTX + p) * row + kvh * HD + d] as f64).sum::<f64>() * scale).collect();
+            let mx = sc.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let w: Vec<f64> = sc.iter().map(|s| (s - mx).exp()).collect();
+            let sum: f64 = w.iter().sum();
+            for d in 0..HD {
+                let acc: f64 = (0..n).map(|p| w[p] * v_all[(c * CTX + p) * row + kvh * HD + d] as f64).sum::<f64>() / sum;
+                let gate = qfull[(c * NH + h) * 2 * HD + HD + d] as f64;
+                let want = acc * (1.0 / (1.0 + (-gate).exp()));
+                let i = (c * NH + h) * HD + d;
+                e_slab = e_slab.max((got_slab[i] as f64 - want).abs());
+                e_paged = e_paged.max((got_paged[i] as f64 - want).abs());
+                e_between = e_between.max((got_slab[i] - got_paged[i]).abs() as f64);
+            }
+        }
+        let good = e_paged < 1e-5 && e_slab < 1e-5;
+        ok &= good;
+        println!("position {pos:>5}: slab error {e_slab:.2e}, paged error {e_paged:.2e}, slab vs paged {e_between:.2e} {}", if good { "ok" } else { "FAIL" });
+    }
+    println!("{}", if ok { "PASS" } else { "FAIL" });
+    Ok(ok)
+}
+
 fn vk_delta() -> Result<bool, Box<dyn std::error::Error>> {
     use lev_forge::ops;
     const KH: usize = 16;

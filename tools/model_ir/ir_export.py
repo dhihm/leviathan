@@ -22,7 +22,7 @@ from torch.export import Dim, export
 
 from transformers.models.qwen3_5.configuration_qwen3_5 import Qwen3_5TextConfig
 
-from ornith_model import OrnithModel, OrnithModelRagged
+from ornith_model import OrnithModel, OrnithModelPaged, OrnithModelRagged
 
 FORMAT = "lev-model-ir-1"
 
@@ -216,14 +216,39 @@ def build_and_export_ragged(cfg, meta=True):
     return model, ep
 
 
+def build_and_export_paged(cfg, meta=True, block_size=16):
+    """Exports OrnithModelPaged: symbolic token count T, slot count S, block count NB, table width MB."""
+    t = Dim("T", min=1, max=4096)
+    s = Dim("S", min=1, max=1024)
+    nb = Dim("NB", min=1, max=1 << 20)
+    mb = Dim("MB", min=1, max=1 << 16)
+    ctx = torch.device("meta") if meta else torch.device("cpu")
+    with ctx:
+        model = OrnithModelPaged(cfg).eval()
+        rd = int(cfg.head_dim * (cfg.rope_parameters.get("partial_rotary_factor", 1.0)))
+        ex = [torch.zeros(3, dtype=torch.long), torch.empty(3, rd), torch.empty(3, rd), torch.zeros(3, dtype=torch.long), torch.zeros(3, dtype=torch.long), torch.zeros(3, dtype=torch.long), torch.zeros(2, 2, dtype=torch.long)]
+        dyn = [{0: t}, {0: t}, {0: t}, {0: t}, {0: t}, {0: t}, {0: s, 1: mb}]
+        pools = []
+        for lay in model.pool_layout(2, 3, block_size):
+            if lay[0] == "linear":
+                ex += [torch.empty(*lay[1]), torch.empty(*lay[2])]
+                pools += [{0: s}, {0: s}]
+            else:
+                ex += [torch.empty(*lay[1]), torch.empty(*lay[1])]
+                pools += [{0: nb}, {0: nb}]
+    ep = export(model, tuple(ex), dynamic_shapes=tuple(dyn + [tuple(pools)]))
+    return model, ep
+
+
 def main():
     out = sys.argv[1]
     small = "--small" in sys.argv
     ragged = "--ragged" in sys.argv
+    paged = "--paged" in sys.argv
     cfg = small_config() if small else real_config()
-    model, ep = (build_and_export_ragged if ragged else build_and_export)(cfg, meta=not small)
+    model, ep = (build_and_export_paged if paged else build_and_export_ragged if ragged else build_and_export)(cfg, meta=not small)
     ir = serialize(ep, cfg)
-    ir["layout"] = "ragged-v1" if ragged else "single-v1"
+    ir["layout"] = "paged-v1" if paged else "ragged-v1" if ragged else "single-v1"
     with open(out, "w", encoding="utf-8") as f:
         json.dump(ir, f)
     ops = Counter(n["op"] for n in ir["nodes"])

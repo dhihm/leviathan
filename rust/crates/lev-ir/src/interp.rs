@@ -71,6 +71,8 @@ pub const SUPPORTED_OPS: &[&str] = &[
     "lev::gated_delta_ragged.default",
     "lev::slab_kv_write.default",
     "lev::slab_attention.default",
+    "lev::paged_kv_write.default",
+    "lev::paged_attention.default",
 ];
 
 pub fn is_supported(op: &str) -> bool {
@@ -148,6 +150,13 @@ fn resolve_arg(a: &Arg, vals: &[Option<Rc<V>>], params: &dyn ParamSource, inputs
 fn ints(v: &V) -> Result<&[i64], String> {
     match v {
         V::I(t) => Ok(&t.data),
+        other => Err(format!("expected an int tensor, got {}", kind(other))),
+    }
+}
+
+fn int_shape(v: &V) -> Result<Vec<usize>, String> {
+    match v {
+        V::I(t) => Ok(t.shape.clone()),
         other => Err(format!("expected an int tensor, got {}", kind(other))),
     }
 }
@@ -352,6 +361,11 @@ fn exec(n: &Node, a: &[Rc<V>]) -> Result<V, String> {
             let (kp, vp) = slab_kv_write(tensor(&a[0])?, tensor(&a[1])?, tensor(&a[2])?, tensor(&a[3])?, ints(&a[4])?, ints(&a[5])?)?;
             V::List(vec![Rc::new(V::T(kp)), Rc::new(V::T(vp))])
         }
+        "lev::paged_kv_write.default" => {
+            let (kp, vp) = paged_kv_write(tensor(&a[0])?, tensor(&a[1])?, tensor(&a[2])?, tensor(&a[3])?, ints(&a[4])?)?;
+            V::List(vec![Rc::new(V::T(kp)), Rc::new(V::T(vp))])
+        }
+        "lev::paged_attention.default" => V::T(paged_attention(tensor(&a[0])?, tensor(&a[1])?, tensor(&a[2])?, ints(&a[3])?, &int_shape(&a[3])?, ints(&a[4])?, ints(&a[5])?, float(&a[6])? as f32)?),
         "lev::slab_attention.default" => V::T(slab_attention(tensor(&a[0])?, tensor(&a[1])?, tensor(&a[2])?, ints(&a[3])?, ints(&a[4])?, float(&a[5])? as f32)),
         "lev::causal_attention.default" => {
             V::T(causal_attention(tensor(&a[0])?, tensor(&a[1])?, tensor(&a[2])?, int(&a[3])? as usize, float(&a[4])? as f32))
@@ -776,4 +790,60 @@ fn slab_attention(q: &Tensor, k_pool: &Tensor, v_pool: &Tensor, slot: &[i64], po
         }
     }
     Tensor::new(vec![t, hq, d], out)
+}
+
+fn paged_kv_write(k: &Tensor, v: &Tensor, k_pool: &Tensor, v_pool: &Tensor, slot_mapping: &[i64]) -> Result<(Tensor, Tensor), String> {
+    let (nb, bs, hkv, d) = (k_pool.shape[0], k_pool.shape[1], k_pool.shape[2], k_pool.shape[3]);
+    let row = hkv * d;
+    let (mut kp, mut vp) = (k_pool.clone(), v_pool.clone());
+    for t in 0..k.shape[0] {
+        let at = slot_mapping[t] as usize;
+        if at >= nb * bs {
+            return Err(format!("pool position {at} is beyond the pool of {} positions", nb * bs));
+        }
+        kp.data[at * row..(at + 1) * row].copy_from_slice(&k.data[t * row..(t + 1) * row]);
+        vp.data[at * row..(at + 1) * row].copy_from_slice(&v.data[t * row..(t + 1) * row]);
+    }
+    Ok((kp, vp))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paged_attention(q: &Tensor, k_pool: &Tensor, v_pool: &Tensor, table: &[i64], table_shape: &[usize], slot: &[i64], pos: &[i64], scale: f32) -> Result<Tensor, String> {
+    let (t, hq, d) = (q.shape[0], q.shape[1], q.shape[2]);
+    let (bs, hkv) = (k_pool.shape[1], k_pool.shape[2]);
+    let rep = hq / hkv;
+    let mb = table_shape[1];
+    let mut out = vec![0f32; t * hq * d];
+    for ti in 0..t {
+        let n = pos[ti] as usize + 1;
+        let at = |p: usize, kvh: usize| -> Result<usize, String> {
+            let blk = *table.get(slot[ti] as usize * mb + p / bs).ok_or("position beyond the block table")? as usize;
+            Ok(((blk * bs + p % bs) * hkv + kvh) * d)
+        };
+        let mut scores = vec![0f32; n];
+        for h in 0..hq {
+            let kvh = h / rep;
+            let qv = &q.data[(ti * hq + h) * d..(ti * hq + h + 1) * d];
+            let mut max = f32::NEG_INFINITY;
+            for (p, sc) in scores.iter_mut().enumerate() {
+                let kv = &k_pool.data[at(p, kvh)?..at(p, kvh)? + d];
+                *sc = qv.iter().zip(kv).map(|(a, b)| a * b).sum::<f32>() * scale;
+                max = max.max(*sc);
+            }
+            let mut sum = 0f32;
+            for sc in &mut scores {
+                *sc = (*sc - max).exp();
+                sum += *sc;
+            }
+            let o = &mut out[(ti * hq + h) * d..(ti * hq + h + 1) * d];
+            for (p, sc) in scores.iter().enumerate() {
+                let w = sc / sum;
+                let vv = &v_pool.data[at(p, kvh)?..at(p, kvh)? + d];
+                for j in 0..d {
+                    o[j] += w * vv[j];
+                }
+            }
+        }
+    }
+    Ok(Tensor::new(vec![t, hq, d], out))
 }

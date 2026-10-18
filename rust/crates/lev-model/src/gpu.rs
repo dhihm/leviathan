@@ -123,6 +123,8 @@ struct BatchKernels {
     delta: Kernel,
     prep: Kernel,
     decode: Kernel,
+    prep_paged: Kernel,
+    decode_paged: Kernel,
 }
 
 /// Per-layer pools of the ragged batch: one state per slot (the last slot is scratch for padding).
@@ -151,6 +153,8 @@ struct Res {
     layers: Vec<LayerRes>,
     /// Ragged batch pools (empty unless LEV_BATCH_SLOTS is set).
     pools: Vec<LayerPool>,
+    /// Paged KV: block table `[slots + 1][max blocks]`, rewritten by the host every step.
+    block_table: Buf,
     mtp_kv: (Buf, Buf),
     x: Buf,
     xn: Buf,
@@ -208,6 +212,8 @@ pub struct GpuModel {
     /// Ragged decode programs by batch size (empty unless LEV_BATCH_SLOTS is set).
     batch_programs: Vec<(usize, Program)>,
     batch_slots: usize,
+    /// Paged KV bookkeeping (None with LEV_KV_SLAB or without batch slots).
+    kv: Option<crate::kv::BlockManager>,
     prefill: Program,
     mtp_fill_chunk: Program,
     bigs: Vec<(usize, Program, Program)>,
@@ -367,14 +373,16 @@ fn build_main(ctx: &VulkanContext, g: &GgufFile, cfg: &Config, r: &Res, k: &Kern
 const BUNDLED_IR: &str = include_str!("../ir/ornith-1.5-9b.json");
 /// Same model as a ragged multi-sequence batch (state pools, per-token slot and position).
 const BUNDLED_RAGGED_IR: &str = include_str!("../ir/ornith-1.5-9b-ragged.json");
+/// Same model over a paged KV cache (block pools, block table, per-token pool position).
+const BUNDLED_PAGED_IR: &str = include_str!("../ir/ornith-1.5-9b-paged.json");
 
 /// The model IR the decode passes are lowered from: `LEV_IR=<file>` names another export,
 /// `LEV_NO_IR=1` selects the hand-written passes (the regression oracle), otherwise the bundled
 /// IR is used when it describes this model file.
 type IrLowering = (crate::plan::IrPlan, Vec<KOp>);
 /// The ragged-batch IR lowered to kernel operations (always from the bundled file).
-fn load_ragged_ir(cfg: &Config) -> Result<Vec<KOp>, Error> {
-    let g = lev_ir::pass::retarget_gguf(&lev_ir::ir::Graph::parse(BUNDLED_RAGGED_IR)?)?;
+fn load_ragged_ir(cfg: &Config, paged: bool) -> Result<Vec<KOp>, Error> {
+    let g = lev_ir::pass::retarget_gguf(&lev_ir::ir::Graph::parse(if paged { BUNDLED_PAGED_IR } else { BUNDLED_RAGGED_IR })?)?;
     g.validate()?;
     let plan = crate::plan::plan(&g)?;
     plan.check(cfg)?;
@@ -641,6 +649,24 @@ fn emit_main_ir<'a>(g: &GgufFile, cfg: &Config, r: &'a Res, k: &'a Kernels, nb: 
                     (nb * nh) as u32,
                 );
             }
+            KOp::AttnPrepPaged { layer, q_norm, k_norm } => {
+                let (Some(bk), Some(LayerPool::Attn { k: kp, v: vp })) = (&k.batch, r.pools.get(*layer)) else { return Err(format!("layer {layer}: no paged KV pool").into()) };
+                b.simple(
+                    "attn_prep",
+                    &bk.prep_paged,
+                    vec![part(&r.qfull, 0, nb * nh * cfg.head_dim * 2), part(&r.kin, 0, nb * nkv * cfg.head_dim), part(&r.vin, 0, nb * nkv * cfg.head_dim), full(w(q_norm)), full(w(k_norm)), part(&r.q_out, 0, nb * nh * cfg.head_dim), full(kp), full(vp), full(&r.ctrl)],
+                    (nb * (nh + 2 * nkv)) as u32,
+                );
+            }
+            KOp::AttnDecodePaged { layer } => {
+                let (Some(bk), Some(LayerPool::Attn { k: kp, v: vp })) = (&k.batch, r.pools.get(*layer)) else { return Err(format!("layer {layer}: no paged KV pool").into()) };
+                b.simple(
+                    "attn_decode",
+                    &bk.decode_paged,
+                    vec![part(&r.q_out, 0, nb * nh * cfg.head_dim), full(kp), full(vp), part(&r.qfull, 0, nb * nh * cfg.head_dim * 2), part(&r.attn_out, 0, nb * nh * cfg.head_dim), full(&r.ctrl), full(&r.block_table)],
+                    (nb * nh) as u32,
+                );
+            }
             KOp::SwigluQuant => b.swiglu_quant(r, k, nb, cfg.n_ff),
             KOp::Argmax => b.simple("argmax", &k.argmax, vec![part(&r.logits, 0, nb * cfg.vocab), part(&r.am_main, 0, nb), part(&r.mg_main, 0, nb)], nb as u32),
         }
@@ -878,6 +904,8 @@ impl GpuModel {
                     delta: mk(&ops::ssm_delta_batch(kh, vh, hs, cfg.eps, cd), 11, 0)?,
                     prep: mk(&ops::attn_prep_batch(nh, nkv, hd, cfg.rope_dim, cfg.eps, ctx_len), 9, 0)?,
                     decode: mk(&ops::attn_decode_batch(nh, nkv, hd, ctx_len), 6, 0)?,
+                    prep_paged: mk(&ops::attn_prep_paged(nh, nkv, hd, cfg.rope_dim, cfg.eps), 9, 0)?,
+                    decode_paged: mk(&ops::attn_decode_paged(nh, nkv, hd, ctx_len.div_ceil(ops::PAGE_SIZE)), 7, 0)?,
                 })
             } else {
                 None
@@ -969,20 +997,31 @@ impl GpuModel {
         let ctrl = ctx.create_buffer(65536)?;
         ctrl.zero();
         let mut pools = Vec::new();
+        // KV cache of the batch: paged blocks by default (LEV_KV_BLOCKS blocks, default as many as
+        // slab slots would need), or one slab per slot with LEV_KV_SLAB=1.
+        let kv_slab = std::env::var_os("LEV_KV_SLAB").is_some();
+        let max_blocks = ctx_len.div_ceil(ops::PAGE_SIZE);
+        let kv_blocks: usize = std::env::var("LEV_KV_BLOCKS").ok().and_then(|v| v.parse().ok()).unwrap_or(batch_slots * max_blocks + 1).max(2);
         if batch_slots > 0 {
             let n = batch_slots + 1; // the last slot absorbs the padding columns
             for il in 0..cfg.n_trunk {
                 if cfg.is_recurrent(il) {
                     pools.push(LayerPool::Ssm { conv: zb(n * (cfg.conv_k - 1) * cd)?, rec: zb(n * vh * hs * hs)? });
-                } else {
+                } else if kv_slab {
                     pools.push(LayerPool::Attn { k: zb(n * ctx_len * nkv * hd)?, v: zb(n * ctx_len * nkv * hd)? });
+                } else {
+                    let floats = kv_blocks * ops::PAGE_SIZE * nkv * hd;
+                    pools.push(LayerPool::Attn { k: zb(floats)?, v: zb(floats)? });
                 }
             }
         }
+        let block_table = ctx.create_buffer((((batch_slots + 1) * max_blocks).max(64) * 4) as u64)?;
+        block_table.zero();
         let res = Res {
             weights,
             layers,
             pools,
+            block_table,
             mtp_kv: (zb(ctx_len * nkv * hd)?, zb(ctx_len * nkv * hd)?),
             x: fb(m * ne)?,
             xn: zb(m * ne)?,
@@ -1040,7 +1079,7 @@ impl GpuModel {
         let (main3, _) = mk_main(3, false)?;
         let mut batch_programs = Vec::new();
         if batch_slots > 0 {
-            let mut ragged = load_ragged_ir(&cfg)?;
+            let mut ragged = load_ragged_ir(&cfg, !kv_slab)?;
             // Debug aid: keep only the first LEV_BATCH_TRUNC kernel operations.
             if let Some(n) = std::env::var("LEV_BATCH_TRUNC").ok().and_then(|v| v.parse::<usize>().ok()) {
                 ragged.truncate(n);
@@ -1071,7 +1110,8 @@ impl GpuModel {
         let mtp_draft = [build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 0, None, save)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 1, None, save)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 2, None, save)?];
         let mtp_fill = [build_mtp(&ctx, &gguf, &cfg, &res, &kernels, false, 0, None, None)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, false, 1, None, None)?, build_mtp(&ctx, &gguf, &cfg, &res, &kernels, false, 2, None, None)?];
         let mtp_chain = build_mtp(&ctx, &gguf, &cfg, &res, &kernels, true, 0, Some(&res.hmtp), None)?;
-        Ok(GpuModel { main1, main2, main3, batch_programs, batch_slots, prefill, mtp_fill_chunk, bigs, mtp_draft, mtp_chain, mtp_fill, labels1, labels2, labels_prefill, labels_big, res, _kernels: kernels, gguf, file, cfg, ctx_len, pos: 0, sel: 0, last_gpu_us: 0.0, last_mtp_us: 0.0, ctx })
+        let kv = if batch_slots > 0 && !kv_slab { Some(crate::kv::BlockManager::new(kv_blocks, batch_slots, max_blocks)) } else { None };
+        Ok(GpuModel { main1, main2, main3, batch_programs, batch_slots, kv, prefill, mtp_fill_chunk, bigs, mtp_draft, mtp_chain, mtp_fill, labels1, labels2, labels_prefill, labels_big, res, _kernels: kernels, gguf, file, cfg, ctx_len, pos: 0, sel: 0, last_gpu_us: 0.0, last_mtp_us: 0.0, ctx })
     }
 
     pub fn dispatch_count(&self) -> usize {
@@ -1173,9 +1213,9 @@ impl GpuModel {
         self.ctx_len
     }
 
-    fn set_ctrl_batch(&self, items: &[BatchItem], nb: usize) {
+    fn set_ctrl_batch(&self, items: &[BatchItem], nb: usize, flat: &[u32]) {
         let half = self.cfg.rope_dim / 2;
-        let mut words = vec![0u32; ops::BATCH_META + 2 * ops::CTRL_COLS];
+        let mut words = vec![0u32; ops::BATCH_SLOT_MAP + ops::CTRL_COLS];
         for c in 0..nb {
             // Columns beyond the batch are padding: the scratch slot at position 0.
             let it = items.get(c).copied().unwrap_or(BatchItem { slot: self.batch_slots, token: 0, pos: 0 });
@@ -1187,6 +1227,7 @@ impl GpuModel {
             }
             words[ops::BATCH_META + c] = it.slot as u32;
             words[ops::BATCH_META + ops::CTRL_COLS + c] = it.pos as u32;
+            words[ops::BATCH_SLOT_MAP + c] = flat.get(c).copied().unwrap_or(0); // padding writes the scratch block
         }
         self.res.ctrl.write_u32(0, &words);
     }
@@ -1213,9 +1254,66 @@ impl GpuModel {
         let mut toks: Vec<u32> = items.iter().map(|i| i.token as u32).collect();
         toks.resize(nb, 0);
         self.res.tok_main.write_u32(0, &toks);
-        self.set_ctrl_batch(items, nb);
+        // Paged KV: every token needs its block; the table and the flat positions go to the kernels.
+        let mut flat = Vec::new();
+        if let Some(kv) = self.kv.as_mut() {
+            for it in items {
+                flat.push(kv.ensure(it.slot, it.pos).map_err(|e| format!("KV cache: {e:?}"))?);
+            }
+            self.res.block_table.write_u32(0, &kv.table());
+        }
+        self.set_ctrl_batch(items, nb, &flat);
         self.last_gpu_us = self.batch_programs.iter().find(|(s, _)| *s == nb).unwrap().1.run()?;
         Ok((0..items.len()).map(|c| self.main_choice(c)).collect())
+    }
+
+    /// Largest absolute difference between the states of two batch slots, per kind of state
+    /// (convolution, recurrent, KV positions 0..`positions`); for checks.
+    pub fn debug_slot_diff(&self, a: usize, b: usize, positions: usize) -> Result<Vec<(String, f32)>, Error> {
+        let c = &self.cfg;
+        let f32s = |bytes: Vec<u8>| -> Vec<f32> { bytes.chunks_exact(4).map(|x| f32::from_le_bytes([x[0], x[1], x[2], x[3]])).collect() };
+        let diff = |x: &[f32], y: &[f32]| x.iter().zip(y).fold(0f32, |m, (p, q)| m.max((p - q).abs()));
+        let (cb, rb) = (((c.conv_k - 1) * c.conv_dim() * 4) as u64, (c.v_heads * c.state * c.state * 4) as u64);
+        let kvrow = (c.n_kv * c.head_dim * 4) as u64;
+        let (mut conv, mut rec, mut kv) = (0f32, 0f32, 0f32);
+        for (il, pool) in self.res.pools.iter().enumerate() {
+            match pool {
+                LayerPool::Ssm { conv: cp, rec: rp } => {
+                    conv = conv.max(diff(&f32s(self.ctx.download(cp, a as u64 * cb, cb)?), &f32s(self.ctx.download(cp, b as u64 * cb, cb)?)));
+                    rec = rec.max(diff(&f32s(self.ctx.download(rp, a as u64 * rb, rb)?), &f32s(self.ctx.download(rp, b as u64 * rb, rb)?)));
+                }
+                LayerPool::Attn { k, .. } => {
+                    let _ = il;
+                    for p in 0..positions {
+                        let at = |slot: usize| -> u64 {
+                            match &self.kv {
+                                Some(m) => (m.blocks_of(slot)[p / ops::PAGE_SIZE] as u64 * ops::PAGE_SIZE as u64 + (p % ops::PAGE_SIZE) as u64) * kvrow,
+                                None => (slot as u64 * self.ctx_len as u64 + p as u64) * kvrow,
+                            }
+                        };
+                        kv = kv.max(diff(&f32s(self.ctx.download(k, at(a), kvrow)?), &f32s(self.ctx.download(k, at(b), kvrow)?)));
+                    }
+                }
+            }
+        }
+        Ok(vec![("conv".into(), conv), ("recurrent".into(), rec), ("kv".into(), kv)])
+    }
+
+    /// Logits of column 0 of the last main pass (host copy; for checks).
+    pub fn last_logits(&self) -> Vec<f32> {
+        self.main_logits(0)
+    }
+
+    /// Ends the sequence in `slot`: its KV blocks go back to the pool.
+    pub fn batch_release(&mut self, slot: usize) {
+        if let Some(kv) = self.kv.as_mut() {
+            kv.release(slot);
+        }
+    }
+
+    /// (free blocks, total blocks) of the paged KV pool, if there is one.
+    pub fn kv_blocks(&self) -> Option<(usize, usize)> {
+        self.kv.as_ref().map(|k| (k.free_blocks(), k.total_blocks()))
     }
 
     /// Prefills `prompt` into the main engine (fresh state) and returns the first generated token.
@@ -1250,12 +1348,30 @@ impl GpuModel {
         let slab = (self.ctx_len * kvrow * 4) as u64;
         let used = (self.pos * kvrow * 4) as u64;
         let sel = self.sel as usize;
+        // Paged KV: the sequence gets the blocks of its positions; its old blocks are returned first.
+        let mut blocks: Vec<u32> = Vec::new();
+        if let Some(kv) = self.kv.as_mut() {
+            kv.release(slot);
+            if self.pos > 0 {
+                kv.ensure(slot, self.pos - 1).map_err(|e| format!("KV cache: {e:?}"))?;
+            }
+            blocks = kv.blocks_of(slot).to_vec();
+        }
+        let paged = self.kv.is_some();
         for (layer, pool) in self.res.layers.iter().zip(&self.res.pools) {
             match (layer, pool) {
                 (LayerRes::Ssm { c0, c1, c2, s0, s1, s2 }, LayerPool::Ssm { conv, rec }) => {
                     let (cb, sb) = ([c0, c1, c2][sel], [s0, s1, s2][sel]);
                     self.ctx.copy_buffer(cb, 0, conv, slot as u64 * conv_bytes, conv_bytes)?;
                     self.ctx.copy_buffer(sb, 0, rec, slot as u64 * rec_bytes, rec_bytes)?;
+                }
+                (LayerRes::Attn { kc, vc }, LayerPool::Attn { k, v }) if paged => {
+                    let block_bytes = (ops::PAGE_SIZE * kvrow * 4) as u64;
+                    for (i, &blk) in blocks.iter().enumerate() {
+                        let len = block_bytes.min(used - i as u64 * block_bytes);
+                        self.ctx.copy_buffer(kc, i as u64 * block_bytes, k, blk as u64 * block_bytes, len)?;
+                        self.ctx.copy_buffer(vc, i as u64 * block_bytes, v, blk as u64 * block_bytes, len)?;
+                    }
                 }
                 (LayerRes::Attn { kc, vc }, LayerPool::Attn { k, v }) => {
                     if used > 0 {
