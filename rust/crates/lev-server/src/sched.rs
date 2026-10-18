@@ -110,6 +110,10 @@ pub struct Scheduler<E: Engine> {
     running: Vec<Running>,
     free_slots: Vec<usize>,
     admitted_counter: u64,
+    /// Prefill chunks per decode step while prompts are waiting: a decode step has a high fixed
+    /// cost (every weight is read once, however few sequences run), so several chunks per step
+    /// raise throughput at the price of the running sequences' latency.
+    pub chunks_per_step: usize,
     pub stats: Stats,
 }
 
@@ -125,7 +129,7 @@ pub struct Stats {
 impl<E: Engine> Scheduler<E> {
     pub fn new(engine: E) -> Scheduler<E> {
         let slots = engine.slots();
-        Scheduler { engine, waiting: VecDeque::new(), prefilling: None, running: Vec::new(), free_slots: (0..slots).rev().collect(), admitted_counter: 0, stats: Stats::default() }
+        Scheduler { engine, waiting: VecDeque::new(), prefilling: None, running: Vec::new(), free_slots: (0..slots).rev().collect(), admitted_counter: 0, chunks_per_step: 1, stats: Stats::default() }
     }
 
     pub fn submit(&mut self, req: Request) {
@@ -335,10 +339,16 @@ impl<E: Engine> Scheduler<E> {
         }
     }
 
-    /// One scheduling round: start or advance the prefill job, then decode all running sequences.
+    /// One scheduling round: advance the prefill job by up to `chunks_per_step` chunks (while
+    /// prompts are waiting), then decode all running sequences once.
     pub fn tick(&mut self) {
-        self.start_prefill();
-        self.advance_prefill();
+        for _ in 0..self.chunks_per_step.max(1) {
+            self.start_prefill();
+            self.advance_prefill();
+            if self.prefilling.is_none() && self.waiting.is_empty() {
+                break;
+            }
+        }
         self.decode_step();
     }
 }

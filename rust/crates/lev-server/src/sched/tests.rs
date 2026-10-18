@@ -289,3 +289,23 @@ fn a_prompt_longer_than_the_context_is_rejected() {
     assert!(matches!(fin, Some(Event::Finished { reason: FinishReason::Error(_), .. })));
     assert!(s.is_idle());
 }
+#[test]
+fn several_chunks_per_step_while_prompts_wait() {
+    let mut s = Scheduler::new(Mock::new(4, 400));
+    s.chunks_per_step = 3;
+    let (a, rx_a, _) = request(1, vec![1, 2, 3], 300);
+    s.submit(a);
+    for _ in 0..4 {
+        s.tick();
+    }
+    let long: Vec<u32> = (0..400).map(|i| i % 90 + 1).collect();
+    let (b, rx_b, _) = request(2, long.clone(), 5);
+    s.submit(b);
+    s.engine.order.clear();
+    s.tick();
+    // Three chunks of the long prompt, then one decode step.
+    assert_eq!(s.engine.order, ["prefill", "prefill", "prefill", "step"]);
+    run_to_idle(&mut s);
+    assert_eq!(drain(&rx_a).0, expected(&[1, 2, 3], 300));
+    assert_eq!(drain(&rx_b).0, expected(&long, 5));
+}

@@ -20,6 +20,9 @@ pub const OPS_VERSION: &str = "opsgen-glsl-v2";
 pub const CTRL_WORDS_PER_COL: usize = 64;
 /// Columns whose rope tables and batch metadata fit in `ctrl`.
 pub const CTRL_COLS: usize = 128;
+/// Word of the control buffer that holds the number of valid columns of a prefill chunk: the
+/// recurrent kernels stop there, so a chunk padded with unused columns leaves the state exact.
+pub const CHUNK_VALID: usize = 16383;
 /// Batch metadata in `ctrl`: slot of column `c` at `BATCH_META + c`, its position at
 /// `BATCH_META + CTRL_COLS + c` (ragged batch kernels).
 pub const BATCH_META: usize = 2 + CTRL_COLS * CTRL_WORDS_PER_COL;
@@ -556,8 +559,8 @@ void main() {
 }
 
 /// Chunk variant of `ssm_conv` for prefill: `nb` consecutive columns are
-/// convolved in order, the state is read from the buffer selected by
-/// `ctrl[0]` and only the final state is written, to buffer 0.
+/// convolved in order (only the first `ctrl[CHUNK_VALID]` of them), the state is read from the
+/// buffer selected by `ctrl[0]` and only the final state is written, to buffer 0.
 /// Bindings as `ssm_conv`.
 pub fn ssm_conv_chunk(cd: usize, k: usize, nb: usize) -> String {
     let body = r#"layout(local_size_x = 256) in;
@@ -572,7 +575,8 @@ void main() {
     float s[@KM1@];
     bool sel = ctrl[0] != 0u;
     for (uint i = 0u; i < @KM1@u; i++) { s[i] = sel ? st1[i * @CD@u + c] : st0[i * @CD@u + c]; }
-    for (uint col = 0u; col < @NB@u; col++) {
+    uint nvalid = min(ctrl[@VALID@u], @NB@u);
+    for (uint col = 0u; col < nvalid; col++) {
         float cur = xin[col * @CD@u + c];
         float acc = 0.0;
         for (uint i = 0u; i < @KM1@u; i++) { acc += s[i] * w[c * @K@u + i]; }
@@ -584,7 +588,7 @@ void main() {
     for (uint i = 0u; i < @KM1@u; i++) { st0[i * @CD@u + c] = s[i]; }
 }
 "#;
-    finish(&[HEAD, body].concat(), &[("CD", cd.to_string()), ("K", k.to_string()), ("KM1", (k - 1).to_string()), ("NB", nb.to_string())])
+    finish(&[HEAD, body].concat(), &[("CD", cd.to_string()), ("K", k.to_string()), ("KM1", (k - 1).to_string()), ("NB", nb.to_string()), ("VALID", CHUNK_VALID.to_string())])
 }
 /// Chunk variant of `ssm_delta` for prefill: the state column of a value index
 /// (`hs` floats) stays in registers across the `nb` columns; it is read once
@@ -625,7 +629,8 @@ void main() {
     uint base = h * @HS@u * @HS@u;
     float s[@HALF@];
     [[unroll]] for (uint i = 0u; i < @HALF@u; i++) { s[i] = sel ? st1[base + (ib + i) * @HS@u + j] : st0[base + (ib + i) * @HS@u + j]; }
-    for (uint c = 0u; c < @NB@u; c++) {
+    uint nvalid = min(ctrl[@VALID@u], @NB@u);
+    for (uint c = 0u; c < nvalid; c++) {
         // The first hs entries of kq are k, the next hs are q.
         kq[t] = t < @HS@u ? qk[c * 2u * @KH@u * @HS@u + (@KH@u + kh) * @HS@u + t]
                           : qk[c * 2u * @KH@u * @HS@u + kh * @HS@u + (t - @HS@u)];
@@ -668,6 +673,7 @@ void main() {
             ("CD", cd.to_string()),
             ("EPS", format!("{:e}", eps)),
             ("NB", nb.to_string()),
+            ("VALID", CHUNK_VALID.to_string()),
         ],
     )
 }

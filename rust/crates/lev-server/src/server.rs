@@ -84,6 +84,9 @@ fn engine_thread(path: &str, ctx: usize, slots: usize, blocks: Option<usize>, rx
     };
     let kv = gpu.kv_blocks().map_or("slab KV".to_string(), |(_, t)| format!("{t} KV blocks"));
     let mut sched = Scheduler::new(GpuEngine::new(gpu));
+    // Measured on 32 concurrent 256-token prompts: 1 chunk per step gives 47 tokens/s, 3 gives 60,
+    // 8 gives 63 (and a shorter time to first token); 4 keeps decoding latency moderate.
+    sched.chunks_per_step = std::env::var("LEV_PREFILL_CHUNKS").ok().and_then(|v| v.parse().ok()).unwrap_or(4);
     let _ = ready.send(Ok(format!("{} slots, context {ctx}, {kv}", slots)));
     loop {
         // Take every command that is waiting; block only when there is nothing to run.

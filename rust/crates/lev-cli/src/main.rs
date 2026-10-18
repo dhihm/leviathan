@@ -1479,8 +1479,9 @@ fn vk_delta() -> Result<bool, Box<dyn std::error::Error>> {
         b.write_f32(0, v);
         Ok(b)
     };
-    let ctrl = ctx.create_buffer(256)?;
+    let ctrl = ctx.create_buffer(65536)?;
     ctrl.zero();
+    ctrl.write_u32(ops::CHUNK_VALID, &[NB as u32]);
     let (qkb, cvb, dtb, ab, nwb) = (host(&qk)?, host(&conv)?, host(&dt)?, host(&a)?, host(&nw)?);
     let (alb, beb, zb) = (host(&alpha)?, host(&beta)?, host(&z)?);
     // Chunk run.

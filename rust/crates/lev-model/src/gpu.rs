@@ -1344,11 +1344,28 @@ impl GpuModel {
     /// Runs the next chunk of the prefill (a matrix-core or 8-column chunk; the last few tokens
     /// together). Returns the first generated token when the prompt is complete.
     pub fn prefill_advance(&mut self, st: &mut PrefillState) -> Result<Option<usize>, Error> {
-        let left = st.prompt.len() - st.done;
-        let c = self.chunk_size(left, true);
-        if c > 0 {
-            self.prefill_chunk(&st.prompt[st.done..st.done + c], None)?;
-            st.done += c;
+        // The last token is left for a single step (it needs logits); the rest goes in chunks.
+        let body = st.prompt.len() - st.done - 1;
+        let pad = std::env::var_os("LEV_NO_PAD").is_none();
+        // Full 64-column matrix-core chunks run at ~415 tokens/s (128 columns: ~350), 8-column
+        // chunks at ~125. A tail shorter than 64 is padded: one 64-column chunk costs about as much
+        // as three 8-column ones, an 8-column chunk about as much as one single step.
+        let plan = if body >= BIG_COLS {
+            Some((BIG_COLS, BIG_COLS))
+        } else if pad && body > 2 * MAX_COLS && self.pos + BIG_COLS <= self.ctx_len {
+            Some((BIG_COLS, body))
+        } else if body >= MAX_COLS {
+            Some((MAX_COLS, MAX_COLS))
+        } else if pad && body >= 2 && self.pos + MAX_COLS <= self.ctx_len {
+            Some((MAX_COLS, body))
+        } else {
+            None
+        };
+        if let Some((n, valid)) = plan {
+            let mut tokens = st.prompt[st.done..st.done + valid].to_vec();
+            tokens.resize(n, 0);
+            self.prefill_chunk_valid(&tokens, valid, None)?;
+            st.done += valid;
             return Ok(None);
         }
         for &t in &st.prompt[st.done..] {
@@ -1611,13 +1628,22 @@ impl GpuModel {
     /// for those positions: `next_tokens[c]` is the token that follows
     /// `tokens[c]`.
     fn prefill_chunk(&mut self, tokens: &[usize], next_tokens: Option<&[usize]>) -> Result<(), Error> {
+        self.prefill_chunk_valid(tokens, tokens.len(), next_tokens)
+    }
+
+    /// A chunk program of `tokens.len()` columns of which only the first `valid` are real tokens:
+    /// the recurrent kernels stop after `valid` columns, the key/value entries of the padding
+    /// columns land beyond the new position, where later steps overwrite them before reading.
+    fn prefill_chunk_valid(&mut self, tokens: &[usize], valid: usize, next_tokens: Option<&[usize]>) -> Result<(), Error> {
         let n = tokens.len();
         assert!(n == MAX_COLS || BIG_SIZES.contains(&n));
+        assert!(valid >= 1 && valid <= n);
         if self.pos + n > self.ctx_len {
             return Err("context length exceeded".into());
         }
         self.res.tok_main.write_u32(0, &tokens.iter().map(|&t| t as u32).collect::<Vec<_>>());
         self.set_ctrl(self.pos, n);
+        self.res.ctrl.write_u32(ops::CHUNK_VALID, &[valid as u32]);
         let t_run = std::time::Instant::now();
         let (main, fill) = if n != MAX_COLS {
             let e = self.bigs.iter().find(|(s, _, _)| *s == n).expect("matrix-core prefill");
@@ -1633,7 +1659,7 @@ impl GpuModel {
             self.res.tok_mtp.write_u32(0, &nt.iter().map(|&t| t as u32).collect::<Vec<_>>());
             self.last_mtp_us = fill.run()?;
         }
-        self.pos += n;
+        self.pos += valid;
         self.sel = 0;
         Ok(())
     }
