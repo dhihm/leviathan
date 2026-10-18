@@ -52,6 +52,7 @@ dependencies = [
  "lev-cpu",
  "lev-forge",
  "lev-gguf",
+ "lev-ir",
  "lev-vulkan",
 ]
 

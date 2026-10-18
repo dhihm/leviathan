@@ -6,4 +6,5 @@ pub mod interp;
 pub mod ir;
 pub mod json;
 pub mod pack;
+pub mod pass;
 pub mod tensor;

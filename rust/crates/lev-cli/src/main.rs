@@ -215,6 +215,21 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Some("ir-gguf") if args.len() == 6 => match ir_gguf(&args[2], &args[3], &args[4], &args[5]) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        Some("ir-dump") if args.len() == 4 => match ir_dump(&args[2], &args[3]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Some("ir-check") if args.len() == 4 => match ir_check(&args[2], &args[3]) {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::FAILURE,
@@ -599,6 +614,157 @@ fn ir_run(dir: &str) -> Result<bool, Box<dyn std::error::Error>> {
     }
     println!("{}", if pass { "PASS" } else { "FAIL" });
     Ok(pass)
+}
+
+/// Parameters of an IR graph read from the GGUF file (dequantized on first use and kept).
+struct GgufParams {
+    gguf: lev_gguf::GgufFile,
+    file: std::cell::RefCell<std::fs::File>,
+    shapes: std::collections::BTreeMap<String, Vec<usize>>,
+    cache: std::cell::RefCell<std::collections::BTreeMap<String, std::rc::Rc<lev_ir::interp::V>>>,
+}
+
+impl lev_ir::interp::ParamSource for GgufParams {
+    fn param(&self, name: &str) -> Result<std::rc::Rc<lev_ir::interp::V>, String> {
+        if let Some(v) = self.cache.borrow().get(name) {
+            return Ok(v.clone());
+        }
+        let (gname, _) = lev_ir::bind::to_gguf(name).ok_or(format!("no GGUF binding for {name}"))?;
+        let shape = self.shapes.get(name).cloned().ok_or(format!("{name} is not a parameter of the graph"))?;
+        let data = lev_model::weights::dequantize(&self.gguf, &mut self.file.borrow_mut(), &gname, 0, None).map_err(|e| e.to_string())?;
+        if data.len() != shape.iter().product::<usize>() {
+            return Err(format!("{name}: {} elements, expected {shape:?}", data.len()));
+        }
+        let v = std::rc::Rc::new(lev_ir::interp::V::T(lev_ir::tensor::Tensor::new(shape, data)));
+        self.cache.borrow_mut().insert(name.to_string(), v.clone());
+        Ok(v)
+    }
+}
+
+/// Runs the first `layers` layers of the retargeted IR on GGUF weights (dequantized to f32) for a
+/// prompt, and compares the residual stream after the last of them (last token) with the CPU
+/// reference `Model`, which matches llama.cpp.
+fn ir_gguf(ir_path: &str, gguf_path: &str, ids: &str, layers: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    use lev_ir::interp::{self, RunOptions, V};
+    use lev_ir::ir::{Arg, Graph};
+    use lev_ir::pack::Packed;
+    use lev_ir::tensor::{IntTensor, Tensor};
+    use std::rc::Rc;
+
+    let tokens = parse_ids(ids)?;
+    let n_layers: usize = layers.parse()?;
+    let t = tokens.len();
+    let raw = Graph::parse(&std::fs::read_to_string(ir_path)?)?;
+    let g = lev_ir::pass::retarget_gguf(&raw)?;
+    g.validate()?;
+    let gguf = lev_gguf::GgufFile::open(gguf_path)?;
+    let cfg = lev_model::Config::from_gguf(&gguf)?;
+    let shapes = g.params.iter().map(|p| (p.name.clone(), p.shape.iter().map(|d| d.parse::<usize>().unwrap_or(0)).collect())).collect();
+    let params = GgufParams { gguf, file: std::cell::RefCell::new(std::fs::File::open(gguf_path)?), shapes, cache: Default::default() };
+
+    // Where layer `n_layers - 1` ends: just before the first node that reads layer `n_layers`.
+    fn mentions(a: &Arg, prefix: &str) -> bool {
+        match a {
+            Arg::Param(p) => p.starts_with(prefix),
+            Arg::List(l) => l.iter().any(|x| mentions(x, prefix)),
+            _ => false,
+        }
+    }
+    let next = format!("model.layers.{n_layers}.");
+    let stop = g.nodes.iter().position(|n| n.args.iter().any(|a| mentions(a, &next))).map(|i| i - 1).ok_or("the graph has no such layer boundary")?;
+
+    // Inputs: token ids, rope tables, zero states.
+    let rd = cfg.rope_dim;
+    let (mut cos, mut sin) = (vec![0f32; t * rd], vec![0f32; t * rd]);
+    for p in 0..t {
+        for i in 0..rd {
+            let f = cfg.rope_base.powf(-2.0 * (i % (rd / 2)) as f64 / rd as f64);
+            cos[p * rd + i] = (p as f64 * f).cos() as f32;
+            sin[p * rd + i] = (p as f64 * f).sin() as f32;
+        }
+    }
+    let mut inputs = std::collections::BTreeMap::new();
+    inputs.insert("token_ids".to_string(), Packed::I64(IntTensor { shape: vec![t], data: tokens.iter().map(|&x| x as i64).collect() }));
+    inputs.insert("cos".to_string(), Packed::F32(Tensor::new(vec![t, rd], cos)));
+    inputs.insert("sin".to_string(), Packed::F32(Tensor::new(vec![t, rd], sin)));
+    for v in g.inputs.iter().filter(|v| v.name.starts_with("states_")) {
+        let shape: Vec<usize> = v.shape.iter().map(|d| d.parse::<usize>().unwrap_or(0)).collect();
+        inputs.insert(v.name.clone(), Packed::F32(Tensor::zeros(shape)));
+    }
+
+    // The embedding table is too large to dequantize whole: gather the rows of the prompt.
+    let emb_node = g.nodes.iter().position(|n| n.op == "aten::embedding.default").ok_or("no embedding node")?;
+    let mut emb = Vec::with_capacity(t * cfg.n_embd);
+    {
+        let mut f = params.file.borrow_mut();
+        for &id in &tokens {
+            emb.extend(lev_model::weights::dequantize(&params.gguf, &mut f, "token_embd.weight", id, Some(1))?);
+        }
+    }
+    let mut opts = RunOptions { stop_after: Some(stop), ..Default::default() };
+    opts.overrides.insert(emb_node, Rc::new(V::T(Tensor::new(vec![t, cfg.n_embd], emb))));
+
+    let t0 = std::time::Instant::now();
+    let vals = interp::run_nodes(&g, &params, &inputs, &opts)?;
+    println!("IR interpreter: {} layers, {t} tokens, {:.1} s", n_layers, t0.elapsed().as_secs_f64());
+    let V::T(x) = &**vals[stop].as_ref().ok_or("no value at the stop node")? else { return Err("stop node is not a tensor".into()) };
+    let got = &x.data[(t - 1) * cfg.n_embd..t * cfg.n_embd];
+
+    let t0 = std::time::Instant::now();
+    let mut cpu = lev_model::Model::open(gguf_path)?;
+    let mut trace = lev_model::Trace::default();
+    for &tok in &tokens {
+        trace = lev_model::Trace::default();
+        cpu.forward(tok, Some(&mut trace))?;
+    }
+    println!("CPU reference: {:.1} s", t0.elapsed().as_secs_f64());
+    let want = &trace.layer_out[n_layers - 1];
+    let max_ref = want.iter().fold(0f32, |m, v| m.max(v.abs()));
+    let (mut max_abs, mut at) = (0f32, 0usize);
+    for (i, (a, b)) in got.iter().zip(want).enumerate() {
+        if (a - b).abs() > max_abs {
+            max_abs = (a - b).abs();
+            at = i;
+        }
+    }
+    let rel = max_abs / max_ref;
+    println!("residual after layer {}: max_abs_err {max_abs:.3e} at {at} (max |ref| {max_ref:.3e}) relative {rel:.2e}", n_layers - 1);
+    let ok = rel < 2e-3;
+    println!("{}", if ok { "PASS" } else { "FAIL" });
+    Ok(ok)
+}
+
+/// Prints the nodes of one layer of the retargeted IR (operator and arguments).
+fn ir_dump(ir_path: &str, layer: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use lev_ir::ir::{Arg, Graph};
+    let g = lev_ir::pass::retarget_gguf(&Graph::parse(&std::fs::read_to_string(ir_path)?)?)?;
+    let l: usize = layer.parse()?;
+    let (cur, next) = (format!("model.layers.{l}."), format!("model.layers.{}.", l + 1));
+    fn mentions(a: &Arg, prefix: &str) -> bool {
+        match a {
+            Arg::Param(p) => p.starts_with(prefix),
+            Arg::List(v) => v.iter().any(|x| mentions(x, prefix)),
+            _ => false,
+        }
+    }
+    let first = g.nodes.iter().position(|n| n.args.iter().any(|a| mentions(a, &cur))).ok_or("no such layer")?;
+    let last = g.nodes.iter().position(|n| n.args.iter().any(|a| mentions(a, &next))).unwrap_or(g.nodes.len());
+    fn show(a: &Arg, prefix: &str) -> String {
+        match a {
+            Arg::Node(n) => format!("%{n}"),
+            Arg::Param(p) => p.strip_prefix(prefix).map(|s| format!("@{s}")).unwrap_or_else(|| format!("@{p}")),
+            Arg::Input(i) => format!("${i}"),
+            Arg::Int(i) => i.to_string(),
+            Arg::Float(f) => f.to_string(),
+            Arg::Bool(b) => b.to_string(),
+            Arg::List(v) => format!("[{}]", v.iter().map(|x| show(x, prefix)).collect::<Vec<_>>().join(", ")),
+            other => format!("{other:?}"),
+        }
+    }
+    for (i, n) in g.nodes.iter().enumerate().take(last).skip(first) {
+        println!("%{i} = {}({})", n.op, n.args.iter().map(|a| show(a, &cur)).collect::<Vec<_>>().join(", "));
+    }
+    Ok(())
 }
 
 /// Loads an IR file, validates it and checks that every parameter binds to a GGUF tensor of the

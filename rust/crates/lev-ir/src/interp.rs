@@ -50,6 +50,7 @@ pub const SUPPORTED_OPS: &[&str] = &[
     "aten::reshape.default",
     "aten::view.default",
     "aten::repeat_interleave.self_int",
+    "lev::tile_heads.default",
     "aten::sigmoid.default",
     "aten::exp.default",
     "aten::neg.default",
@@ -72,35 +73,71 @@ pub fn is_supported(op: &str) -> bool {
     SUPPORTED_OPS.contains(&op) || op.ends_with("getitem")
 }
 
-/// Runs the graph. `params` binds parameter names, `inputs` the user inputs by name.
-pub fn run(g: &Graph, params: &BTreeMap<String, Packed>, inputs: &BTreeMap<String, Packed>) -> Result<Vec<Rc<V>>, String> {
-    let wrap = |p: &Packed| -> Rc<V> {
-        Rc::new(match p {
-            Packed::F32(t) => V::T(t.clone()),
-            Packed::I64(t) => V::I(t.clone()),
-        })
-    };
-    let mut vals: Vec<Rc<V>> = Vec::with_capacity(g.nodes.len());
-    let resolve = |a: &Arg, vals: &Vec<Rc<V>>| -> Result<Rc<V>, String> { resolve_arg(a, vals, params, inputs, &wrap) };
-    for (i, n) in g.nodes.iter().enumerate() {
-        let args: Vec<Rc<V>> = n.args.iter().map(|a| resolve(a, &vals)).collect::<Result<_, _>>()?;
-        let v = exec(n, &args, &|a: &Arg| resolve(a, &vals)).map_err(|e| format!("node {i} ({}): {e}", n.op))?;
-        vals.push(Rc::new(v));
-    }
-    g.outputs.iter().map(|a| resolve(a, &vals)).collect()
+/// Where parameter values come from: a weights file, or the GGUF tensors (see lev-model).
+pub trait ParamSource {
+    fn param(&self, name: &str) -> Result<Rc<V>, String>;
 }
 
-fn resolve_arg(a: &Arg, vals: &[Rc<V>], params: &BTreeMap<String, Packed>, inputs: &BTreeMap<String, Packed>, wrap: &dyn Fn(&Packed) -> Rc<V>) -> Result<Rc<V>, String> {
+fn wrap_packed(p: &Packed) -> Rc<V> {
+    Rc::new(match p {
+        Packed::F32(t) => V::T(t.clone()),
+        Packed::I64(t) => V::I(t.clone()),
+    })
+}
+
+impl ParamSource for BTreeMap<String, Packed> {
+    fn param(&self, name: &str) -> Result<Rc<V>, String> {
+        self.get(name).map(wrap_packed).ok_or(format!("missing parameter {name}"))
+    }
+}
+
+/// Options of a partial run.
+#[derive(Default)]
+pub struct RunOptions {
+    /// Values supplied for nodes instead of computing them (such nodes are skipped).
+    pub overrides: BTreeMap<usize, Rc<V>>,
+    /// Stop after this node; later nodes are not evaluated.
+    pub stop_after: Option<usize>,
+}
+
+/// Runs the graph and returns the graph outputs. `params` supplies parameters, `inputs` the user
+/// inputs by name.
+pub fn run(g: &Graph, params: &dyn ParamSource, inputs: &BTreeMap<String, Packed>) -> Result<Vec<Rc<V>>, String> {
+    let vals = run_nodes(g, params, inputs, &RunOptions::default())?;
+    g.outputs.iter().map(|a| resolve_arg(a, &vals, params, inputs)).collect()
+}
+
+/// Evaluates the nodes in order and returns the value of every evaluated node (`None` for nodes
+/// after `stop_after`).
+pub fn run_nodes(g: &Graph, params: &dyn ParamSource, inputs: &BTreeMap<String, Packed>, opts: &RunOptions) -> Result<Vec<Option<Rc<V>>>, String> {
+    let mut vals: Vec<Option<Rc<V>>> = Vec::with_capacity(g.nodes.len());
+    for (i, n) in g.nodes.iter().enumerate() {
+        if opts.stop_after.is_some_and(|s| i > s) {
+            vals.push(None);
+            continue;
+        }
+        if let Some(v) = opts.overrides.get(&i) {
+            vals.push(Some(v.clone()));
+            continue;
+        }
+        let args: Vec<Rc<V>> = n.args.iter().map(|a| resolve_arg(a, &vals, params, inputs)).collect::<Result<_, _>>().map_err(|e| format!("node {i} ({}): {e}", n.op))?;
+        let v = exec(n, &args).map_err(|e| format!("node {i} ({}): {e}", n.op))?;
+        vals.push(Some(Rc::new(v)));
+    }
+    Ok(vals)
+}
+
+fn resolve_arg(a: &Arg, vals: &[Option<Rc<V>>], params: &dyn ParamSource, inputs: &BTreeMap<String, Packed>) -> Result<Rc<V>, String> {
     Ok(match a {
-        Arg::Node(n) => vals.get(*n).ok_or("forward reference")?.clone(),
-        Arg::Param(p) => wrap(params.get(p).ok_or(format!("missing parameter {p}"))?),
-        Arg::Input(p) => wrap(inputs.get(p).ok_or(format!("missing input {p}"))?),
+        Arg::Node(n) => vals.get(*n).and_then(|v| v.clone()).ok_or(format!("node {n} has no value (forward reference or skipped)"))?,
+        Arg::Param(p) => params.param(p)?,
+        Arg::Input(p) => wrap_packed(inputs.get(p).ok_or(format!("missing input {p}"))?),
         Arg::Int(i) => Rc::new(V::Int(*i)),
         Arg::Float(f) => Rc::new(V::Float(*f)),
         Arg::Bool(b) => Rc::new(V::Int(*b as i64)),
         Arg::None => Rc::new(V::None),
         Arg::Str(_) | Arg::Dtype(_) | Arg::Sym(_) => Rc::new(V::None),
-        Arg::List(l) => Rc::new(V::List(l.iter().map(|x| resolve_arg(x, vals, params, inputs, wrap)).collect::<Result<_, _>>()?)),
+        Arg::List(l) => Rc::new(V::List(l.iter().map(|x| resolve_arg(x, vals, params, inputs)).collect::<Result<_, _>>()?)),
     })
 }
 
@@ -127,7 +164,7 @@ fn axis(dim: i64, rank: usize) -> Result<usize, String> {
     Ok(d as usize)
 }
 
-fn exec(n: &Node, a: &[Rc<V>], _resolve: &dyn Fn(&Arg) -> Result<Rc<V>, String>) -> Result<V, String> {
+fn exec(n: &Node, a: &[Rc<V>]) -> Result<V, String> {
     let op = n.op.as_str();
     if op.ends_with("getitem") {
         let V::List(l) = &*a[0] else { return Err("getitem of a non-list".into()) };
@@ -234,6 +271,22 @@ fn exec(n: &Node, a: &[Rc<V>], _resolve: &dyn Fn(&Arg) -> Result<Rc<V>, String>)
                     for _ in 0..rep {
                         out.extend_from_slice(row);
                     }
+                }
+            }
+            let mut shape = x.shape.clone();
+            shape[d] *= rep;
+            V::T(Tensor::new(shape, out))
+        }
+        "lev::tile_heads.default" => {
+            // Head expansion of the GGUF weight convention: out[.., j * n + k, ..] = x[.., k, ..].
+            let x = tensor(&a[0])?;
+            let rep = int(&a[1])? as usize;
+            let d = axis(int(&a[2])?, x.shape.len())?;
+            let (outer, len, inner) = x.split_dims(d);
+            let mut out = Vec::with_capacity(x.numel() * rep);
+            for o in 0..outer {
+                for _ in 0..rep {
+                    out.extend_from_slice(&x.data[o * len * inner..(o + 1) * len * inner]);
                 }
             }
             let mut shape = x.shape.clone();

@@ -45,6 +45,8 @@ pub fn to_gguf(name: &str) -> Option<(String, Transform)> {
         "linear_attn.in_proj_a.weight" => ("ssm_alpha.weight", Plain),
         "linear_attn.conv1d.weight" => ("ssm_conv1d.weight", Plain),
         "linear_attn.A_log" => ("ssm_a", NegExp),
+        // After pass::retarget_gguf: the folded decay base is the stored tensor itself.
+        "linear_attn.ssm_a" => ("ssm_a", Plain),
         "linear_attn.dt_bias" => ("ssm_dt.bias", Plain),
         "linear_attn.norm.weight" => ("ssm_norm.weight", Plain),
         "linear_attn.out_proj.weight" => ("ssm_out.weight", Plain),

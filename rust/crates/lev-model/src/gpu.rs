@@ -616,7 +616,25 @@ impl GpuModel {
         // Weights: one buffer per tensor.
         let mut weights: HashMap<String, Buf> = HashMap::new();
         let mut names: Vec<String> = Vec::new();
+        // With LEV_IR=<ir.json> the trunk layers and their tensors come from the model IR (checked
+        // against the operator sequences the kernels implement and against the model file); the
+        // MTP block is not part of the IR yet and keeps its fixed list.
+        let ir_plan = match std::env::var_os("LEV_IR") {
+            Some(path) => {
+                let g = lev_ir::pass::retarget_gguf(&lev_ir::ir::Graph::parse(&std::fs::read_to_string(path)?)?)?;
+                g.validate()?;
+                let plan = crate::plan::plan(&g)?;
+                plan.check(&cfg)?;
+                let ssm = plan.kinds.iter().filter(|k| **k == crate::plan::LayerKind::Ssm).count();
+                eprintln!("model IR: {} layers ({ssm} gated delta, {} attention), {} tensors", plan.kinds.len(), plan.kinds.len() - ssm, plan.tensors.len());
+                Some(plan)
+            }
+            None => None,
+        };
         for il in 0..=cfg.n_trunk {
+            if il < cfg.n_trunk && ir_plan.is_some() {
+                continue;
+            }
             let recurrent = il < cfg.n_trunk && cfg.is_recurrent(il);
             let list: &[&str] = if recurrent {
                 &["attn_norm.weight", "attn_qkv.weight", "attn_gate.weight", "ssm_beta.weight", "ssm_alpha.weight", "ssm_dt.bias", "ssm_a", "ssm_conv1d.weight", "ssm_norm.weight", "ssm_out.weight"]
@@ -632,9 +650,20 @@ impl GpuModel {
                 }
             }
         }
-        names.push("token_embd.weight".into());
-        names.push("output_norm.weight".into());
-        names.push("output.weight".into());
+        match &ir_plan {
+            Some(plan) => {
+                for t in &plan.tensors {
+                    if !names.contains(t) {
+                        names.push(t.clone());
+                    }
+                }
+            }
+            None => {
+                names.push("token_embd.weight".into());
+                names.push("output_norm.weight".into());
+                names.push("output.weight".into());
+            }
+        }
         for name in &names {
             let t = gguf.tensor(name).ok_or_else(|| format!("tensor {name} not found"))?;
             let n = t.byte_size().ok_or("tensor size")?;

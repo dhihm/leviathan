@@ -137,6 +137,31 @@ impl Graph {
         self.outputs.iter().try_for_each(|a| check(a, self.nodes.len(), self))
     }
 
+    /// Number of decoder layers (the highest `model.layers.N` index among the parameters, plus one).
+    pub fn layer_count(&self) -> usize {
+        self.params
+            .iter()
+            .filter_map(|p| p.name.strip_prefix("model.layers.")?.split('.').next()?.parse::<usize>().ok())
+            .max()
+            .map_or(0, |m| m + 1)
+    }
+
+    /// Node range `[first, end)` of decoder layer `l`: from the first node that reads one of its
+    /// parameters to the first node that reads a parameter of layer `l + 1` (or of the final norm
+    /// and output projection for the last layer).
+    pub fn layer_segment(&self, l: usize) -> Option<(usize, usize)> {
+        fn reads(a: &Arg, prefixes: &[String]) -> bool {
+            match a {
+                Arg::Param(p) => prefixes.iter().any(|x| p.starts_with(x.as_str())),
+                Arg::List(v) => v.iter().any(|x| reads(x, prefixes)),
+                _ => false,
+            }
+        }
+        let find = |from: usize, prefixes: &[String]| self.nodes.iter().enumerate().skip(from).find(|(_, n)| n.args.iter().any(|a| reads(a, prefixes))).map(|(i, _)| i);
+        let first = find(0, &[format!("model.layers.{l}.")])?;
+        let end = find(first, &[format!("model.layers.{}.", l + 1), "model.norm.".to_string(), "lm_head.".to_string()]).unwrap_or(self.nodes.len());
+        Some((first, end))
+    }
     /// Operators of the graph with their counts, sorted by name.
     pub fn op_counts(&self) -> Vec<(String, usize)> {
         let mut m = std::collections::BTreeMap::new();
