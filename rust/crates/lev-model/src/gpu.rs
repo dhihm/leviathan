@@ -13,6 +13,7 @@ use std::fs::File;
 use std::path::PathBuf;
 
 use lev_cpu::QK_K;
+use crate::lower::{KOp, Slot};
 use lev_forge::q8::{self, Q8Schedule};
 use lev_forge::ops;
 use lev_gguf::{GgmlType, GgufFile};
@@ -317,7 +318,65 @@ fn cache_dir() -> PathBuf {
 
 /// Records the main decode pass for `nb` columns.
 /// prefill records a chunk pass: chunk-form SSM kernels (only the final state is written) and no output head.
+#[allow(clippy::too_many_arguments)]
 fn build_main(ctx: &VulkanContext, g: &GgufFile, cfg: &Config, r: &Res, k: &Kernels, nb: usize, profile: bool, prefill: bool, big: bool) -> Result<(Program, Vec<String>), Error> {
+    finish_program(ctx, emit_main(g, cfg, r, k, nb, prefill, big)?, profile)
+}
+
+/// Structure of Ornith-1.5-9B exported by tools/model_ir/ir_export.py (no weights).
+const BUNDLED_IR: &str = include_str!("../ir/ornith-1.5-9b.json");
+
+/// The model IR the decode passes are lowered from: `LEV_IR=<file>` names another export,
+/// `LEV_NO_IR=1` selects the hand-written passes (the regression oracle), otherwise the bundled
+/// IR is used when it describes this model file.
+type IrLowering = (crate::plan::IrPlan, Vec<KOp>);
+fn load_ir(cfg: &Config) -> Result<Option<IrLowering>, Error> {
+    if std::env::var_os("LEV_NO_IR").is_some() {
+        return Ok(None);
+    }
+    let (text, explicit) = match std::env::var_os("LEV_IR") {
+        Some(path) => (std::fs::read_to_string(path)?, true),
+        None => (BUNDLED_IR.to_string(), false),
+    };
+    let lowered = (|| -> Result<IrLowering, Error> {
+        let g = lev_ir::pass::retarget_gguf(&lev_ir::ir::Graph::parse(&text)?)?;
+        g.validate()?;
+        let plan = crate::plan::plan(&g)?;
+        plan.check(cfg)?;
+        let ops = crate::lower::lower(&g)?;
+        Ok((plan, ops))
+    })();
+    match lowered {
+        Ok(v) => Ok(Some(v)),
+        Err(e) if explicit => Err(e),
+        // The bundled IR describes Ornith-1.5-9B: another model file falls back to the hand-written passes.
+        Err(e) => {
+            eprintln!("note: the bundled model IR does not fit this model file ({e}); using the hand-written passes");
+            Ok(None)
+        }
+    }
+}
+
+/// Builds the program of recorded steps; a failing step is named by its label.
+fn finish_program(ctx: &VulkanContext, b: Builder<'_>, profile: bool) -> Result<(Program, Vec<String>), Error> {
+    let program = match ctx.build_program(&b.steps, profile) {
+        Ok(p) => p,
+        Err(e) => {
+            // Name the failing step: the error text starts with its index.
+            let msg = e.to_string();
+            let idx = msg.split_whitespace().nth(1).and_then(|t| t.trim_end_matches(':').parse::<usize>().ok());
+            return Err(match idx.and_then(|i| b.labels.get(i)) {
+                Some(l) => format!("{msg} ({l})").into(),
+                None => msg.into(),
+            });
+        }
+    };
+    Ok((program, b.labels))
+}
+
+/// The steps of the main decode (or prefill chunk) pass, written out by hand.
+#[allow(clippy::too_many_arguments)]
+fn emit_main<'a>(g: &GgufFile, cfg: &Config, r: &'a Res, k: &'a Kernels, nb: usize, prefill: bool, big: bool) -> Result<Builder<'a>, Error> {
     let (ne, cd) = (cfg.n_embd, cfg.conv_dim());
     let (kh, vh, hs) = (cfg.k_heads, cfg.v_heads, cfg.state);
     let mut b = Builder::new();
@@ -395,19 +454,122 @@ fn build_main(ctx: &VulkanContext, g: &GgufFile, cfg: &Config, r: &Res, k: &Kern
         b.matvec(g, r, k, "output.weight", nb, (&r.logits, 0))?;
         b.simple("argmax", &k.argmax, vec![part(&r.logits, 0, nb * cfg.vocab), part(&r.am_main, 0, nb), part(&r.mg_main, 0, nb)], nb as u32);
     }
-    let program = match ctx.build_program(&b.steps, profile) {
-        Ok(p) => p,
-        Err(e) => {
-            // Name the failing step: the error text starts with its index.
-            let msg = e.to_string();
-            let idx = msg.split_whitespace().nth(1).and_then(|t| t.trim_end_matches(':').parse::<usize>().ok());
-            return Err(match idx.and_then(|i| b.labels.get(i)) {
-                Some(l) => format!("{msg} ({l})").into(),
-                None => msg.into(),
-            });
+    Ok(b)
+}
+
+fn slot_buf(r: &Res, s: Slot) -> &Buf {
+    match s {
+        Slot::Mixed => &r.mixed,
+        Slot::Down => &r.down,
+        Slot::Gate => &r.gate,
+        Slot::Up => &r.up,
+        Slot::Qkv => &r.qkv,
+        Slot::Z => &r.z,
+        Slot::Beta => &r.beta,
+        Slot::Alpha => &r.alpha,
+        Slot::Gated => &r.gated,
+        Slot::Qfull => &r.qfull,
+        Slot::Kin => &r.kin,
+        Slot::Vin => &r.vin,
+        Slot::AttnOut => &r.attn_out,
+        Slot::Logits => &r.logits,
+    }
+}
+
+/// The same decode pass emitted from the kernel operations that `lower::lower` derived from the
+/// model IR (no matrix-core or chunk variants: those stay hand-written).
+fn emit_main_ir<'a>(g: &GgufFile, cfg: &Config, r: &'a Res, k: &'a Kernels, nb: usize, ops: &[KOp]) -> Result<Builder<'a>, Error> {
+    let (ne, cd) = (cfg.n_embd, cfg.conv_dim());
+    let (kh, vh, hs) = (cfg.k_heads, cfg.v_heads, cfg.state);
+    let (nh, nkv) = (cfg.n_head, cfg.n_kv);
+    let mut b = Builder::new();
+    let w = |n: &str| -> &'a Buf { &r.weights[n] };
+    for op in ops {
+        match op {
+            KOp::Embed => b.simple("embed", &k.embed, vec![full(w("token_embd.weight")), part(&r.tok_main, 0, nb), part(&r.x, 0, nb * ne)], (nb * ne / 256) as u32),
+            KOp::NormQuant { weight, add, keep_hidden } => b.norm_quant(r, k, ne, w(weight), nb, add.map(|s| slot_buf(r, s)), if *keep_hidden { Some(&r.hfin) } else { None }),
+            KOp::Quant { src } => {
+                let per_col = match src {
+                    Slot::Gated => cfg.inner,
+                    Slot::AttnOut => nh * cfg.head_dim,
+                    other => return Err(format!("no quantization of slot {other:?}").into()),
+                };
+                b.quant(r, k, slot_buf(r, *src), nb * per_col);
+            }
+            KOp::Matvec { weight, out } => b.matvec(g, r, k, weight, nb, (slot_buf(r, *out), 0))?,
+            KOp::SsmConv { layer, weight } => {
+                let LayerRes::Ssm { c0, c1, c2, .. } = &r.layers[*layer] else { return Err(format!("layer {layer} is not a gated delta layer").into()) };
+                let mut conv_b = vec![part(&r.qkv, 0, nb * cd), full(c0), full(c1), full(w(weight)), part(&r.conv_out, 0, nb * cd), full(&r.ctrl)];
+                if nb == 3 {
+                    conv_b.push(full(c2));
+                }
+                b.simple("ssm_conv", &k.conv[nb - 1], conv_b, (cd / 256) as u32);
+            }
+            KOp::SsmQkNorm => b.simple("ssm_qknorm", &k.qknorm, vec![part(&r.conv_out, 0, nb * cd), part(&r.qk, 0, nb * 2 * kh * hs)], (nb * 2 * kh) as u32),
+            KOp::SsmDelta { layer, dt_bias, a, norm } => {
+                let LayerRes::Ssm { s0, s1, s2, .. } = &r.layers[*layer] else { return Err(format!("layer {layer} is not a gated delta layer").into()) };
+                let mut delta_b = vec![
+                    part(&r.qk, 0, nb * 2 * kh * hs),
+                    part(&r.conv_out, 0, nb * cd),
+                    part(&r.alpha, 0, nb * vh),
+                    part(&r.beta, 0, nb * vh),
+                    full(w(dt_bias)),
+                    full(w(a)),
+                    full(s0),
+                    full(s1),
+                    part(&r.z, 0, nb * cfg.inner),
+                    full(w(norm)),
+                    part(&r.gated, 0, nb * cfg.inner),
+                    full(&r.ctrl),
+                ];
+                if nb == 3 {
+                    delta_b.push(full(s2));
+                }
+                b.simple("ssm_delta", &k.delta[nb - 1], delta_b, vh as u32);
+            }
+            KOp::AttnPrep { layer, q_norm, k_norm } => {
+                let LayerRes::Attn { kc, vc } = &r.layers[*layer] else { return Err(format!("layer {layer} is not an attention layer").into()) };
+                b.simple(
+                    "attn_prep",
+                    &k.prep,
+                    vec![part(&r.qfull, 0, nb * nh * cfg.head_dim * 2), part(&r.kin, 0, nb * nkv * cfg.head_dim), part(&r.vin, 0, nb * nkv * cfg.head_dim), full(w(q_norm)), full(w(k_norm)), part(&r.q_out, 0, nb * nh * cfg.head_dim), full(kc), full(vc), full(&r.ctrl)],
+                    (nb * (nh + 2 * nkv)) as u32,
+                );
+            }
+            KOp::AttnDecode { layer } => {
+                let LayerRes::Attn { kc, vc } = &r.layers[*layer] else { return Err(format!("layer {layer} is not an attention layer").into()) };
+                b.simple(
+                    "attn_decode",
+                    &k.attn,
+                    vec![part(&r.q_out, 0, nb * nh * cfg.head_dim), full(kc), full(vc), part(&r.qfull, 0, nb * nh * cfg.head_dim * 2), part(&r.attn_out, 0, nb * nh * cfg.head_dim), full(&r.ctrl)],
+                    (nb * nh) as u32,
+                );
+            }
+            KOp::SwigluQuant => b.swiglu_quant(r, k, nb, cfg.n_ff),
+            KOp::Argmax => b.simple("argmax", &k.argmax, vec![part(&r.logits, 0, nb * cfg.vocab), part(&r.am_main, 0, nb), part(&r.mg_main, 0, nb)], nb as u32),
         }
-    };
-    Ok((program, b.labels))
+    }
+    Ok(b)
+}
+
+/// The two command streams must be identical: same kernels, buffers, ranges, constants, groups.
+fn steps_equal(a: &Builder<'_>, b: &Builder<'_>) -> Result<(), String> {
+    if a.steps.len() != b.steps.len() {
+        return Err(format!("{} steps against {}", a.steps.len(), b.steps.len()));
+    }
+    for (i, (x, y)) in a.steps.iter().zip(&b.steps).enumerate() {
+        let (lx, ly) = (&a.labels[i], &b.labels[i]);
+        if !std::ptr::eq(x.kernel, y.kernel) {
+            return Err(format!("step {i}: different kernels ({lx} against {ly})"));
+        }
+        if x.bindings.len() != y.bindings.len() || x.bindings.iter().zip(&y.bindings).any(|(p, q)| !std::ptr::eq(p.0, q.0) || p.1 != q.1 || p.2 != q.2) {
+            return Err(format!("step {i} ({lx}): different bindings"));
+        }
+        if x.push != y.push || x.groups != y.groups {
+            return Err(format!("step {i} ({lx}): different push constants or group count"));
+        }
+    }
+    Ok(())
 }
 
 /// q/k norm + rope + KV write + attention + gate; reads `qfull`, `kin`, `vin`
@@ -619,17 +781,16 @@ impl GpuModel {
         // With LEV_IR=<ir.json> the trunk layers and their tensors come from the model IR (checked
         // against the operator sequences the kernels implement and against the model file); the
         // MTP block is not part of the IR yet and keeps its fixed list.
-        let ir_plan = match std::env::var_os("LEV_IR") {
-            Some(path) => {
-                let g = lev_ir::pass::retarget_gguf(&lev_ir::ir::Graph::parse(&std::fs::read_to_string(path)?)?)?;
-                g.validate()?;
-                let plan = crate::plan::plan(&g)?;
-                plan.check(&cfg)?;
-                let ssm = plan.kinds.iter().filter(|k| **k == crate::plan::LayerKind::Ssm).count();
-                eprintln!("model IR: {} layers ({ssm} gated delta, {} attention), {} tensors", plan.kinds.len(), plan.kinds.len() - ssm, plan.tensors.len());
-                Some(plan)
+        let (ir_plan, ir_ops) = match load_ir(&cfg) {
+            Ok(Some((plan, ops))) => {
+                if std::env::var_os("LEV_VERBOSE").is_some() {
+                    let ssm = plan.kinds.iter().filter(|k| **k == crate::plan::LayerKind::Ssm).count();
+                    eprintln!("model IR: {} layers ({ssm} gated delta, {} attention), {} tensors, {} kernel operations", plan.kinds.len(), plan.kinds.len() - ssm, plan.tensors.len(), ops.len());
+                }
+                (Some(plan), Some(ops))
             }
-            None => None,
+            Ok(None) => (None, None),
+            Err(e) => return Err(e),
         };
         for il in 0..=cfg.n_trunk {
             if il < cfg.n_trunk && ir_plan.is_some() {
@@ -740,9 +901,22 @@ impl GpuModel {
             trace: if trace { Some(fb(cfg.n_trunk * 3 * ne)?) } else { None },
         };
 
-        let (main1, labels1) = build_main(&ctx, &gguf, &cfg, &res, &kernels, 1, profile, false, false)?;
-        let (main2, labels2) = build_main(&ctx, &gguf, &cfg, &res, &kernels, 2, profile, false, false)?;
-        let (main3, _) = build_main(&ctx, &gguf, &cfg, &res, &kernels, 3, false, false, false)?;
+        // Decode passes: from the lowered model IR when there is one (after checking that its
+        // command stream equals the hand-written pass), else the hand-written pass.
+        let mk_main = |nb: usize, profile: bool| -> Result<(Program, Vec<String>), Error> {
+            match &ir_ops {
+                Some(ops) => {
+                    let hand = emit_main(&gguf, &cfg, &res, &kernels, nb, false, false)?;
+                    let low = emit_main_ir(&gguf, &cfg, &res, &kernels, nb, ops)?;
+                    steps_equal(&hand, &low).map_err(|e| format!("the lowered model IR differs from the hand-written pass for {nb} columns: {e}"))?;
+                    finish_program(&ctx, low, profile)
+                }
+                None => build_main(&ctx, &gguf, &cfg, &res, &kernels, nb, profile, false, false),
+            }
+        };
+        let (main1, labels1) = mk_main(1, profile)?;
+        let (main2, labels2) = mk_main(2, profile)?;
+        let (main3, _) = mk_main(3, false)?;
         let (prefill, labels_prefill) = build_main(&ctx, &gguf, &cfg, &res, &kernels, MAX_COLS, profile, true, false)?;
         let mtp_fill_chunk = build_mtp_fill_chunk(&ctx, &gguf, &cfg, &res, &kernels, MAX_COLS, false)?;
         let mut bigs: Vec<(usize, Program, Program)> = Vec::new();

@@ -137,6 +137,41 @@ impl Graph {
         self.outputs.iter().try_for_each(|a| check(a, self.nodes.len(), self))
     }
 
+    /// For every node, the nodes that use its value (each user once, ascending).
+    pub fn users(&self) -> Vec<Vec<usize>> {
+        fn refs(a: &Arg, out: &mut Vec<usize>) {
+            match a {
+                Arg::Node(n) => out.push(*n),
+                Arg::List(l) => l.iter().for_each(|x| refs(x, out)),
+                _ => {}
+            }
+        }
+        let mut users = vec![Vec::new(); self.nodes.len()];
+        for (i, n) in self.nodes.iter().enumerate() {
+            let mut r = Vec::new();
+            n.args.iter().chain(n.kwargs.iter().map(|(_, v)| v)).for_each(|a| refs(a, &mut r));
+            r.sort_unstable();
+            r.dedup();
+            for p in r {
+                users[p].push(i);
+            }
+        }
+        users
+    }
+
+    /// Nodes referenced by the graph outputs.
+    pub fn output_nodes(&self) -> Vec<usize> {
+        fn refs(a: &Arg, out: &mut Vec<usize>) {
+            match a {
+                Arg::Node(n) => out.push(*n),
+                Arg::List(l) => l.iter().for_each(|x| refs(x, out)),
+                _ => {}
+            }
+        }
+        let mut r = Vec::new();
+        self.outputs.iter().for_each(|a| refs(a, &mut r));
+        r
+    }
     /// Number of decoder layers (the highest `model.layers.N` index among the parameters, plus one).
     pub fn layer_count(&self) -> usize {
         self.params

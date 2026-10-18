@@ -26,5 +26,12 @@ Python 3.12 with torch (CPU build) and transformers; any virtual environment:
     python -m unittest test_layers test_export
     python export_layers.py [nodes.json]
 
+The Rust runtime bundles the export of the whole model
+(`rust/crates/lev-model/ir/ornith-1.5-9b.json`) and lowers it at start-up; regenerate it with
+
+    python ir_export.py ../../rust/crates/lev-model/ir/ornith-1.5-9b.json
+
+after changing the operators or the layer wrappers (the Rust tests pin the lowered operation counts).
+
 Status: single sequence per call. The multi-sequence flat layout, paged KV
 attention and state slots are not implemented yet.
