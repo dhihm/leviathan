@@ -20,7 +20,17 @@ Ornith-1.5-9B (Q4_K_M) runs on the Radeon 890M of an ASUS ROG Ally X through Vul
 | plain decode (tok/s) | 18.7 | 18.4 | 1.02 |
 | MTP speculative decode, two chained drafts (tok/s) | 31.5 mean over five natural-language prompts (27.9 - 35.2) | not applicable | about 1.7 vs. llama.cpp plain |
 
-Prefill and plain decode: one synthetic 512-token prompt, three rounds, one ROG Ally X. Speculative decode depends on draft acceptance and therefore on the prompt (a 242-token natural-language mix reached 37.4 tok/s in the interleaved run, a few other prompts 28 - 35). Details, caveats and reproduction commands: [Windows / Vulkan](docs/WINDOWS_VULKAN.md).
+Prefill and plain decode: one synthetic 512-token prompt, three rounds, one ROG Ally X. Speculative decode depends on draft acceptance and therefore on the prompt (a 242-token natural-language mix reached 37.4 tok/s in the interleaved run, a few other prompts 28 - 35). Serving: `lev serve <model.gguf>` starts an OpenAI-compatible server (`/v1/completions`, `/v1/chat/completions`, streaming, stop strings, usage) with continuous batching over a paged KV cache, a request scheduler with recompute preemption, and a GGUF byte-level BPE tokenizer that matches llama.cpp on a 118-string multilingual corpus. Measured against llama-server (same model, Vulkan, alternating runs, 256 input / 128 output tokens, greedy, fixed output length) with `tools/bench/serve_bench.py`, which reports the metrics of `vllm bench serve` (vllm itself does not install on Windows):
+
+| concurrent requests | Leviathan (tok/s) | llama-server (tok/s) | Leviathan TTFT (median) | llama-server TTFT (median) |
+| :-- | :-- | :-- | :-- | :-- |
+| 1 | 15.5 | 15.2 | 0.73 s | 1.38 s |
+| 8 | 42.7 | 45.5 | 3.6 s | 2.5 s |
+| 32 | 58.1 | 47.1 | 15.9 s | 25.2 s |
+
+Leviathan is ahead at 32 concurrent requests and on first-token latency for a single request, and still behind at 8 (prompts are prefilled one at a time). One synthetic load on one ROG Ally X; arrival-rate and long-prompt loads are not measured yet.
+
+Details, caveats and reproduction commands: [Windows / Vulkan](docs/WINDOWS_VULKAN.md).
 
 ### Mac / Metal (Swift and Python)
 
