@@ -15,3 +15,4 @@ lev-cpu = { path = "../lev-cpu" }
 lev-forge = { path = "../lev-forge" }
 lev-vulkan = { path = "../lev-vulkan" }
 lev-model = { path = "../lev-model" }
+lev-ir = { path = "../lev-ir" }

@@ -92,3 +92,66 @@ def _attn_impl(q, k_all, v_all, past_len, scale):
 @torch.library.impl(_LIB, "causal_attention", "Meta")
 def _attn_meta(q, k_all, v_all, past_len, scale):
     return q.new_empty(q.shape)
+
+
+# ---- element-wise and normalization operators (kept as IR operators, not decomposed) ----
+
+_LIB.define("rmsnorm(Tensor x, Tensor w, float eps, bool zero_centered) -> Tensor")
+_LIB.define("rmsnorm_gated(Tensor x, Tensor z, Tensor w, float eps) -> Tensor")
+_LIB.define("swiglu(Tensor gate, Tensor up) -> Tensor")
+_LIB.define("rope(Tensor x, Tensor cos, Tensor sin) -> Tensor")
+
+
+@torch.library.impl(_LIB, "rmsnorm", "CompositeExplicitAutograd")
+def _rmsnorm_impl(x, w, eps, zero_centered):
+    """y = x * rsqrt(mean(x^2) + eps) * (w + 1 if zero_centered else w), float32 inside.
+
+    Hugging Face stores Qwen3.5 norm weights zero-centered (scale 1 + w); GGUF stores 1 + w.
+    """
+    xf = x.float()
+    y = xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps)
+    return (y * (w.float() + 1.0 if zero_centered else w.float())).to(x.dtype)
+
+
+@torch.library.impl(_LIB, "rmsnorm", "Meta")
+def _rmsnorm_meta(x, w, eps, zero_centered):
+    return x.new_empty(x.shape)
+
+
+@torch.library.impl(_LIB, "rmsnorm_gated", "CompositeExplicitAutograd")
+def _rmsnorm_gated_impl(x, z, w, eps):
+    """Norm first, then the SiLU gate (Qwen3_5RMSNormGated): w * norm(x) * silu(z)."""
+    xf = x.float()
+    y = xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps)
+    return ((w.float() * y.to(x.dtype).float()) * F.silu(z.float())).to(x.dtype)
+
+
+@torch.library.impl(_LIB, "rmsnorm_gated", "Meta")
+def _rmsnorm_gated_meta(x, z, w, eps):
+    return x.new_empty(x.shape)
+
+
+@torch.library.impl(_LIB, "swiglu", "CompositeExplicitAutograd")
+def _swiglu_impl(gate, up):
+    return F.silu(gate) * up
+
+
+@torch.library.impl(_LIB, "swiglu", "Meta")
+def _swiglu_meta(gate, up):
+    return gate.new_empty(gate.shape)
+
+
+@torch.library.impl(_LIB, "rope", "CompositeExplicitAutograd")
+def _rope_impl(x, cos, sin):
+    """Rotate the first rd = cos.shape[-1] dims of each head (neox layout: halves), x [T, H, d],
+    cos and sin [T, rd]; the remaining dims pass through."""
+    rd = cos.shape[-1]
+    xr, xp = x[..., :rd], x[..., rd:]
+    h = rd // 2
+    rot = torch.cat([-xr[..., h:], xr[..., :h]], dim=-1)
+    return torch.cat([xr * cos[:, None, :] + rot * sin[:, None, :], xp], dim=-1)
+
+
+@torch.library.impl(_LIB, "rope", "Meta")
+def _rope_meta(x, cos, sin):
+    return x.new_empty(x.shape)

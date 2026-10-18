@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/lev-gguf", "crates/lev-cpu", "crates/lev-forge", "crates/lev-vulkan", "crates/lev-model", "crates/lev-cli"]
+members = ["crates/lev-gguf", "crates/lev-cpu", "crates/lev-forge", "crates/lev-vulkan", "crates/lev-model", "crates/lev-ir", "crates/lev-cli"]
 
 [workspace.package]
 edition = "2021"

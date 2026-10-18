@@ -207,6 +207,22 @@ fn main() -> ExitCode {
             }
             Err(_) => ExitCode::from(2),
         },
+        Some("ir-run") if args.len() == 3 => match ir_run(&args[2]) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        Some("ir-check") if args.len() == 4 => match ir_check(&args[2], &args[3]) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Some("gpu-triple") if args.len() == 4 => match gpu_triple(&args[2], &args[3]) {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::FAILURE,
@@ -536,6 +552,108 @@ fn gpu_pair(path: &str, ids: &str) -> Result<bool, Box<dyn std::error::Error>> {
     let e = max_rel_err(&l_pair, &l64).unwrap_or(f64::INFINITY);
     println!("continuation after the pair: logits max_rel_err {e:.2e}");
     pass &= e < 1e-2;
+    println!("{}", if pass { "PASS" } else { "FAIL" });
+    Ok(pass)
+}
+
+/// Runs a fixture (ir.json, weights.pack, inputs.pack, expected.pack from tools/model_ir/make_fixture.py)
+/// through the IR interpreter and compares every output with the PyTorch result.
+fn ir_run(dir: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    use lev_ir::{interp, ir::Graph, pack};
+    let d = std::path::Path::new(dir);
+    let g = Graph::parse(&std::fs::read_to_string(d.join("ir.json"))?)?;
+    g.validate()?;
+    let unsupported: Vec<_> = g.op_counts().into_iter().filter(|(op, _)| !interp::is_supported(op)).collect();
+    if !unsupported.is_empty() {
+        return Err(format!("unsupported operators: {unsupported:?}").into());
+    }
+    let params = pack::read(&std::fs::read(d.join("weights.pack"))?)?;
+    let inputs = pack::read(&std::fs::read(d.join("inputs.pack"))?)?;
+    let expected = pack::read(&std::fs::read(d.join("expected.pack"))?)?;
+    let t0 = std::time::Instant::now();
+    let outs = interp::run(&g, &params, &inputs)?;
+    println!("interpreted {} nodes in {:.1} ms", g.nodes.len(), t0.elapsed().as_secs_f64() * 1e3);
+    let mut pass = outs.len() == expected.len();
+    for (i, o) in outs.iter().enumerate() {
+        let want = match expected.get(&format!("out_{i}")) {
+            Some(pack::Packed::F32(t)) => t,
+            _ => return Err(format!("expected.pack has no float tensor out_{i}").into()),
+        };
+        let got = match &**o {
+            interp::V::T(t) => t,
+            _ => return Err(format!("output {i} is not a float tensor").into()),
+        };
+        if got.shape != want.shape {
+            println!("out_{i}: shape {:?} != {:?}", got.shape, want.shape);
+            pass = false;
+            continue;
+        }
+        let (mut max_abs, mut max_ref) = (0f32, 0f32);
+        for (a, b) in got.data.iter().zip(&want.data) {
+            max_abs = max_abs.max((a - b).abs());
+            max_ref = max_ref.max(b.abs());
+        }
+        let ok = max_abs <= 1e-4 + 1e-4 * max_ref;
+        pass &= ok;
+        println!("out_{i}: shape {:?} max_abs_err {max_abs:.2e} (max |ref| {max_ref:.2e}) {}", got.shape, if ok { "ok" } else { "FAIL" });
+    }
+    println!("{}", if pass { "PASS" } else { "FAIL" });
+    Ok(pass)
+}
+
+/// Loads an IR file, validates it and checks that every parameter binds to a GGUF tensor of the
+/// same size.
+fn ir_check(ir_path: &str, gguf_path: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    use lev_ir::{bind, interp, ir::Graph};
+    let g = Graph::parse(&std::fs::read_to_string(ir_path)?)?;
+    g.validate()?;
+    println!("{} nodes, {} parameters, {} inputs, {} outputs", g.nodes.len(), g.params.len(), g.inputs.len(), g.outputs.len());
+    let mut pass = true;
+    for (op, c) in g.op_counts() {
+        let sup = interp::is_supported(&op);
+        pass &= sup;
+        println!("  {c:5}  {op}{}", if sup { "" } else { "   <- not supported by the interpreter" });
+    }
+    let gguf = lev_gguf::GgufFile::open(gguf_path)?;
+    let (mut bound, mut transformed) = (0usize, 0usize);
+    let mut used = std::collections::BTreeSet::new();
+    for p in &g.params {
+        let Some((name, t)) = bind::to_gguf(&p.name) else {
+            println!("no GGUF binding rule for {}", p.name);
+            pass = false;
+            continue;
+        };
+        let Some(info) = gguf.tensor(&name) else {
+            println!("{}: GGUF tensor {name} not found", p.name);
+            pass = false;
+            continue;
+        };
+        let ir_elems: u64 = p.shape.iter().map(|d| d.parse::<u64>().unwrap_or(0)).product();
+        let gg_elems = info.element_count().unwrap_or(0);
+        if ir_elems != gg_elems {
+            println!("{}: {} elements in the IR, {gg_elems} in GGUF tensor {name}", p.name, ir_elems);
+            pass = false;
+            continue;
+        }
+        // 2-D weights: GGUF lists the dimensions in the opposite order.
+        if p.shape.len() == 2 {
+            let (a, b): (u64, u64) = (p.shape[0].parse().unwrap_or(0), p.shape[1].parse().unwrap_or(0));
+            if info.dims != [b, a] {
+                println!("{}: dimensions {:?} do not match GGUF {:?} of {name}", p.name, p.shape, info.dims);
+                pass = false;
+                continue;
+            }
+        }
+        bound += 1;
+        transformed += (t != bind::Transform::Plain) as usize;
+        used.insert(name);
+    }
+    // GGUF tensors that no IR parameter claims (the MTP block, for instance).
+    let unclaimed: Vec<_> = gguf.tensors.iter().filter(|t| !used.contains(&t.name)).map(|t| t.name.as_str()).collect();
+    println!("{bound} of {} parameters bound ({transformed} with a stored transform); {} GGUF tensors not used by the IR", g.params.len(), unclaimed.len());
+    for n in unclaimed.iter().take(12) {
+        println!("  unclaimed: {n}");
+    }
     println!("{}", if pass { "PASS" } else { "FAIL" });
     Ok(pass)
 }

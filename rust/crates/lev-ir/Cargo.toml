@@ -1,0 +1,8 @@
+[package]
+name = "lev-ir"
+description = "Model IR: loader, validator and CPU reference interpreter for graphs exported from torch.export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

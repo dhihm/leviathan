@@ -11,6 +11,13 @@ operators (`lev.causal_conv1d_state`, `lev.gated_delta_rule`,
   layers (same parameters, flat `[T, D]` tokens, explicit state).
 - `export_layers.py`: exports both layer types at real size on the meta device
   (no weights needed) with a symbolic token count.
+- `ornith_model.py`: the whole model (embedding, 32 layers, final norm, output projection) with every
+  recurrent state and KV cache as an explicit input and output.
+- `ir_export.py`: serializes the `torch.export` result of the whole model into the model IR (JSON,
+  format `lev-model-ir-1`; no weights, parameters keep their Hugging Face names). The Rust crate
+  `rust/crates/lev-ir` loads it, validates it and runs it on the CPU as the reference interpreter.
+- `make_fixture.py`: tiny random model, its IR, weights, inputs and PyTorch outputs, used by the
+  Rust tests (`rust/crates/lev-ir/tests/fixtures/tiny`).
 - `test_layers.py`, `test_export.py`: the wrappers and the exported graphs equal
   the Hugging Face layers (small random config, several token counts).
 

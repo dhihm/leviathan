@@ -13,7 +13,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import lev_ops  # noqa: F401  (registers torch.ops.lev.*)
-from transformers.models.qwen3_5.modeling_qwen3_5 import apply_rotary_pos_emb
 
 
 class GatedDeltaMixer(nn.Module):
@@ -42,7 +41,7 @@ class GatedDeltaMixer(nn.Module):
             q = q.repeat_interleave(rep, dim=1)
             k = k.repeat_interleave(rep, dim=1)
         core, rec_out = torch.ops.lev.gated_delta_rule(q, k, v, g, beta, rec_state)
-        core = m.norm(core.reshape(-1, m.head_v_dim), z.reshape(-1, m.head_v_dim))
+        core = torch.ops.lev.rmsnorm_gated(core.reshape(-1, m.head_v_dim), z.reshape(-1, m.head_v_dim), m.norm.weight, m.norm.variance_epsilon)
         return m.out_proj(core.reshape(t, -1)), conv_out, rec_out
 
 
@@ -60,13 +59,11 @@ class FullAttentionMixer(nn.Module):
         qg = m.q_proj(x).view(t, -1, hd * 2)
         q, gate = torch.chunk(qg, 2, dim=-1)  # [T, Hq, hd] each
         gate = gate.reshape(t, -1)
-        q = m.q_norm(q)
-        k = m.k_norm(m.k_proj(x).view(t, -1, hd))
+        q = rmsnorm(q, m.q_norm.weight, m.q_norm.eps)
+        k = rmsnorm(m.k_proj(x).view(t, -1, hd), m.k_norm.weight, m.k_norm.eps)
         v = m.v_proj(x).view(t, -1, hd)
-        # Hugging Face rope helper wants [B, H, T, hd] and cos/sin [B, T, rd].
-        q4, k4 = apply_rotary_pos_emb(q.transpose(0, 1)[None], k.transpose(0, 1)[None], cos[None], sin[None])
-        q = q4[0].transpose(0, 1)
-        k = k4[0].transpose(0, 1)
+        q = torch.ops.lev.rope(q, cos, sin)
+        k = torch.ops.lev.rope(k, cos, sin)
         k_all = torch.cat([k_cache, k], dim=0)
         v_all = torch.cat([v_cache, v], dim=0)
         out = torch.ops.lev.causal_attention(q, k_all, v_all, k_cache.shape[0], m.scaling)
@@ -74,8 +71,14 @@ class FullAttentionMixer(nn.Module):
         return m.o_proj(out), k, v
 
 
-def _norm(n, x):
-    return n(x)
+def rmsnorm(x, weight, eps):
+    """Qwen3.5 RMSNorm (zero-centered weight, as Hugging Face stores it)."""
+    return torch.ops.lev.rmsnorm(x, weight, eps, True)
+
+
+def mlp(l, x):
+    """Qwen3_5MLP with the SiLU gate as one operator."""
+    return l.mlp.down_proj(torch.ops.lev.swiglu(l.mlp.gate_proj(x), l.mlp.up_proj(x)))
 
 
 class GdnDecoderLayer(nn.Module):
@@ -88,9 +91,9 @@ class GdnDecoderLayer(nn.Module):
 
     def forward(self, x, conv_state, rec_state):
         l = self.layer
-        h, conv_out, rec_out = self.mixer(l.input_layernorm(x), conv_state, rec_state)
+        h, conv_out, rec_out = self.mixer(rmsnorm(x, l.input_layernorm.weight, l.input_layernorm.eps), conv_state, rec_state)
         x = x + h
-        x = x + l.mlp(l.post_attention_layernorm(x))
+        x = x + mlp(l, rmsnorm(x, l.post_attention_layernorm.weight, l.post_attention_layernorm.eps))
         return x, conv_out, rec_out
 
 
@@ -104,7 +107,7 @@ class AttnDecoderLayer(nn.Module):
 
     def forward(self, x, cos, sin, k_cache, v_cache):
         l = self.layer
-        h, k_new, v_new = self.mixer(l.input_layernorm(x), cos, sin, k_cache, v_cache)
+        h, k_new, v_new = self.mixer(rmsnorm(x, l.input_layernorm.weight, l.input_layernorm.eps), cos, sin, k_cache, v_cache)
         x = x + h
-        x = x + l.mlp(l.post_attention_layernorm(x))
+        x = x + mlp(l, rmsnorm(x, l.post_attention_layernorm.weight, l.post_attention_layernorm.eps))
         return x, k_new, v_new

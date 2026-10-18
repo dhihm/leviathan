@@ -24,6 +24,7 @@ dependencies = [
  "lev-cpu",
  "lev-forge",
  "lev-gguf",
+ "lev-ir",
  "lev-model",
  "lev-vulkan",
 ]
@@ -38,6 +39,10 @@ version = "0.0.1"
 
 [[package]]
 name = "lev-gguf"
+version = "0.0.1"
+
+[[package]]
+name = "lev-ir"
 version = "0.0.1"
 
 [[package]]
