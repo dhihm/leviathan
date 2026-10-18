@@ -1,0 +1,9 @@
+[package]
+name = "lev-tokenizer"
+description = "Byte-level BPE tokenizer built from the tables stored in a GGUF file (qwen35 pre-tokenizer)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lev-gguf = { path = "../lev-gguf" }

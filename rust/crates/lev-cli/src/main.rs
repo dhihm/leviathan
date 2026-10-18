@@ -215,6 +215,13 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Some("tokenize") if args.len() == 4 || args.len() == 5 => match tokenize(&args[2], &args[3], args.get(4).map_or("", |a| a.as_str())) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Some("vk-paged") if args.len() == 2 => match vk_paged() {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::FAILURE,
@@ -1267,6 +1274,38 @@ fn vk_gemm(path: &str, max_rows: usize, name: &str) -> Result<bool, Box<dyn std:
 /// Equivalence test of the chunk gated-delta kernel: 8 columns in one dispatch
 /// against the single-column kernel applied 8 times, same random inputs and
 /// initial state; compares outputs and the final state.
+/// Tokenizes every string of a JSON array file; one line of comma separated token ids per string.
+fn tokenize(gguf: &str, strings: &str, mode: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let special = mode == "special" || mode == "roundtrip";
+    let tk = lev_tokenizer::Tokenizer::from_gguf(gguf)?;
+    let root = lev_ir::json::parse(&std::fs::read_to_string(strings)?)?;
+    let items = root.as_arr().ok_or("the file must hold a JSON array of strings")?;
+    let t0 = std::time::Instant::now();
+    let mut bytes = 0usize;
+    let mut bad = 0usize;
+    for it in items {
+        let text = it.as_str().ok_or("not a string")?;
+        bytes += text.len();
+        let ids = tk.encode(text, special);
+        if mode == "roundtrip" {
+            // decode(encode(s)) must give s back, also when fed token by token through the UTF-8 stream.
+            let mut stream = lev_tokenizer::Utf8Stream::default();
+            let streamed: String = ids.iter().map(|&i| stream.push(tk.token_bytes(i))).collect();
+            if tk.decode(&ids) != text || streamed != text {
+                bad += 1;
+                println!("MISMATCH: {:?}", &text[..text.len().min(60)]);
+            }
+            continue;
+        }
+        println!("{}", ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
+    }
+    eprintln!("{} strings, {bytes} bytes in {:.2} ms", items.len(), t0.elapsed().as_secs_f64() * 1e3);
+    if mode == "roundtrip" {
+        println!("{} of {} strings survive decode(encode(s))", items.len() - bad, items.len());
+    }
+    Ok(())
+}
+
 /// Paged attention (online softmax over scattered blocks) against the slab kernel and an f64 CPU
 /// reference on random data, for short and long contexts and several columns.
 fn vk_paged() -> Result<bool, Box<dyn std::error::Error>> {
