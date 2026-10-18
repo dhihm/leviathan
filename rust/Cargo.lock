@@ -26,6 +26,7 @@ dependencies = [
  "lev-gguf",
  "lev-ir",
  "lev-model",
+ "lev-server",
  "lev-tokenizer",
  "lev-vulkan",
 ]
@@ -55,6 +56,15 @@ dependencies = [
  "lev-gguf",
  "lev-ir",
  "lev-vulkan",
+]
+
+[[package]]
+name = "lev-server"
+version = "0.0.1"
+dependencies = [
+ "lev-ir",
+ "lev-model",
+ "lev-tokenizer",
 ]
 
 [[package]]

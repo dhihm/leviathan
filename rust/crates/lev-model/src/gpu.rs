@@ -195,6 +195,19 @@ struct Res {
     trace: Option<Buf>,
 }
 
+fn kv_error(e: crate::kv::KvError) -> Error {
+    match e {
+        crate::kv::KvError::OutOfBlocks => Box::new(crate::kv::OutOfBlocks),
+        other => format!("KV cache: {other:?}").into(),
+    }
+}
+
+/// A prompt being prefilled chunk by chunk into the main engine (see `prefill_begin`).
+pub struct PrefillState {
+    prompt: Vec<usize>,
+    done: usize,
+}
+
 /// One token of one sequence in a ragged batch: its slot, the token and its position.
 #[derive(Clone, Copy, Debug)]
 pub struct BatchItem {
@@ -1258,7 +1271,7 @@ impl GpuModel {
         let mut flat = Vec::new();
         if let Some(kv) = self.kv.as_mut() {
             for it in items {
-                flat.push(kv.ensure(it.slot, it.pos).map_err(|e| format!("KV cache: {e:?}"))?);
+                flat.push(kv.ensure(it.slot, it.pos).map_err(kv_error)?);
             }
             self.res.block_table.write_u32(0, &kv.table());
         }
@@ -1316,6 +1329,35 @@ impl GpuModel {
         self.kv.as_ref().map(|k| (k.free_blocks(), k.total_blocks()))
     }
 
+    /// Starts prefilling `prompt` into the main engine, discarding its earlier state.
+    pub fn prefill_begin(&mut self, prompt: &[usize]) -> Result<PrefillState, Error> {
+        if prompt.is_empty() {
+            return Err("empty prompt".into());
+        }
+        if prompt.len() + 1 >= self.ctx_len {
+            return Err(format!("the prompt of {} tokens does not fit the context of {}", prompt.len(), self.ctx_len).into());
+        }
+        self.reset();
+        Ok(PrefillState { prompt: prompt.to_vec(), done: 0 })
+    }
+
+    /// Runs the next chunk of the prefill (a matrix-core or 8-column chunk; the last few tokens
+    /// together). Returns the first generated token when the prompt is complete.
+    pub fn prefill_advance(&mut self, st: &mut PrefillState) -> Result<Option<usize>, Error> {
+        let left = st.prompt.len() - st.done;
+        let c = self.chunk_size(left, true);
+        if c > 0 {
+            self.prefill_chunk(&st.prompt[st.done..st.done + c], None)?;
+            st.done += c;
+            return Ok(None);
+        }
+        for &t in &st.prompt[st.done..] {
+            self.step(t)?;
+        }
+        st.done = st.prompt.len();
+        Ok(Some(self.main_choice(0).0))
+    }
+
     /// Prefills `prompt` into the main engine (fresh state) and returns the first generated token.
     pub fn prefill_prompt(&mut self, prompt: &[usize]) -> Result<usize, Error> {
         if prompt.is_empty() {
@@ -1353,7 +1395,7 @@ impl GpuModel {
         if let Some(kv) = self.kv.as_mut() {
             kv.release(slot);
             if self.pos > 0 {
-                kv.ensure(slot, self.pos - 1).map_err(|e| format!("KV cache: {e:?}"))?;
+                kv.ensure(slot, self.pos - 1).map_err(kv_error)?;
             }
             blocks = kv.blocks_of(slot).to_vec();
         }

@@ -14,6 +14,19 @@ pub struct BlockManager {
     total: usize,
 }
 
+/// The error `GpuModel::batch_step` and `batch_import` return when the pool has no free block
+/// (downcast the boxed error to this type to tell it from other failures).
+#[derive(Debug, PartialEq, Eq)]
+pub struct OutOfBlocks;
+
+impl std::fmt::Display for OutOfBlocks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "KV cache: no free blocks")
+    }
+}
+
+impl std::error::Error for OutOfBlocks {}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum KvError {
     OutOfBlocks,

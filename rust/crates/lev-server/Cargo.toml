@@ -1,0 +1,11 @@
+[package]
+name = "lev-server"
+description = "Continuous-batching scheduler and an OpenAI-compatible HTTP server for the Vulkan engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lev-model = { path = "../lev-model" }
+lev-tokenizer = { path = "../lev-tokenizer" }
+lev-ir = { path = "../lev-ir" }

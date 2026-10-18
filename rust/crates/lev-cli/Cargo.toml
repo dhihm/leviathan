@@ -17,3 +17,4 @@ lev-vulkan = { path = "../lev-vulkan" }
 lev-model = { path = "../lev-model" }
 lev-ir = { path = "../lev-ir" }
 lev-tokenizer = { path = "../lev-tokenizer" }
+lev-server = { path = "../lev-server" }

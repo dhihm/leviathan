@@ -215,6 +215,13 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Some("serve") if args.len() >= 3 => match serve(&args[2..]) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("error: {e}");
+                ExitCode::FAILURE
+            }
+        },
         Some("tokenize") if args.len() == 4 || args.len() == 5 => match tokenize(&args[2], &args[3], args.get(4).map_or("", |a| a.as_str())) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
@@ -1274,6 +1281,35 @@ fn vk_gemm(path: &str, max_rows: usize, name: &str) -> Result<bool, Box<dyn std:
 /// Equivalence test of the chunk gated-delta kernel: 8 columns in one dispatch
 /// against the single-column kernel applied 8 times, same random inputs and
 /// initial state; compares outputs and the final state.
+/// `lev serve <model.gguf> [--port 8000] [--host 127.0.0.1] [--ctx 2048] [--slots 16] [--blocks N] [--name NAME]`:
+/// an OpenAI-compatible server with continuous batching.
+fn serve(args: &[String]) -> Result<(), String> {
+    let model = args[0].clone();
+    let mut cfg = lev_server::server::ServerConfig {
+        model_name: std::path::Path::new(&model).file_stem().map_or("ornith".into(), |s| s.to_string_lossy().into_owned()),
+        model_path: model,
+        host: "127.0.0.1".into(),
+        port: 8000,
+        ctx: 2048,
+        slots: 16,
+        kv_blocks: None,
+    };
+    let mut it = args[1..].iter();
+    while let Some(flag) = it.next() {
+        let mut value = || it.next().cloned().ok_or(format!("{flag} needs a value"));
+        match flag.as_str() {
+            "--port" => cfg.port = value()?.parse().map_err(|_| "bad --port")?,
+            "--host" => cfg.host = value()?,
+            "--ctx" => cfg.ctx = value()?.parse().map_err(|_| "bad --ctx")?,
+            "--slots" => cfg.slots = value()?.parse().map_err(|_| "bad --slots")?,
+            "--blocks" => cfg.kv_blocks = Some(value()?.parse().map_err(|_| "bad --blocks")?),
+            "--name" => cfg.model_name = value()?,
+            other => return Err(format!("unknown option {other}")),
+        }
+    }
+    lev_server::server::serve(cfg)
+}
+
 /// Tokenizes every string of a JSON array file; one line of comma separated token ids per string.
 fn tokenize(gguf: &str, strings: &str, mode: &str) -> Result<(), Box<dyn std::error::Error>> {
     let special = mode == "special" || mode == "roundtrip";
