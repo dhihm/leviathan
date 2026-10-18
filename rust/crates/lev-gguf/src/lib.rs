@@ -208,6 +208,9 @@ pub struct GgufFile {
     /// Absolute offset of the tensor data section.
     pub data_offset: u64,
     pub file_len: u64,
+    /// Arrays longer than [`KEPT_ARRAY_LEN`] are not kept in `metadata`: key -> (element type,
+    /// length, absolute offset of the first element), for [`GgufFile::read_string_array`] and friends.
+    pub skipped_arrays: BTreeMap<String, (u32, u64, u64)>,
 }
 
 impl GgufFile {
@@ -223,6 +226,38 @@ impl GgufFile {
 
     pub fn meta_str(&self, key: &str) -> Option<&str> {
         self.metadata.get(key).and_then(Value::as_str)
+    }
+
+    /// Reads a long array of strings (such as `tokenizer.ggml.tokens`) from the file.
+    pub fn read_string_array<F: Read + Seek>(&self, file: &mut F, key: &str) -> Result<Vec<String>, GgufError> {
+        let Some(&(ty, len, off)) = self.skipped_arrays.get(key) else {
+            return bad(format!("{key}: not a skipped array"));
+        };
+        if ty != 8 {
+            return bad(format!("{key}: not a string array"));
+        }
+        file.seek(SeekFrom::Start(off))?;
+        let mut r = io::BufReader::with_capacity(1 << 20, file);
+        let mut scratch = Vec::new();
+        let mut out = Vec::with_capacity(len as usize);
+        for _ in 0..len {
+            out.push(read_string(&mut r, &mut scratch)?);
+        }
+        Ok(out)
+    }
+
+    /// Reads a long array of 32-bit integers (such as `tokenizer.ggml.token_type`).
+    pub fn read_i32_array<F: Read + Seek>(&self, file: &mut F, key: &str) -> Result<Vec<i32>, GgufError> {
+        let Some(&(ty, len, off)) = self.skipped_arrays.get(key) else {
+            return bad(format!("{key}: not a skipped array"));
+        };
+        if ty != 4 && ty != 5 {
+            return bad(format!("{key}: not a 32-bit integer array"));
+        }
+        file.seek(SeekFrom::Start(off))?;
+        let mut bytes = vec![0u8; len as usize * 4];
+        file.read_exact(&mut bytes)?;
+        Ok(bytes.chunks_exact(4).map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect())
     }
 
     pub fn tensor(&self, name: &str) -> Option<&TensorInfo> {
@@ -390,10 +425,16 @@ pub fn parse<R: Read>(reader: R, file_len: u64) -> Result<GgufFile, GgufError> {
 
     let mut scratch = Vec::new();
     let mut metadata = BTreeMap::new();
+    let mut skipped_arrays = BTreeMap::new();
     for _ in 0..kv_count {
         let key = read_string(&mut r, &mut scratch)?;
         let ty = read_u32(&mut r)?;
+        // An array value starts with its element type (4 bytes) and length (8 bytes).
+        let elements_at = r.pos + 12;
         let value = read_value(&mut r, ty, &mut scratch)?;
+        if let Value::Array { elem_type, len, values: None } = &value {
+            skipped_arrays.insert(key.clone(), (*elem_type, *len, elements_at));
+        }
         if metadata.insert(key.clone(), value).is_some() {
             return bad(format!("duplicate metadata key {key}"));
         }
@@ -441,7 +482,7 @@ pub fn parse<R: Read>(reader: R, file_len: u64) -> Result<GgufFile, GgufError> {
         }
     }
 
-    Ok(GgufFile { version, metadata, tensors, data_offset, file_len })
+    Ok(GgufFile { version, metadata, tensors, data_offset, file_len, skipped_arrays })
 }
 
 #[cfg(test)]

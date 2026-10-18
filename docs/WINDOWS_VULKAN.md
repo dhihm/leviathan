@@ -2,6 +2,8 @@
 
 The second backend target. The same Forge design as the Mac/Metal path (op spec, device-derived schedule, emitted kernel source, correctness gate, measured selection, cached artifact) drives a Rust implementation that runs Ornith-1.5-9B (`qwen35`, Q4_K_M GGUF) on a Radeon 890M iGPU through Vulkan.
 
+**Status of the model graph.** The Forge stages implemented here are the kernel-level ones (op spec, device-derived schedule, emitted kernel source, correctness gate, measured selection, cached artifact). The model graph itself is currently written by hand in ust/crates/lev-model/src/gpu.rs; capturing the model with 	orch.export into a model IR that Forge optimizes and lowers is planned and not implemented yet, and so are continuous batching and a paged KV cache.
+
 Code: `rust/` (workspace: `lev-gguf`, `lev-forge`, `lev-vulkan`, `lev-model`, `lev-cli`), benchmark tooling in `tools/bench/`.
 
 ## Target
