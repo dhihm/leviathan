@@ -498,6 +498,49 @@ do {
     failed += 1; print("FAIL: CLI invalid inputs — threw \(error)")
 }
 
+// MARK: - Forge CLI plan cache lifecycle
+
+do {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("leviathan-forge-cli-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let planURL = directory.appendingPathComponent("plan.json")
+
+    func runForgeCLI(expecting message: String) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: ".build/debug/leviathan-cli")
+        process.arguments = ["forge", "--graph", "examples/demo-graph.json", "--plan", planURL.path]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
+        check("Forge CLI reports \(message)",
+              process.terminationStatus == 0 && output.contains(message))
+        if process.terminationStatus != 0 || !output.contains(message) { print(output) }
+        return output
+    }
+
+    _ = try runForgeCLI(expecting: "plan saved:")
+    let original = try JSONDecoder().decode(ForgePlan.self, from: Data(contentsOf: planURL))
+    let reused = try runForgeCLI(expecting: "cache hit: plan \(original.planDigest)")
+    check("Forge CLI reuses the plan without saving a replacement",
+          reused.contains("PASS (reused)") && !reused.contains("plan saved:"))
+
+    try Data("{".utf8).write(to: planURL)
+    let rebuilt = try runForgeCLI(expecting: "plan JSON decode failed")
+    check("Forge CLI invalidates the corrupt plan and saves a replacement",
+          rebuilt.contains("cache invalidated:") && rebuilt.contains("plan saved:")
+          && rebuilt.split(separator: "\n").contains("PASS"))
+    let replacement = try JSONDecoder().decode(ForgePlan.self, from: Data(contentsOf: planURL))
+    let reloaded = try runForgeCLI(expecting: "cache hit: plan \(replacement.planDigest)")
+    check("Forge CLI reuses the replacement plan", reloaded.contains("PASS (reused)"))
+} catch {
+    failed += 1; print("FAIL: Forge CLI plan cache lifecycle — threw \(error)")
+}
+
 // MARK: - GGUF reader (synthetic container, known fields)
 
 func u32(_ v: UInt32) -> [UInt8] { [
