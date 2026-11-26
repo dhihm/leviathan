@@ -480,9 +480,16 @@ case "forge":
                 maxTotalThreadsPerThreadgroup: prepared.maxTotalThreadsPerThreadgroup,
                 threadExecutionWidth: prepared.threadExecutionWidth,
                 recommendedMaxWorkingSetSize: prepared.recommendedMaxWorkingSetSize)
-            if let plan = try? ForgePlan.loadValidated(
+            let cachedPlan: ForgePlan?
+            do {
+                cachedPlan = try ForgePlan.loadValidated(
                     from: planURL, graph: graph, seed: seed, batch: batch,
-                    hardware: hardware, weights: weights) {
+                    hardware: hardware, weights: weights)
+            } catch {
+                cachedPlan = nil
+                print("cache invalidated: \(error) — re-forging \(planURL.path)")
+            }
+            if let plan = cachedPlan {
                 let (output, gpuMicros) = try prepared.run(
                     threadgroupWidth: plan.selected.threadgroupWidth,
                     fuseDenseRelu: plan.selected.fuseDenseRelu)
@@ -501,7 +508,6 @@ case "forge":
                 print("PASS (reused)")
                 exit(0)
             }
-            print("stale plan at \(planURL.path) — re-forging")
         }
         let (plan, _, hardware, results) = try Forge.forge(
             graph: graph, batch: batch, seed: seed, weights: weights)
@@ -3057,14 +3063,22 @@ case "forge":
             var forgedFresh = false
             let planURL = URL(fileURLWithPath: planPath)
             if FileManager.default.fileExists(atPath: planPath) {
-                if let loaded = try? GemmaForge.loadPlan(from: planURL),
-                   (try? GemmaForge.validatePlan(loaded, graph: graph,
-                                                 ggufDigest: ggufDigest,
-                                                 engineDigest: engine,
-                                                 hardware: hardware,
-                                                 prompt: prompt,
-                                                 decodeTokens: decodeTokens,
-                                                 expertCacheBudget: expertBudget)) != nil {
+                let cachedPlan: GemmaForgePlan?
+                do {
+                    let loaded = try GemmaForge.loadPlan(from: planURL)
+                    try GemmaForge.validatePlan(loaded, graph: graph,
+                                                ggufDigest: ggufDigest,
+                                                engineDigest: engine,
+                                                hardware: hardware,
+                                                prompt: prompt,
+                                                decodeTokens: decodeTokens,
+                                                expertCacheBudget: expertBudget)
+                    cachedPlan = loaded
+                } catch {
+                    cachedPlan = nil
+                    print("cache invalidated: \(error) — re-forging \(planPath)")
+                }
+                if let loaded = cachedPlan {
                     // Cache reuse still passes the correctness gate before
                     // any output is trusted.
                     runner.reset()
@@ -3084,7 +3098,6 @@ case "forge":
                     print("cache hit: plan \(loaded.planDigest)")
                     plan = loaded
                 } else {
-                    print("stale/foreign plan at \(planPath) — re-forging")
                     let forged = try GemmaForge.forge(graph: graph, runner: runner,
                                                       ggufURL: fileURL, prompt: prompt,
                                                       decodeTokens: decodeTokens,
