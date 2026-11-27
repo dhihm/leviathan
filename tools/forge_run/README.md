@@ -102,3 +102,30 @@ curl -fL https://download.pytorch.org/models/resnet18-f37072fd.pth -o "$scratch/
 LEVIATHAN_RESNET18_CHECKPOINT="$scratch/resnet18.pth" \
   python3 -m pytest -q -s tools/forge_run/test_conv2d_declared.py
 ```
+
+### Declared Metal ResNet basic block
+
+Build the same Metal helper as for Conv2D. For a residual block use
+`resnet_block_declared.py` with the same flags. Its versioned JSON
+contract has these fields:
+
+- `format` is `leviathan-declared-resnet-basic-block-1`.
+- `inputShape` and `outputShape` are contiguous FP32 NCHW with batch 1.
+- `skip` is `identity` with `stride` 1, or `projection` with `stride` 2.
+- `folding` is `eval-batchnorm-fp64-fold-to-fp32-1`.
+- `epsilon` lists the inference BatchNorm epsilons in layer order.
+- `originalSha256` binds the bytes of the original weights file.
+
+Pack the raw little-endian FP32 weights file for main convolution 1,
+main convolution 2, then the projection if present. For each layer
+write the OIHW convolution weights, BatchNorm scale, offset, running
+mean, and running variance, in that order. The CLI verifies full
+output parity against a separate unfused CPU reference and publishes
+`output.f32` and `report.json`. The report records the folded digest
+and Metal command-buffer time separately from BUILD timing.
+
+Use the same pinned TorchVision checkpoint as above and run
+`python3 -m pytest -q -s tools/forge_run/test_resnet_block_declared.py`
+with `LEVIATHAN_RESNET18_CHECKPOINT` set. The test covers both skip
+paths and prints cold/warm medians, ranges, and the maximum PyTorch
+comparison error.

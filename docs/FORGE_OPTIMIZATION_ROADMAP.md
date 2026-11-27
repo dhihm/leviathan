@@ -430,3 +430,46 @@ It compares the complete recorded toolchain string against
 once per process. This probe is part of the current warm validation
 contract. No replacement was validated that detects changes in toolchain
 resolution and version under all of the current launch configurations.
+
+## Stage 9 — Public ResNet-18 basic block
+
+The declared residual CLI runs the two 3×3 convolutions, ReLU, skip add,
+and final ReLU in one Metal command buffer. It keeps intermediate tensors
+on the device. The versioned declaration supports an identity skip at
+stride 1 or a 1×1 projection at stride 2. BatchNorm is folded from FP32
+source tensors into FP32 filters and bias using FP64 arithmetic.
+The declaration records the folding identifier, ordered epsilon values,
+and a digest covering original weights, affine parameters, and running
+statistics. The result records a separate folded digest. The CPU reference
+executes direct FP64 convolution and unfused BatchNorm on every BUILD.
+Cached dispatch metadata still requires current GPU and pipeline validation.
+
+On Apple M1 Max, five fresh-process cold/warm pairs per block used the
+pinned TorchVision IMAGENET1K_V1 checkpoint and deterministic FP32 input
+of height 17 and width 23. Every output was compared against the original,
+unfolded PyTorch block operations, including all padding edges and the
+stride-2 boundary. Test fixture materialization and the separate PyTorch
+comparison are outside the subprocess wall time. Within the subprocess,
+the independent unfused CPU comparison runs before publication.
+
+| Block | Output | Cold / warm wall medians, ms | Cold / warm GPU command medians, ms | Max PyTorch error |
+|---|---|---:|---:|---:|
+| `layer1.0`, identity | 1×64×17×23 | 310 / 327 | 1.226 / 1.230 | 6.68e-6 |
+| `layer2.0`, stride-2 projection | 1×128×9×12 | 311 / 308 | 1.062 / 1.057 | 2.98e-6 |
+
+Wall ranges in the same order were 306–1548, 318–348, 274–438, and
+280–417 ms. GPU timing covers the aggregate Metal command buffer, which
+includes the convolution and epilogue dispatches. These are correctness
+runs at small spatial dimensions. A warm speedup was not established.
+Source weight, running mean, and epsilon changes each produced cache
+misses. Damaged plan records rebuilt while preserving output.
+
+The next unit is the stem through the first residual stage at the public
+224×224 input size. It needs folded stem BatchNorm, compatible padded max
+pool, tensor chaining without per-block serializations, and benchmarks or
+tiling to handle the existing per-block work cap. Then bind and validate
+all eight blocks across the four stages, including output shapes at every
+transition, global average pooling, flatten, and the Dense classifier.
+Require layer-boundary parity and final logits against TorchVision before
+claiming full ResNet-18 support. CUDA hardware remains unverified for these
+new operators.

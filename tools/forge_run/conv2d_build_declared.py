@@ -67,20 +67,29 @@ def reference(x, weights, geometry):
     return out[None, ...]
 
 
-def cached_plan(path, key):
+def cached_plan(path, key, format_id=FORMAT):
     if path is not None:
         try:
             record = json.loads(read(path))
             bundle = record["bundle"].encode()
             if record["key"] == key and record["sha256"] == digest(bundle):
                 plan = json.loads(bundle)
-                if (plan["format"] == FORMAT and plan["key"] == key
+                if (plan["format"] == format_id and plan["key"] == key
                         and type(plan["width"]) is int and 1 <= plan["width"] <= 1024
                         and type(plan["registryID"]) is str and plan["registryID"].isdigit()):
                     return plan["registryID"], plan["width"]
         except (OSError, ValueError, TypeError, KeyError, AttributeError):
             pass
     return "-", 0
+
+
+def store_plan(path, key, directory, evidence, format_id):
+    plan = directory / "plan"
+    plan.mkdir()
+    (plan / "bundle.json").write_bytes(encode({"format": format_id, "key": key,
+                                               "registryID": evidence["registryID"],
+                                               "width": evidence["width"]}))
+    save_cache(path, key, plan)
 
 
 def build(args):
@@ -126,12 +135,7 @@ def build(args):
                   "maxAbsError": float(np.max(np.abs(actual - wanted))), "cache": {"hit": hit, "key": key}}
         (stage / "report.json").write_bytes(encode(report))
         if path is not None and not hit:
-            plan = directory / "plan"
-            plan.mkdir()
-            (plan / "bundle.json").write_bytes(encode({"format": FORMAT, "key": key,
-                                                       "registryID": evidence["registryID"],
-                                                       "width": evidence["width"]}))
-            save_cache(path, key, plan)
+            store_plan(path, key, directory, evidence, FORMAT)
         publish(stage, args.out)
     return report
 
