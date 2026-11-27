@@ -3,9 +3,12 @@
 import argparse
 import json
 import sys
+from pathlib import Path
 import time
 
 import torch
+
+import dag_build_declared as declared
 
 from dag_forge import (
     ATOL, MAX_SEED, RTOL, ForgeRunError, capture, forward_source, load_model, resolve_input,
@@ -49,8 +52,7 @@ def run_cuda(model_path, example_input, user_input, seed=0):
 
 
 def run_cuda_many(model_path, example_input, user_inputs, seed=0):
-    if not torch.cuda.is_available() or torch.version.cuda is None:
-        raise ForgeRunError("CUDA backend requires NVIDIA hardware and a CUDA-enabled PyTorch")
+    require_cuda()
     if type(seed) is not int or not 0 <= seed <= MAX_SEED:
         raise ForgeRunError(f"seed must be an int in 0..{MAX_SEED}")
     if not user_inputs:
@@ -61,6 +63,31 @@ def run_cuda_many(model_path, example_input, user_inputs, seed=0):
     model, input_dim, _, _ = load_model(
         model_path, seed, (("example input", example), *(("input", x) for x in inputs)))
     graph, blob, layouts, _ = capture(model, example, input_dim)
+    return execute_cuda_requests(graph, blob, layouts, inputs,
+                                 lambda real: forward_source(model, real, "the input"), started)
+
+
+def require_cuda():
+    if not torch.cuda.is_available() or torch.version.cuda is None:
+        raise ForgeRunError("CUDA backend requires NVIDIA hardware and a CUDA-enabled PyTorch")
+
+
+def run_declared_cuda(contract, graph_path, weights_path, user_inputs):
+    started = time.perf_counter()
+    _, graph, _, blob, weights, layouts = declared.load_model(
+        Path(contract), Path(graph_path), Path(weights_path))
+    inputs = [torch.from_numpy(declared.read_input(Path(path), graph["inputDim"])).reshape(1, -1)
+              for path in user_inputs]
+
+    def reference(real):
+        result = declared.reference(graph, weights, layouts, real.numpy()[0])
+        return torch.from_numpy(result).reshape(1, -1)
+
+    require_cuda()
+    return execute_cuda_requests(graph, blob, layouts, inputs, reference, started)
+
+
+def execute_cuda_requests(graph, blob, layouts, inputs, source_reference, started):
     captured = time.perf_counter()
     device = torch.device("cuda:0")
     precision = torch.get_float32_matmul_precision()
@@ -87,9 +114,9 @@ def run_cuda_many(model_path, example_input, user_inputs, seed=0):
                 if not gpu.is_cuda or not 0 < elapsed < float("inf"):
                     raise ForgeRunError("DAG execution produced no CUDA evidence")
                 output = gpu.cpu()
-                reference = forward_source(model, real, "the input")
+                reference = source_reference(real)
                 if output.shape != reference.shape or not torch.allclose(output, reference, atol=ATOL, rtol=RTOL):
-                    raise ForgeRunError("CUDA DAG output disagrees with the source PyTorch module")
+                    raise ForgeRunError("CUDA DAG output disagrees with the independent CPU reference")
                 results.append({"backend": "cuda (PyTorch)", "device": name,
                                 "operations": len(graph["nodes"]), "cudaEventMillis": elapsed,
                                 "requestWallMillis": (time.perf_counter() - request_start) * 1000,
@@ -103,16 +130,28 @@ def run_cuda_many(model_path, example_input, user_inputs, seed=0):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", required=True, help="TRUSTED local Python model file (executed)")
-    parser.add_argument("--example-input", required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--model", help="TRUSTED local Python model file (executed)")
+    mode.add_argument("--contract", help="versioned declarative model JSON")
+    parser.add_argument("--graph")
+    parser.add_argument("--weights")
+    parser.add_argument("--example-input")
     parser.add_argument("--input", required=True, action="append", help="repeat to reuse device weights")
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seed", type=int)
     args = parser.parse_args(argv)
     try:
-        report = run_cuda_many(args.model, args.example_input, args.input, args.seed)
+        if args.contract is not None:
+            if not args.graph or not args.weights or args.example_input is not None or args.seed is not None:
+                parser.error("--contract requires --graph and --weights and accepts no export options")
+            report = run_declared_cuda(args.contract, args.graph, args.weights, args.input)
+        else:
+            if not args.example_input or args.graph is not None or args.weights is not None:
+                parser.error("--model requires --example-input")
+            report = run_cuda_many(args.model, args.example_input, args.input,
+                                   args.seed if args.seed is not None else 0)
         if len(args.input) == 1:
             report = report["results"][0]
-    except ForgeRunError as exc:
+    except (ForgeRunError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         print(f"dag_cuda: error: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(report, indent=2))

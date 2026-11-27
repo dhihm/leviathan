@@ -49,15 +49,19 @@ def load_model(contract_path, graph_path, weights_path):
             or contract["format"] != FORMAT or contract["graphSha256"] != digest(graph_data)
             or contract["weightsSha256"] != digest(blob)):
         raise BuildError("declaration format or content hash mismatch")
-    if graph["format"] != "leviathan-value-dag-1" or not 1 <= len(graph["nodes"]) <= 64:
+    if (set(graph) != {"format", "inputDim", "nodes", "outputValue"}
+            or graph["format"] != "leviathan-value-dag-1"
+            or type(graph["nodes"]) is not list or not 1 <= len(graph["nodes"]) <= 64):
         raise BuildError("unsupported graph format or node count")
     width = graph["inputDim"]
     if type(width) is not int or not 1 <= width <= 4096 or contract["inputShape"] != [1, width]:
         raise BuildError("input shape mismatch")
     dims, layouts, offset = [width], [], 0
     for idx, node in enumerate(graph["nodes"], 1):
+        if set(node) != {"id", "op", "inputs", "outputDim"} or type(node["id"]) is not int:
+            raise BuildError("invalid node fields")
         op, refs, out = node["op"], node["inputs"], node["outputDim"]
-        if (node["id"] != idx or op not in ATEN or len(refs) != (2 if op == "add" else 1)
+        if (node["id"] != idx or op not in ATEN or type(refs) is not list or len(refs) != (2 if op == "add" else 1)
                 or any(type(ref) is not int or not 0 <= ref < idx for ref in refs)
                 or type(out) is not int or not 1 <= out <= 4096):
             raise BuildError("invalid node or input geometry")
@@ -69,9 +73,14 @@ def load_model(contract_path, graph_path, weights_path):
         elif any(dims[ref] != out for ref in refs):
             raise BuildError("invalid elementwise shape")
         dims.append(out)
-    if (graph["outputValue"] != len(graph["nodes"]) or contract["outputShape"] != [1, dims[-1]]
+    if (type(graph["outputValue"]) is not int or graph["outputValue"] != len(graph["nodes"]) or contract["outputShape"] != [1, dims[-1]]
             or not layouts or offset * 4 != len(blob)):
         raise BuildError("output shape or weight count mismatch")
+    live = {graph["outputValue"]}
+    for node in reversed(graph["nodes"]):
+        if node["id"] not in live:
+            raise BuildError("graph contains an unreachable node")
+        live.update(node["inputs"])
     weights = np.frombuffer(blob, dtype="<f4")
     if not np.isfinite(weights).all():
         raise BuildError("non-finite weights")

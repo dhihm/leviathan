@@ -150,3 +150,43 @@ The warm path reduced the declared cold median by 41%, 48% and 34%,
 respectively. It reduced the strict-export medians by 82%, 82% and 85%.
 The cold medians also met the +5% bound. These results apply to the tested
 Metal DAGs and do not indicate quantized LLM build performance.
+
+## Stage 4 — Released checkpoint and CUDA portability
+
+The [Badak MNIST MLP release](https://huggingface.co/building-an-inference-engine-from-scratch/mnist-mlp/tree/ff9e117d7f1f3902e55c68b29eda74700c9282c5)
+is MIT licensed. Its complete inference graph is Dense(784→128), ReLU,
+Dense(128→10). The pinned release includes normalized input rows and PyTorch
+logits. The importer verifies the hashes of both safetensors files and
+writes the declaration without executing publisher code.
+
+```sh
+revision=ff9e117d7f1f3902e55c68b29eda74700c9282c5
+base="https://huggingface.co/building-an-inference-engine-from-scratch/mnist-mlp/resolve/$revision"
+curl -fL "$base/model.safetensors" -o /tmp/mnist-model.safetensors
+curl -fL "$base/reference.safetensors" -o /tmp/mnist-reference.safetensors
+python3 tools/forge_run/import_public_mnist.py \
+  --checkpoint /tmp/mnist-model.safetensors --reference /tmp/mnist-reference.safetensors \
+  --out /tmp/mnist-declared
+python3 tools/forge_run/dag_cuda.py --contract /tmp/mnist-declared/contract.json \
+  --graph /tmp/mnist-declared/graph.json --weights /tmp/mnist-declared/weights.f32 \
+  --input /tmp/mnist-declared/input-0.json --input /tmp/mnist-declared/input-1.json
+```
+
+Mac Metal: six alternating cold and warm pairs, separate processes,
+empty plan cache for cold, same qualification row and a different
+request row per pair. The 16 locally recomputed PyTorch rows matched the
+published logits exactly. Every measured Metal output passed against the
+corresponding PyTorch row. Cold and warm outputs were exactly equal.
+Wall time includes process startup and excludes the one-time import.
+
+| Metal BUILD | Median | Range |
+|---|---:|---:|
+| Empty cache | 1,038 ms | 921–1,298 ms |
+| Verified cache hit | 661 ms | 419–805 ms |
+
+CUDA shares declaration validation and the NumPy reference with Metal
+and uses the existing prepared CUDA executor. Device tensors live for
+one invocation. Metal tuning records are scoped to Metal and each CUDA
+process prepares its own device tensors. Tests cover invalid hashes and
+unreachable operations before CUDA initialization, plus the existing
+Metal invalidation and corruption-recovery cases.

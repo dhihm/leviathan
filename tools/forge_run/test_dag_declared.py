@@ -74,3 +74,21 @@ def test_declared_build_cache_validation(residual, tmp_path):
 
     contract.write_text(json.dumps(dict(declaration, graphSha256="0" * 64)))
     assert "content hash mismatch" in build("invalid", success=False)
+
+
+    cuda = [sys.executable, str(TOOL_DIR / "dag_cuda.py"), "--contract", str(contract),
+            "--graph", str(graph), "--weights", str(altered), "--input", str(example)]
+    rejected = subprocess.run(cuda, capture_output=True, text=True, timeout=60)
+    assert rejected.returncode == 2 and not rejected.stdout
+    assert "content hash mismatch" in rejected.stderr
+
+    unreachable = json.loads(graph.read_bytes())
+    unreachable["nodes"][-1]["inputs"] = [0, 0]
+    dead = tmp_path / "dead.json"
+    dead.write_text(json.dumps(unreachable))
+    contract.write_text(json.dumps(dict(declaration, graphSha256=sha(dead))))
+    cuda[cuda.index("--graph") + 1] = str(dead)
+    cuda[cuda.index("--weights") + 1] = str(weights)
+    rejected = subprocess.run(cuda, capture_output=True, text=True, timeout=60)
+    assert rejected.returncode == 2 and not rejected.stdout
+    assert "unreachable node" in rejected.stderr
