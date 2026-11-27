@@ -163,3 +163,11 @@ LEVIATHAN_RESNET18_CHECKPOINT="$scratch/resnet18.pth" \
   LEVIATHAN_RESNET18_IMAGE="$scratch/astronaut.png" OPENBLAS_NUM_THREADS=1 \
   python3 -m pytest -q -s --basetemp="$scratch/pytest" tools/forge_run/test_resnet18_declared.py
 ```
+
+Full ResNet-18 BUILD reports `phaseMillis` for source weights read,
+original SHA-256, BatchNorm folding and packing, and temporary input
+writes. `gpu.pipelineMillis` covers Metal library and pipeline
+creation, and `gpu.gpuMicros` covers the command buffer. The independent
+`cpuReferenceMillis` can overlap Metal preparation and execution.
+Use subprocess wall time for the full cost including Python startup
+and publication. Keep checkpoint conversion outside the timed CLI.

@@ -576,3 +576,55 @@ staging I/O, helper startup and pipeline creation, and snapshot readback.
 Consider optimizing repeated staging only if complete boundary checks,
 original source provenance and cache invalidation remain intact.
 GPU kernel tuning and CUDA parity need separate measurements.
+
+## Stage 12 — Full ResNet-18 BUILD scheduling and packing
+
+Full-model BUILD starts the Metal subprocess and computes the independent
+unfused CPU reference concurrently. Both must complete before any boundary
+is accepted or published. Folding now views the immutable original
+bytes and assembles the folded filters and classifier in a single join,
+avoiding an original-weight slice copy and a second full folded-weight
+copy. Source SHA-256, folding provenance, output checks, and tolerances
+are unchanged.
+
+Six pairs per input alternated the serial and optimized routes on Apple
+M1 Max. Both routes used the same instrumented helper and
+`OPENBLAS_NUM_THREADS=1`. The comparator retained the `20204fc` ordering
+and packing with phase timers added. Each arm used a separate fresh
+plan cache for cold and reused it for warm. Every process matched all
+nine external PyTorch boundaries and the ordered top-5. Both arms
+produced identical folded and boundary digests within each pair.
+
+| Input / state | Serial median (range), ms | Optimized median (range), ms | Median change |
+|---|---:|---:|---:|
+| Synthetic cold | 778 (625–974) | 536 (501–614) | −31.1% |
+| Synthetic warm | 746 (692–885) | 564 (451–621) | −24.4% |
+| Photo cold | 655 (567–789) | 510 (433–705) | −22.1% |
+| Photo warm | 662 (547–789) | 563 (463–608) | −14.9% |
+
+Both cold results meet the +5% maximum regression criterion. The
+synthetic warm run exceeds the 20% goal and the photo warm run misses it.
+Checkpoint conversion, measured separately as packing, hashing and
+writing the source payload after model loading, took 76 and 146 ms in
+the two final benchmark setups. In a separate six-run measurement,
+checkpoint reading and deserialization had a median of 17 ms and model
+construction and state loading had a median of 175 ms. These timings,
+image preparation, and the external PyTorch checks are outside BUILD wall.
+
+| Warm phase median, ms | Synthetic serial → optimized | Photo serial → optimized |
+|---|---:|---:|
+| Source weights read | 9.99 → 8.78 | 7.12 → 7.75 |
+| Original SHA-256 | 24.98 → 23.77 | 22.31 → 22.45 |
+| BatchNorm folding and packing | 95.17 → 53.90 | 64.32 → 58.01 |
+| Temporary input writes | 39.07 → 33.49 | 18.58 → 23.06 |
+| Metal pipeline preparation | 2.61 → 2.71 | 2.32 → 3.06 |
+| Metal command buffer | 37.03 → 30.76 | 38.18 → 40.44 |
+| Independent CPU reference | 221.13 → 241.66 | 199.81 → 226.45 |
+
+The phase timers cover different work. CPU reference can overlap pipeline
+preparation and GPU execution in the optimized arm, so these medians
+cannot be summed to recover wall time. Warm Metal pipeline preparation
+was a few milliseconds in this run. Next, isolate helper-side input I/O,
+memory transfers and snapshot publication, then evaluate a staging
+change that preserves the original digest and every boundary check.
+CUDA performance was outside this comparison.

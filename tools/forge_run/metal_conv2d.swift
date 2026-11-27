@@ -203,11 +203,20 @@ func runResidual(stage1: Bool, full: Bool) throws {
     guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
         throw Invalid.metal
     }
+    let pipelineStarted = ProcessInfo.processInfo.systemUptime
     let library = try device.makeLibrary(source: convolutionSource, options: nil)
     guard let conv = library.makeFunction(name: "conv2d_fp32"),
           let add = library.makeFunction(name: "residual_add_relu") else { throw Invalid.metal }
     let convPipe = try device.makeComputePipelineState(function: conv)
     let addPipe = try device.makeComputePipelineState(function: add)
+    func pipeline(_ name: String) throws -> MTLComputePipelineState {
+        guard let function = library.makeFunction(name: name) else { throw Invalid.metal }
+        return try device.makeComputePipelineState(function: function)
+    }
+    let poolPipe = try stage1 ? pipeline("maxpool_3x3_s2_p1") : nil
+    let avgPipe = try full ? pipeline("global_average") : nil
+    let classifierPipe = try full ? pipeline("resnet_classifier") : nil
+    let pipelineMillis = (ProcessInfo.processInfo.systemUptime - pipelineStarted) * 1000
     let width = convPipe.threadExecutionWidth
     let deviceID = String(device.registryID)
     let reused = cfg.cachedDevice == deviceID && cfg.cachedWidth == width
@@ -271,8 +280,7 @@ func runResidual(stage1: Bool, full: Bool) throws {
         guard let stem = device.makeBuffer(length: stemCount * 4, options: .storageModeShared),
               let pooled = device.makeBuffer(length: outputCount * 4, options: .storageModeShared),
               let block1 = device.makeBuffer(length: outputCount * 4, options: .storageModeShared),
-              let pool = library.makeFunction(name: "maxpool_3x3_s2_p1") else { throw Invalid.metal }
-        let poolPipe = try device.makeComputePipelineState(function: pool)
+              let poolPipe else { throw Invalid.metal }
         try dispatch(input, stem, ci, h, w, 7, 2, true, outChannels: 64, outHeight: 112, outWidth: 112)
         try encodePool(command, poolPipe, source: stem, output: pooled, channels: 64, height: 112, width: 112)
         try block(pooled, block1, channels: co, height: oh, columns: ow, stride: 1, projection: false,
@@ -308,12 +316,9 @@ func runResidual(stage1: Bool, full: Bool) throws {
                 previous = stageOutput
                 spatial = next
             }
-            guard let average = library.makeFunction(name: "global_average"),
-                  let classifier = library.makeFunction(name: "resnet_classifier"),
+            guard let avgPipe, let classifierPipe,
                   let features = device.makeBuffer(length: 512 * 4, options: .storageModeShared)
             else { throw Invalid.metal }
-            let avgPipe = try device.makeComputePipelineState(function: average)
-            let classifierPipe = try device.makeComputePipelineState(function: classifier)
             guard let avg = command.makeComputeCommandEncoder() else { throw Invalid.metal }
             avg.setComputePipelineState(avgPipe)
             avg.setBuffer(previous, offset: 0, index: 0)
@@ -349,7 +354,7 @@ func runResidual(stage1: Bool, full: Bool) throws {
     }
     let evidence: [String: Any] = ["kernel": full ? "resnet18_fp32" : (stage1 ? "resnet_stage1_fp32" : "resnet_basic_block_fp32"), "device": device.name,
                                   "registryID": deviceID, "width": width,
-                                  "reused": reused, "gpuMicros": micros]
+                                  "reused": reused, "gpuMicros": micros, "pipelineMillis": pipelineMillis]
     FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: evidence))
 }
 

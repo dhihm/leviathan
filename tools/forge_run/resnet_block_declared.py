@@ -1,5 +1,6 @@
 """Build and verify one inference-mode ResNet basic block on Metal."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import platform
@@ -61,7 +62,7 @@ def folding(original, channels, layers, eps):
     return fold_layers(original, [(channels, ci, k) for ci, k in layers], eps)
 
 
-def fold_layers(original, layers, eps):
+def fold_layers(original, layers, eps, tail=b""):
     count = sum(channels * (ci * k * k + 4) for channels, ci, k in layers)
     remaining = conv.tensor(original, [count])
     sources, packed = [], []
@@ -81,6 +82,7 @@ def fold_layers(original, layers, eps):
                 raise conv.BuildError("non-finite folded tensor")
             packed.append(cast.tobytes())
         sources.append((weights, gamma, beta, mean, var, epsilon))
+    packed.append(tail)
     return sources, b"".join(packed)
 
 
@@ -130,9 +132,11 @@ def full_weights(original, eps):
         layers.extend([(width, width // 2, 3), (width, width, 3), (width, width // 2, 1),
                        (width, width, 3), (width, width, 3)])
     head_bytes = 1000 * 513 * 4
-    sources, folded = fold_layers(original[:-head_bytes], layers, eps)
-    classifier = conv.tensor(original[-head_bytes:], [1000 * 513])
-    return sources, classifier, folded + original[-head_bytes:]
+    source = memoryview(original)
+    head = source[-head_bytes:]
+    classifier = conv.tensor(head, [1000 * 513])
+    sources, packed = fold_layers(source[:-head_bytes], layers, eps, tail=head)
+    return sources, classifier, packed
 
 
 def vectorized_convolution(x, weights, geometry):
@@ -176,25 +180,37 @@ def build(args):
     else:
         ci, h, w, co, stride, projection, layers = geometry(declaration)
     boundaries_shape = FULL_SHAPES if full else STAGE_SHAPES if stage1 else {"output": declaration["outputShape"]}
+    weights_started = time.perf_counter()
     original = conv.read(args.weights, (48 if full else 8) << 20)
-    if conv.digest(original) != declaration["originalSha256"]:
+    weights_read = time.perf_counter()
+    original_sha = conv.digest(original)
+    weights_hashed = time.perf_counter()
+    if original_sha != declaration["originalSha256"]:
         raise conv.BuildError("original tensor digest mismatch")
     raw = conv.read(args.input, conv.MAX_VALUES * 4)
     x = conv.tensor(raw, declaration["inputShape"])
+    folding_started = time.perf_counter()
     if full:
         sources, classifier, packed = full_weights(original, declaration["epsilon"])
     else:
         sources, packed = folding(original, co, layers, declaration["epsilon"])
-    reference_started = time.perf_counter()
-    if full:
-        expected = full_reference(x, sources, classifier)
-    elif stage1:
-        expected = stage_reference(x, sources)
-    else:
-        expected = {"output": reference(x, sources, stride)}
-    if any(not np.isfinite(values).all() for values in expected.values()):
-        raise conv.BuildError("non-finite reference output")
-    reference_millis = (time.perf_counter() - reference_started) * 1000
+    folding_millis = (time.perf_counter() - folding_started) * 1000
+
+    def checked_reference():
+        reference_started = time.perf_counter()
+        if full:
+            expected = full_reference(x, sources, classifier)
+        elif stage1:
+            expected = stage_reference(x, sources)
+        else:
+            expected = {"output": reference(x, sources, stride)}
+        if any(not np.isfinite(values).all() for values in expected.values()):
+            raise conv.BuildError("non-finite reference output")
+        reference_millis = (time.perf_counter() - reference_started) * 1000
+        return expected, reference_millis
+
+    if not full:
+        expected, reference_millis = checked_reference()
     helper_identity = conv.digest(conv.read(args.helper, 512 << 20))
     key = conv.digest(conv.encode([declaration, helper_identity, conv.digest(Path(__file__).read_bytes()),
                                    conv.digest(Path(conv.__file__).read_bytes()), platform.version()]))
@@ -205,15 +221,29 @@ def build(args):
         stage = folder / "result"
         stage.mkdir()
         config, input_file, weights_file = (folder / name for name in ("config", "input", "weights"))
+        staging_started = time.perf_counter()
         config.write_bytes(conv.encode(dict(channels=ci, height=h, width=w, outputChannels=co,
                                             stride=stride, projection=projection,
                                             cachedDevice=device, cachedWidth=width)))
         input_file.write_bytes(raw)
         weights_file.write_bytes(packed)
+        staging_millis = (time.perf_counter() - staging_started) * 1000
         output = stage / "output.f32"
         mode = "--resnet18" if full else "--stage1" if stage1 else "--residual"
-        proc = subprocess.run([str(args.helper.resolve()), mode, *map(str, (
-            config, input_file, weights_file, output))], capture_output=True, timeout=120)
+        command = [str(args.helper.resolve()), mode, *map(str, (config, input_file, weights_file, output))]
+
+        def execute():
+            return subprocess.run(command, capture_output=True, timeout=120)
+
+        if full:
+            # The reference uses original tensors. It has no dependency on Metal
+            # preparation or output, and publication still waits for both paths.
+            with ThreadPoolExecutor(max_workers=1) as worker:
+                gpu_future = worker.submit(execute)
+                expected, reference_millis = checked_reference()
+                proc = gpu_future.result()
+        else:
+            proc = execute()
         if proc.returncode:
             raise conv.BuildError(proc.stderr.decode(errors="replace")[:1000])
         gpu = json.loads(proc.stdout)
@@ -237,6 +267,13 @@ def build(args):
         if stage1 or full:
             report["boundaries"] = boundaries
             report["cpuReferenceMillis"] = reference_millis
+        if full:
+            report["phaseMillis"] = {
+                "weightsRead": (weights_read - weights_started) * 1000,
+                "weightsHash": (weights_hashed - weights_read) * 1000,
+                "batchNormFolding": folding_millis,
+                "temporaryWrites": staging_millis,
+            }
         if cache is not None and not hit:
             conv.store_plan(cache, key, folder, gpu, format_id)
         report["buildMillisBeforePublication"] = (time.perf_counter() - started) * 1000
