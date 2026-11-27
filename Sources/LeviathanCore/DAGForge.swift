@@ -62,7 +62,8 @@ public enum DAGForge {
     }
 
     public static func select(program: DAGProgram, qualificationInputs: [[Float]], sourceReference: [Float]?,
-                              diagnosticFailOptimizations: Bool) throws
+                              diagnosticFailOptimizations: Bool,
+                              recordPreparation: (Int, Double) -> Void = { _, _ in }) throws
             -> (selection: ForgeBaselineSelection, hardware: ForgeHardwareProfile) {
         guard qualificationInputs.count == qualificationInputCount else {
             throw ForgeError.invalidBatch("exactly \(qualificationInputCount) qualification inputs required (example + 3 seeded), got \(qualificationInputs.count)")
@@ -93,22 +94,25 @@ public enum DAGForge {
             }
         }
         let allReferences = references
-        let prepared = try qualificationInputs.map { try DAGMetalBackend.Prepared(program: program, input: $0) }
-        let bench = prepared[0]
+        let prepareStart = ProcessInfo.processInfo.systemUptime
+        // All probes share one immutable program and device. Each dispatch uploads
+        // its own input and recomputes live values using the prepared pipelines.
+        let prepared = try DAGMetalBackend.Prepared(program: program, input: qualificationInputs[0])
+        recordPreparation(1, (ProcessInfo.processInfo.systemUptime - prepareStart) * 1000)
         let hardware = ForgeHardwareProfile(
-            deviceName: bench.deviceName,
-            maxTotalThreadsPerThreadgroup: bench.maxTotalThreadsPerThreadgroup,
-            threadExecutionWidth: bench.threadExecutionWidth,
-            recommendedMaxWorkingSetSize: bench.recommendedMaxWorkingSetSize)
+            deviceName: prepared.deviceName,
+            maxTotalThreadsPerThreadgroup: prepared.maxTotalThreadsPerThreadgroup,
+            threadExecutionWidth: prepared.threadExecutionWidth,
+            recommendedMaxWorkingSetSize: prepared.recommendedMaxWorkingSetSize)
         let cap = hardware.maxTotalThreadsPerThreadgroup
-        guard cap > 0, cap <= 1 << 16, prepared.allSatisfy({
-            $0.deviceName == hardware.deviceName && $0.maxTotalThreadsPerThreadgroup == cap }) else {
-            throw ForgeError.invalidPlan("dag selection: device profile out of bounds or inconsistent across inputs")
+        guard cap > 0, cap <= 1 << 16 else {
+            throw ForgeError.invalidPlan("dag selection: device profile out of bounds")
         }
         let baseline = baselineCandidate(program, maxThreadsPerThreadgroup: cap)
 
-        func execute(_ p: DAGMetalBackend.Prepared, _ candidate: ForgeCandidate) throws -> (output: [Float], gpuMicros: Double) {
-            let result = try p.run(threadgroupWidth: candidate.threadgroupWidth, fuseDenseRelu: candidate.fuseDenseRelu)
+        func execute(_ input: [Float], _ candidate: ForgeCandidate) throws -> (output: [Float], gpuMicros: Double) {
+            let result = try prepared.run(input: input, threadgroupWidth: candidate.threadgroupWidth,
+                                          fuseDenseRelu: candidate.fuseDenseRelu)
             guard result.deviceName == hardware.deviceName else { throw RunMismatch(description: "run reported another device") }
             guard result.kernels == kernelSequence(program, candidate: candidate) else {
                 throw RunMismatch(description: "dispatched kernels differ from the host-computed sequence")
@@ -118,9 +122,9 @@ public enum DAGForge {
 
         func qualify(_ candidate: ForgeCandidate, forceFailure: Bool) -> (ok: Bool, maxAbsDiff: Double?, note: String) {
             var worst: Float = 0
-            for (k, p) in prepared.enumerated() {
+            for (k, input) in qualificationInputs.enumerated() {
                 var output: [Float]
-                do { output = try execute(p, candidate).output }
+                do { output = try execute(input, candidate).output }
                 catch { return (false, nil, clip("execution failed: \(error)")) }
                 // Diagnostic only: perturbs the real GPU readback of an optimization run.
                 if forceFailure, !output.isEmpty { output[0] += max(1, abs(output[0])) }
@@ -130,7 +134,7 @@ public enum DAGForge {
                     }
                 }
             }
-            return (true, Double(worst), "qualified on \(prepared.count) inputs")
+            return (true, Double(worst), "qualified on \(qualificationInputs.count) inputs")
         }
 
         func measure(_ candidate: ForgeCandidate) -> (median: Double?, runs: Int, note: String) {
@@ -138,7 +142,7 @@ public enum DAGForge {
             var spent = 0.0
             for iteration in 0..<(Forge.warmupRuns + Forge.timedRuns) {
                 let micros: Double
-                do { micros = try execute(bench, candidate).gpuMicros }
+                do { micros = try execute(qualificationInputs[0], candidate).gpuMicros }
                 catch { return (nil, 0, clip("benchmark failed: \(error)")) }
                 guard micros.isFinite, micros > 0 else { return (nil, 0, "GPU timestamps unavailable") }
                 if iteration >= Forge.warmupRuns {
@@ -211,7 +215,7 @@ public enum DAGForge {
         let selection = ForgeBaselineSelection(
             baseline: baselineResult, optimizations: optimizations, selected: selected,
             selectedRole: selectedRole, selectedMedianGpuMicros: selectedMedian,
-            minRelativeGain: minRelativeGain, qualificationInputs: prepared.count,
+            minRelativeGain: minRelativeGain, qualificationInputs: qualificationInputs.count,
             diagnosticFailOptimizations: diagnosticFailOptimizations, decision: decision)
         try validateSelection(selection, program: program, hardware: hardware)
         return (selection, hardware)

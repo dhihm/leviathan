@@ -275,7 +275,9 @@ def build_bundle(model_path, example_input, user_input, out_dir, seed=0, helper=
     source_sha, source_count = backend_source_identity()
     model, input_dim, model_sha, model_source = load_model(
         model_path, seed, (("example input", example), ("input", real)))
+    capture_start = time.perf_counter()
     graph, blob, layouts, aten_ops = capture(model, example, input_dim)
+    capture_millis = (time.perf_counter() - capture_start) * 1000.0
     gbytes = graph_bytes(graph)
     reference = forward_source(model, example, "the example input")
     manifest = {
@@ -310,7 +312,9 @@ def build_bundle(model_path, example_input, user_input, out_dir, seed=0, helper=
         run = run_bundle(staging, model_path, real, helper=helper_path)
         result = {"bundle": str(out), "helper": str(helper_path), "forge": summary,
                   "forgeTiming": {"forgeHelperProcessMillis": forge_seconds * 1000.0,
-                                  "captureAndForgeMillis": forge_millis},
+                                  "captureAndForgeMillis": forge_millis,
+                                  "torchExportAndQualificationMillis": capture_millis,
+                                  "freshVerificationMillis": run["timing"]["endToEndMillis"]},
                   "run": run}
         if report is not None:
             report_data = (json.dumps(dict(result, run=dict(run, bundle=str(out))), indent=2) + "\n").encode()

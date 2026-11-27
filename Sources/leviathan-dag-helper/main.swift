@@ -91,6 +91,8 @@ struct ForgeSummary: Codable {
     let optimizationsQualified: Int
     let diagnosticFailOptimizations: Bool
     let deviceName: String
+    let metalPreparations: Int
+    let metalPreparationMillis: Double
 }
 
 struct GPUEvidence: Codable {
@@ -409,9 +411,14 @@ enum Helper {
             }
             inputs.append(x)
         }
+        var preparations = 0
+        var preparationMillis = 0.0
         let (selection, hardware) = try step("forge selection failed") {
             try DAGForge.select(program: model.program, qualificationInputs: inputs,
-                                sourceReference: model.manifest.refOutput, diagnosticFailOptimizations: diagnostic)
+                                sourceReference: model.manifest.refOutput, diagnosticFailOptimizations: diagnostic) { count, millis in
+                preparations = count
+                preparationMillis = millis
+            }
         }
         try step("forged selection failed validation") {
             try DAGForge.validateSelection(selection, program: model.program, hardware: hardware)
@@ -430,7 +437,8 @@ enum Helper {
             selectedMedianGpuMicros: selection.selectedMedianGpuMicros,
             optimizationsEvaluated: selection.optimizations.count,
             optimizationsQualified: selection.optimizations.filter { $0.qualified }.count,
-            diagnosticFailOptimizations: diagnostic, deviceName: hardware.deviceName)
+            diagnosticFailOptimizations: diagnostic, deviceName: hardware.deviceName,
+            metalPreparations: preparations, metalPreparationMillis: preparationMillis)
         print(String(decoding: try encode(summary), as: UTF8.self))
     }
 

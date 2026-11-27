@@ -121,3 +121,33 @@ for a changed input. The batched CLI paid 1,005 ms median startup once, then
 3.540 ms and 1.203 ms median per request, respectively. All six outputs and
 parity reports exactly matched their fresh counterparts. These are internal
 CLI timings excluding Python import, and describe this fixture only.
+
+## Build qualification preparation
+
+The Forge helper prepares the Metal pipelines, weights, and value buffers
+once per build. The source example and three seeded qualification inputs
+each upload their own input and execute every applicable candidate.
+The post-build run still recaptures the PyTorch graph, checks the staged
+bundle, starts a fresh Metal helper, and compares against the eager model.
+Each build creates its own prepared state and timing selection. Bundles
+from an earlier backend revision require explicit re-forging.
+
+On the M1 Max synthetic residual fixture, the instrumented before/after
+comparison used the same debug configuration, input files, and fresh output
+directories. The first run in each sequence is shown separately. Repeated
+cases are medians of two builds per version. Times are milliseconds and
+exclude Python import and final publication.
+
+| Build case | Metal preparation before → after | Total through fresh verification before → after |
+|---|---:|---:|
+| First build | 77.53 → 133.31 | 2,618 → 2,748 |
+| Same model and seed | 76.44 → 60.11 | 1,558 → 1,666 |
+| Changed model seed | 63.05 → 68.10 | 1,480 → 1,648 |
+
+The preparation count decreased from four to one in every build. The
+same-seed preparation median improved. The overall BUILD medians were
+higher in these runs. All five paired outputs matched exactly.
+`metalPreparationMillis`, `torchExportAndQualificationMillis` and
+`freshVerificationMillis` expose the measured boundaries. The export
+metric includes the Python source/export probe checks. This sample does
+not establish a full-model speedup.
