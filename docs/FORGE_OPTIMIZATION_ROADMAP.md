@@ -321,3 +321,74 @@ reading and digest checks. Benchmark any proposed change against this
 release profile and require the same identity and compatibility decisions
 before changing the verification path. CUDA hardware was not rerun in
 this Metal milestone.
+
+## Stage 7 — Bundle validation audit and ResNet-18 stem
+
+The Stage 6 release profile at `b747be4` was rerun on the home Mac.
+Each cold BUILD used an empty cache and a fresh process. Its paired warm
+BUILD used a fresh process and the resulting cache. All six pairs per
+model passed the independent reference and matched GPU outputs within
+2e-6 absolute.
+
+| Model | Cold wall, ms | Warm wall, ms | Warm helper validation, ms |
+|---|---:|---:|---:|
+| Public MNIST Softmax | 825 (715–2233) | 464 (405–706) | 234 (203–264) |
+| Residual DAG + Softmax | 677 (565–803) | 420 (298–488) | 201 (123–241) |
+
+Cells show median and min–max. These are baseline repeatability runs,
+without a second implementation arm. They do not demonstrate a 15%
+speedup or establish a cold regression delta.
+
+An isolated audit ran each phase 12 times on a warm bundle and the exact
+release helper. The Python SHA-256 and JSON timings below are proxies
+for work on the real bytes. They are separate from the production Swift
+helper envelope above and do not include Swift typed decoding, semantic
+validation, or process startup for the DAG helper.
+
+| Isolated phase median, ms | Public | Residual |
+|---|---:|---:|
+| `/usr/bin/swift --version` subprocess | 107.14 | 121.40 |
+| Read helper executable | 2.05 | 2.16 |
+| SHA-256 of helper executable | 4.78 | 4.84 |
+| Read six bundle files | 0.54 | 0.32 |
+| SHA-256 of five bound payloads | 0.47 | 0.03 |
+| Two JSON parses of each of three documents | 0.20 | 0.13 |
+
+`loadValidatedBundle` and `loadModel` each read their bound files once
+per invocation and reuse those bytes for validation. Python hashes the
+helper for cache lookup and the Swift process independently hashes its
+own executable to verify the recorded bundle identity. Removing one of
+these checks would change the trust boundary. There is a second read
+of the emitted bundle when writing a cache record on a cold miss, with
+no effect on warm BUILD. The observed file-read costs do not justify
+changing the validation path. No runtime speed patch was made.
+
+### Next architecture unit
+
+Target the FP32 NCHW stem convolution of TorchVision ResNet-18 with
+IMAGENET1K_V1 weights. The published checkpoint has 11.7M parameters.
+The first unit is a single image, three input channels, 64 output
+channels, 7×7 kernel, stride 2, zero padding 3, groups 1, no bias.
+[Official model and weights](https://docs.pytorch.org/vision/main/models/generated/torchvision.models.resnet18)
+
+The Metal declared BUILD CLI passed a first checkpoint-backed test of
+the weight layout and padding. The checkpoint came from TorchVision,
+with SHA-256
+`f37072fd47e89c5e827621c5baffa7500819f7896bbacec160b1a16c560e07ec`.
+Load `conv1.weight` with PyTorch's weights-only loader, flatten the
+three input-channel and 7×7 kernel dimensions, transpose to a
+147×64 declared Dense weight matrix, and append 64 zero biases.
+Use `torch.linspace(-1, 1, 3*11*13).reshape(1,3,11,13)` as input.
+For output coordinates (0,0), (2,3), and (5,6), gather each patch from
+the zero-padded image and present it to the CLI as one 147-element row.
+All 192 Metal values matched the corresponding independent PyTorch
+`conv2d(stride=2, padding=3)` outputs exactly on this input.
+
+This exercise used patch extraction on the host and existing Dense on
+Metal. Native Conv2D, whole-image execution, and CUDA remain open.
+Next, add a shape-bound Conv2D declaration and compare an entire
+non-square feature map, including border positions, against PyTorch.
+Require exact shape, finite values, numerical parity, rejection of
+unsupported geometry, and cache invalidation on kernel or stride
+changes before adding batch norm and pooling. The Stage 6 validation
+binding remains the baseline for that work.
