@@ -296,3 +296,19 @@ reports six pairs per prompt. Its time-to-first-token figure sums the
 non-overlapping in-engine phases through first-token selection. The
 JSON protocol returns the full response at once. Reply wall time
 includes later decode and serialization and is reported separately.
+
+For the larger FP16 regression, use the pinned
+[SmolLM2-135M-Instruct conversion](https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/blob/b57b6475ae6f5f2b1b51c43a1190a64cab325ef4/SmolLM2-135M-Instruct-f16.gguf):
+
+```sh
+curl -fL 'https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/b57b6475ae6f5f2b1b51c43a1190a64cab325ef4/SmolLM2-135M-Instruct-f16.gguf' -o smol.gguf
+python3 tools/test_llama_serve.py --fixture smollm2-135m \
+  --cli .build/release/leviathan-cli --model smol.gguf
+```
+
+The fixture checks the GGUF SHA-256, exact five-token outputs, and six
+fresh/resident pairs per raw prompt. Add `--library` to check the CUDA
+path with the same CPU golden tokens. It samples host RSS at ready and
+after the requests and reports per-process GPU memory when the driver
+exposes it. These are idle endpoint samples. They exclude transient
+memory peaks during loading or decode.

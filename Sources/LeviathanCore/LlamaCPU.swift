@@ -72,6 +72,7 @@ public struct LlamaCPU {
         }
         vocabulary = shape[1]
         var seen = Set<String>()
+        let decodedLimitMiB = 520
         var decodedBytes = 0
         func load(_ name: String, _ dims: [Int]) throws -> [Float] {
             let tensor = try file.tensor(name)
@@ -81,8 +82,8 @@ public struct LlamaCPU {
             }
             let count = dims.reduce(1, *)
             // The scalar engine stores decoded weights as Float32.
-            guard count <= ((512 << 20) - decodedBytes) / 4 else {
-                throw LlamaCPUError.unsupported("CPU weight limit is 512 MiB decoded")
+            guard count <= ((decodedLimitMiB << 20) - decodedBytes) / 4 else {
+                throw LlamaCPUError.unsupported("CPU weight limit is \(decodedLimitMiB) MiB decoded")
             }
             decodedBytes += count * 4
             seen.insert(name)
