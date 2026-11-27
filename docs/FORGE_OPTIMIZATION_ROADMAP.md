@@ -255,3 +255,9 @@ preparation, then compare a shared prepared session against fresh-helper
 validation. Keep the fresh helper on the default path until six
 interleaved pairs show lower end-to-end time and matching old-bundle and
 corruption gates. Kernel tuning is lower priority at the measured width.
+
+Colab Tesla T4 at `d309c45` verified all 16 public input rows against
+PyTorch CPU probabilities. Maximum absolute error was 1.19e-7. The
+declared CUDA CLI also verified two extreme rows and rejected an FP32
+overflow input before execution. The preserved pre-change Metal bundle
+loaded with its recorded helper and passed source parity.
