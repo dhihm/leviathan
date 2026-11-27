@@ -520,3 +520,59 @@ snapshots and unfused verification must remain available for complete
 optimized convolution before attempting to improve BUILD latency.
 The timed stage does not establish end-to-end model support or CUDA
 parity.
+
+## Stage 11 — Full public ResNet-18 on Metal
+
+The declared FP32 route executes the full IMAGENET1K_V1 ResNet-18 at
+224×224 in one Metal command buffer. It extends the existing schedule
+through layers 2–4, 7×7 global average pooling, channel-vector flatten
+and the 512-to-1000 classifier. Every BUILD checks all snapshots
+against the independent FP64 reference with the existing absolute
+and relative tolerances of 2e-4. The checkpoint test additionally
+compares every boundary and every logit with an unmodified TorchVision
+model in evaluation mode. Inputs were a deterministic ramp and NASA's
+public-domain Eileen Collins photograph, preprocessed with the
+official TorchVision weights transform.
+[Image provenance](https://scikit-image.org/docs/stable/api/skimage.data.html#skimage.data.astronaut)
+
+| Boundary | Shape | Synthetic maximum error | Photo maximum error |
+|---|---|---:|---:|
+| Stem | 1×64×112×112 | 7.15e-7 | 2.88e-6 |
+| Max pool | 1×64×56×56 | 5.96e-7 | 2.26e-6 |
+| First residual block | 1×64×56×56 | 3.10e-6 | 3.81e-6 |
+| Layer1 | 1×64×56×56 | 1.01e-5 | 9.03e-6 |
+| Layer2 | 1×128×28×28 | 5.19e-6 | 6.26e-6 |
+| Layer3 | 1×256×14×14 | 7.39e-6 | 5.25e-6 |
+| Layer4 | 1×512×7×7 | 1.87e-5 | 2.57e-5 |
+| Pooled features | 1×512 | 2.26e-6 | 4.05e-6 |
+| Logits | 1×1000 | 3.70e-6 | 1.00e-5 |
+
+Metal and PyTorch ordered top-5 class indices matched exactly.
+Synthetic: 623, 111, 499, 446, 812. Photo: 758, 823, 542, 570, 560.
+This validates inference parity and does not measure classification accuracy.
+
+Five fresh-process cold/warm pairs per input on Apple M1 Max, with
+`OPENBLAS_NUM_THREADS=1`, gave the following medians in milliseconds.
+Cold runs used an empty plan cache. Warm runs reused that plan and
+repeated all correctness checks. File extraction and the external
+TorchVision oracle are outside the CLI wall time.
+
+| Input | Full BUILD cold / warm | Independent CPU cold / warm | GPU command cold / warm |
+|---|---:|---:|---:|
+| Synthetic | 600 / 584 | 185 / 190 | 43.79 / 34.70 |
+| Photo | 738 / 655 | 239 / 223 | 31.74 / 29.99 |
+
+Wall ranges were 590–1701, 581–796, 597–1415, and 585–699 ms in
+table order. Timing variability precludes a strong claim about the plan
+cache's wall-time benefit. In an isolated synthetic-input comparison,
+the original direct FP64 convolution reference took 6630 ms and the
+matrix-multiplication reference took 212 ms. All nine boundary tensors
+agreed at 1e-10 absolute/relative tolerance between CPU implementations.
+Production validation still runs unfused convolution and BatchNorm.
+
+The next candidate is to profile BUILD outside the CPU reference and GPU
+command buffer. Separate the 45 MB source read and digest, folding and
+staging I/O, helper startup and pipeline creation, and snapshot readback.
+Consider optimizing repeated staging only if complete boundary checks,
+original source provenance and cache invalidation remain intact.
+GPU kernel tuning and CUDA parity need separate measurements.

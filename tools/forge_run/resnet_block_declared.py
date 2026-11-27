@@ -25,6 +25,12 @@ STAGE_OPS = {
 }
 STAGE_SHAPES = {"stem": [1, 64, 112, 112], "pool": [1, 64, 56, 56],
                 "block1": [1, 64, 56, 56], "output": [1, 64, 56, 56]}
+FULL_FORMAT = "leviathan-declared-resnet18-1"
+FULL_OPS = {**STAGE_OPS, "remainingStages": [["projection", "identity"]] * 3,
+            "averagePool": [7, 7], "head": [512, 1000]}
+FULL_SHAPES = {**STAGE_SHAPES, "layer1": STAGE_SHAPES["output"], "layer2": [1, 128, 28, 28],
+               "layer3": [1, 256, 14, 14], "layer4": [1, 512, 7, 7],
+               "features": [1, 512], "output": [1, 1000]}
 FOLDING = "eval-batchnorm-fp64-fold-to-fp32-1"
 
 
@@ -52,10 +58,14 @@ def geometry(declaration):
 
 
 def folding(original, channels, layers, eps):
-    count = sum(channels * (ci * k * k + 4) for ci, k in layers)
+    return fold_layers(original, [(channels, ci, k) for ci, k in layers], eps)
+
+
+def fold_layers(original, layers, eps):
+    count = sum(channels * (ci * k * k + 4) for channels, ci, k in layers)
     remaining = conv.tensor(original, [count])
     sources, packed = [], []
-    for (ci, k), epsilon in zip(layers, eps):
+    for (channels, ci, k), epsilon in zip(layers, eps):
         n = channels * ci * k * k
         weights = remaining[:n].reshape(channels, ci, k, k)
         gamma, beta, mean, var = remaining[n:n + 4 * channels].reshape(4, channels)
@@ -74,42 +84,81 @@ def folding(original, channels, layers, eps):
     return sources, b"".join(packed)
 
 
-def layer(data, params, step):
+def layer(data, params, step, convolution=conv.reference):
     weights, gamma, beta, mean, var, eps = params
     co, ci, k, _ = weights.shape
     _, _, h, w = data.shape
-    convolved = conv.reference(data, weights, (ci, h, w, co, k, k, step, k // 2))
+    convolved = convolution(data, weights, (ci, h, w, co, k, k, step, k // 2))
     return ((convolved - mean[:, None, None]) / np.sqrt(var.astype(np.float64)[:, None, None] + eps)
             * gamma[:, None, None] + beta[:, None, None])
 
 
-def reference(x, sources, stride):
-    first = np.maximum(layer(x, sources[0], stride), 0)
-    main = layer(first, sources[1], 1)
-    skip = layer(x, sources[2], stride) if len(sources) == 3 else x
+def reference(x, sources, stride, convolution=conv.reference):
+    first = np.maximum(layer(x, sources[0], stride, convolution), 0)
+    main = layer(first, sources[1], 1, convolution)
+    skip = layer(x, sources[2], stride, convolution) if len(sources) == 3 else x
     return np.maximum(main + skip, 0)
 
 
-def stage_geometry(declaration):
+def stage_geometry(declaration, full=False):
+    ops = FULL_OPS if full else STAGE_OPS
+    output = FULL_SHAPES["output"] if full else STAGE_SHAPES["output"]
     if (set(declaration) != {"format", "inputShape", "outputShape", "ops", "folding", "originalSha256", "epsilon"}
             or declaration["folding"] != FOLDING
             or conv.shape(declaration["inputShape"], [1, 3, 224, 224]) != [1, 3, 224, 224]
-            or conv.shape(declaration["outputShape"], STAGE_SHAPES["output"]) != STAGE_SHAPES["output"]
-            or conv.encode(declaration["ops"]) != conv.encode(STAGE_OPS)):
+            or conv.shape(declaration["outputShape"], output) != output
+            or conv.encode(declaration["ops"]) != conv.encode(ops)):
         raise conv.BuildError("unsupported stage shape or operations; max pool requires 3x3/stride 2/pad 1")
     eps = declaration["epsilon"]
-    if type(eps) is not list or len(eps) != 5 or any(type(e) not in (int, float) or not 0 < e <= 1 for e in eps):
+    if type(eps) is not list or len(eps) != (20 if full else 5) or any(type(e) not in (int, float) or not 0 < e <= 1 for e in eps):
         raise conv.BuildError("invalid BatchNorm epsilon")
     return 3, 224, 224, 64, 2, False, [(3, 7)] + [(64, 3)] * 4
 
 
-def stage_reference(x, sources):
-    stem = np.maximum(layer(x, sources[0], 2), 0)
+def stage_reference(x, sources, convolution=conv.reference):
+    stem = np.maximum(layer(x, sources[0], 2, convolution), 0)
     padded = np.pad(stem, ((0, 0), (0, 0), (1, 1), (1, 1)), constant_values=-np.inf)
     windows = np.lib.stride_tricks.sliding_window_view(padded, (3, 3), axis=(-2, -1))
     pool = windows[:, :, ::2, ::2].max(axis=(-2, -1))
-    first = reference(pool, sources[1:3], 1)
-    return {"stem": stem, "pool": pool, "block1": first, "output": reference(first, sources[3:], 1)}
+    first = reference(pool, sources[1:3], 1, convolution)
+    return {"stem": stem, "pool": pool, "block1": first, "output": reference(first, sources[3:5], 1, convolution)}
+
+
+def full_weights(original, eps):
+    layers = [(64, 3, 7)] + [(64, 64, 3)] * 4
+    for width in (128, 256, 512):
+        layers.extend([(width, width // 2, 3), (width, width, 3), (width, width // 2, 1),
+                       (width, width, 3), (width, width, 3)])
+    head_bytes = 1000 * 513 * 4
+    sources, folded = fold_layers(original[:-head_bytes], layers, eps)
+    classifier = conv.tensor(original[-head_bytes:], [1000 * 513])
+    return sources, classifier, folded + original[-head_bytes:]
+
+
+def vectorized_convolution(x, weights, geometry):
+    ci, _, _, co, kh, kw, stride, padding = geometry
+    padded = np.pad(x[0].astype(np.float64), ((0, 0), (padding, padding), (padding, padding)))
+    windows = np.lib.stride_tricks.sliding_window_view(padded, (kh, kw), axis=(1, 2))
+    sampled = windows[:, ::stride, ::stride]
+    _, oh, ow, _, _ = sampled.shape
+    patches = sampled.transpose(1, 2, 0, 3, 4).reshape(oh * ow, ci * kh * kw)
+    result = weights.reshape(co, -1).astype(np.float64) @ patches.T
+    return result.reshape(1, co, oh, ow)
+
+
+def full_reference(x, sources, classifier, convolution=vectorized_convolution):
+    boundaries = stage_reference(x, sources, convolution)
+    previous = boundaries.pop("output")
+    boundaries["layer1"] = previous
+    for index in range(3):
+        offset = 5 + index * 5
+        previous = reference(previous, sources[offset:offset + 3], 2, convolution)
+        previous = reference(previous, sources[offset + 3:offset + 5], 1, convolution)
+        boundaries[f"layer{index + 2}"] = previous
+    features = previous.mean(axis=(-2, -1))
+    boundaries["features"] = features
+    boundaries["output"] = features @ classifier[:512000].reshape(1000, 512).T + classifier[512000:]
+    return boundaries
 
 
 def build(args):
@@ -119,17 +168,30 @@ def build(args):
     if args.out.exists() or args.out.is_symlink():
         raise conv.BuildError("output already exists")
     declaration = json.loads(conv.read(args.contract))
-    stage1 = isinstance(declaration, dict) and declaration.get("format") == STAGE_FORMAT
-    ci, h, w, co, stride, projection, layers = (stage_geometry if stage1 else geometry)(declaration)
-    format_id = STAGE_FORMAT if stage1 else FORMAT
-    original = conv.read(args.weights, 8 << 20)
+    format_id = declaration.get("format") if isinstance(declaration, dict) else None
+    full = format_id == FULL_FORMAT
+    stage1 = format_id == STAGE_FORMAT
+    if full or stage1:
+        ci, h, w, co, stride, projection, layers = stage_geometry(declaration, full)
+    else:
+        ci, h, w, co, stride, projection, layers = geometry(declaration)
+    boundaries_shape = FULL_SHAPES if full else STAGE_SHAPES if stage1 else {"output": declaration["outputShape"]}
+    original = conv.read(args.weights, (48 if full else 8) << 20)
     if conv.digest(original) != declaration["originalSha256"]:
         raise conv.BuildError("original tensor digest mismatch")
     raw = conv.read(args.input, conv.MAX_VALUES * 4)
     x = conv.tensor(raw, declaration["inputShape"])
-    sources, packed = folding(original, co, layers, declaration["epsilon"])
+    if full:
+        sources, classifier, packed = full_weights(original, declaration["epsilon"])
+    else:
+        sources, packed = folding(original, co, layers, declaration["epsilon"])
     reference_started = time.perf_counter()
-    expected = stage_reference(x, sources) if stage1 else {"output": reference(x, sources, stride)}
+    if full:
+        expected = full_reference(x, sources, classifier)
+    elif stage1:
+        expected = stage_reference(x, sources)
+    else:
+        expected = {"output": reference(x, sources, stride)}
     if any(not np.isfinite(values).all() for values in expected.values()):
         raise conv.BuildError("non-finite reference output")
     reference_millis = (time.perf_counter() - reference_started) * 1000
@@ -149,19 +211,19 @@ def build(args):
         input_file.write_bytes(raw)
         weights_file.write_bytes(packed)
         output = stage / "output.f32"
-        mode = "--stage1" if stage1 else "--residual"
+        mode = "--resnet18" if full else "--stage1" if stage1 else "--residual"
         proc = subprocess.run([str(args.helper.resolve()), mode, *map(str, (
             config, input_file, weights_file, output))], capture_output=True, timeout=120)
         if proc.returncode:
             raise conv.BuildError(proc.stderr.decode(errors="replace")[:1000])
         gpu = json.loads(proc.stdout)
-        kernel = "resnet_stage1_fp32" if stage1 else "resnet_basic_block_fp32"
+        kernel = "resnet18_fp32" if full else "resnet_stage1_fp32" if stage1 else "resnet_basic_block_fp32"
         if gpu["kernel"] != kernel or not gpu["device"] or not 0 < gpu["gpuMicros"] < float("inf"):
             raise conv.BuildError("Metal GPU evidence failed")
         boundaries = {}
         for name, wanted in expected.items():
             payload = conv.read(stage / (name + ".f32"), conv.MAX_VALUES * 4)
-            dimensions = STAGE_SHAPES[name] if stage1 else declaration["outputShape"]
+            dimensions = boundaries_shape[name]
             actual = conv.tensor(payload, dimensions)
             if not np.allclose(actual, wanted, atol=2e-4, rtol=2e-4):
                 raise conv.BuildError(f"independent unfused parity failed at {name}")
@@ -172,7 +234,7 @@ def build(args):
                       inputSha256=conv.digest(raw), outputSha256=boundaries["output"]["sha256"],
                       gpu=gpu, parity=True, maxAbsError=boundaries["output"]["maxAbsError"],
                       cache=dict(hit=hit, key=key))
-        if stage1:
+        if stage1 or full:
             report["boundaries"] = boundaries
             report["cpuReferenceMillis"] = reference_millis
         if cache is not None and not hit:

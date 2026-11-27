@@ -141,3 +141,25 @@ publish `stem.f32`, `pool.f32`, and `block1.f32` after GPU completion
 and boundary validation. The public checkpoint test, with
 `LEVIATHAN_RESNET18_CHECKPOINT` set as above, is
 `python3 -m pytest -q -s tools/forge_run/test_resnet_stage1_declared.py`.
+
+For full ResNet-18 inference, use format `leviathan-declared-resnet18-1`
+with the exact `FULL_OPS` descriptor, input `[1,3,224,224]` and
+output `[1,1000]`. Pack the stem and all eight basic blocks in forward
+order. For projection blocks, pack the two main convolutions followed
+by the projection convolution, each with its original BatchNorm
+parameters. Provide the 20 BatchNorm epsilons in that same order.
+Append the classifier's FP32 `[1000,512]` weights and `[1000]` bias,
+and hash the complete source file. The CLI also emits all major stage
+outputs and the pooled 512-vector after validation.
+
+With NumPy, pytest, PyTorch, TorchVision and Pillow installed, reproduce
+the checkpoint regression and independent-process measurements with:
+
+```sh
+scratch=$(mktemp -d)
+curl -fL https://download.pytorch.org/models/resnet18-f37072fd.pth -o "$scratch/resnet18.pth"
+curl -fL https://raw.githubusercontent.com/scikit-image/scikit-image/v0.24.0/skimage/data/astronaut.png -o "$scratch/astronaut.png"
+LEVIATHAN_RESNET18_CHECKPOINT="$scratch/resnet18.pth" \
+  LEVIATHAN_RESNET18_IMAGE="$scratch/astronaut.png" OPENBLAS_NUM_THREADS=1 \
+  python3 -m pytest -q -s --basetemp="$scratch/pytest" tools/forge_run/test_resnet18_declared.py
+```
