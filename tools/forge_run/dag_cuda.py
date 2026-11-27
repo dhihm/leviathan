@@ -66,7 +66,6 @@ def run_cuda_many(model_path, example_input, user_inputs, seed=0):
     precision = torch.get_float32_matmul_precision()
     results = []
     try:
-        torch.set_float32_matmul_precision("highest")
         with torch.cuda.device(device):
             weights, dense_layouts = prepare_captured_dag(blob, layouts, device)
             torch.cuda.synchronize(device)
@@ -76,11 +75,15 @@ def run_cuda_many(model_path, example_input, user_inputs, seed=0):
                 request_start = time.perf_counter()
                 start = torch.cuda.Event(enable_timing=True)
                 end = torch.cuda.Event(enable_timing=True)
-                start.record()
-                gpu = execute_prepared_dag(graph, weights, dense_layouts, real)
-                end.record()
-                end.synchronize()
-                elapsed = start.elapsed_time(end)
+                try:
+                    torch.set_float32_matmul_precision("highest")
+                    start.record()
+                    gpu = execute_prepared_dag(graph, weights, dense_layouts, real)
+                    end.record()
+                    end.synchronize()
+                    elapsed = start.elapsed_time(end)
+                finally:
+                    torch.set_float32_matmul_precision(precision)
                 if not gpu.is_cuda or not 0 < elapsed < float("inf"):
                     raise ForgeRunError("DAG execution produced no CUDA evidence")
                 output = gpu.cpu()
@@ -93,8 +96,6 @@ def run_cuda_many(model_path, example_input, user_inputs, seed=0):
                                 "output": output.tolist()})
     except RuntimeError as exc:
         raise ForgeRunError(f"CUDA DAG execution failed: {exc}") from None
-    finally:
-        torch.set_float32_matmul_precision(precision)
     return {"captureMillis": (captured - started) * 1000,
             "devicePreparationMillis": (prepared - captured) * 1000,
             "results": results}
