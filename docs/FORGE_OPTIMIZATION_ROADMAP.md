@@ -682,3 +682,24 @@ baseline. Keep the production path at `d1873d9` behavior and close this
 folded-cache candidate. A later BUILD optimization should measure
 snapshot or helper-side staging separately and preserve exact source
 binding and all parity gates.
+
+## Stage 14 — ResNet-18 hardware portability
+
+The earlier `dag_cuda.py` loader checks a versioned flat value DAG and
+its separate graph file. It only dispatches Dense, ReLU, Add, and final
+Softmax. The ResNet declaration instead uses bounded NCHW shapes, OIHW
+weights, inference BatchNorm statistics, strided projection, spatial
+pooling, and a flatten/classifier boundary. The old loader cannot read
+this contract. The portable runner uses the ResNet declaration validator
+and original tensor decoder shared with Metal, while dispatching those
+operations through PyTorch. The preexisting CUDA value-DAG CLI and
+Metal bundle formats retain their separate entry points.
+
+On the home Mac CPU, the stage1 and full ResNet-18 CLIs used the pinned
+TorchVision checkpoint and the public astronaut input. The stage1
+boundaries matched TorchVision exactly. The full run matched all nine
+boundaries within tolerance, with a maximum logit error of 1.43e-6 and
+the same ordered top-5. Both variants rejected an incorrect original
+weights digest. An explicit CUDA request on this Mac failed without
+CPU fallback. The NumPy FP64 reference runs on CPU for either backend
+and is reported separately from accelerator evidence.

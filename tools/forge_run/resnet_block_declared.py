@@ -62,10 +62,10 @@ def folding(original, channels, layers, eps):
     return fold_layers(original, [(channels, ci, k) for ci, k in layers], eps)
 
 
-def fold_layers(original, layers, eps, tail=b""):
+def original_layers(original, layers, eps):
     count = sum(channels * (ci * k * k + 4) for channels, ci, k in layers)
     remaining = conv.tensor(original, [count])
-    sources, packed = [], []
+    sources = []
     for (channels, ci, k), epsilon in zip(layers, eps):
         n = channels * ci * k * k
         weights = remaining[:n].reshape(channels, ci, k, k)
@@ -73,6 +73,14 @@ def fold_layers(original, layers, eps, tail=b""):
         remaining = remaining[n + 4 * channels:]
         if np.any(var < 0):
             raise conv.BuildError("negative BatchNorm variance")
+        sources.append((weights, gamma, beta, mean, var, epsilon))
+    return sources
+
+
+def fold_layers(original, layers, eps, tail=b""):
+    sources = original_layers(original, layers, eps)
+    packed = []
+    for weights, gamma, beta, mean, var, epsilon in sources:
         scale = gamma.astype(np.float64) / np.sqrt(var.astype(np.float64) + epsilon)
         folded = (weights * scale[:, None, None, None], beta - mean * scale)
         for values in folded:
@@ -81,7 +89,6 @@ def fold_layers(original, layers, eps, tail=b""):
             if not np.isfinite(cast).all():
                 raise conv.BuildError("non-finite folded tensor")
             packed.append(cast.tobytes())
-        sources.append((weights, gamma, beta, mean, var, epsilon))
     packed.append(tail)
     return sources, b"".join(packed)
 
@@ -126,16 +133,24 @@ def stage_reference(x, sources, convolution=conv.reference):
     return {"stem": stem, "pool": pool, "block1": first, "output": reference(first, sources[3:5], 1, convolution)}
 
 
-def full_weights(original, eps):
+def full_layers():
     layers = [(64, 3, 7)] + [(64, 64, 3)] * 4
     for width in (128, 256, 512):
         layers.extend([(width, width // 2, 3), (width, width, 3), (width, width // 2, 1),
                        (width, width, 3), (width, width, 3)])
+    return layers
+
+
+def split_full_weights(original):
     head_bytes = 1000 * 513 * 4
     source = memoryview(original)
     head = source[-head_bytes:]
-    classifier = conv.tensor(head, [1000 * 513])
-    sources, packed = fold_layers(source[:-head_bytes], layers, eps, tail=head)
+    return source[:-head_bytes], head, conv.tensor(head, [1000 * 513])
+
+
+def full_weights(original, eps):
+    body, head, classifier = split_full_weights(original)
+    sources, packed = fold_layers(body, full_layers(), eps, tail=head)
     return sources, classifier, packed
 
 

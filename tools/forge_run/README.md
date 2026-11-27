@@ -171,3 +171,31 @@ creation, and `gpu.gpuMicros` covers the command buffer. The independent
 `cpuReferenceMillis` can overlap Metal preparation and execution.
 Use subprocess wall time for the full cost including Python startup
 and publication. Keep checkpoint conversion outside the timed CLI.
+
+### Portable declared ResNet-18 execution
+
+Reuse the same residual block, stage1, or full-model declaration,
+original FP32 weights file, and FP32 input file from the Metal example:
+
+```sh
+python3 tools/forge_run/resnet_run_declared.py --backend cpu \
+  --contract contract.json --weights weights.f32 --input input.f32 \
+  --out boundaries.npz
+```
+
+This PyTorch runner executes the original Conv2D and inference BatchNorm
+separately, then checks every output against the independent NumPy FP64
+reference. It writes the validated tensors to a new NPZ archive and
+reports device and error information on stdout. Metal's folding
+provenance remains in the declaration. No format conversion is required.
+On NVIDIA hardware with CUDA-enabled PyTorch, select `--backend cuda`.
+That choice requires CUDA, checks the device of each output and reports
+CUDA event time. An unavailable GPU causes an explicit error.
+
+The public-checkpoint case uses the environment variables above. Set
+`LEVIATHAN_RESNET18_BACKEND=cuda` on an NVIDIA runtime to test the same
+files there, and omit it for CPU. Stage1 alone can be tested with:
+
+```sh
+python3 -m pytest -q -s tools/forge_run/test_resnet_portable.py -k stage1
+```
