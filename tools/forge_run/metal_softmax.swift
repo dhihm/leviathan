@@ -5,12 +5,6 @@ enum Invalid: Error { case input, metal }
 
 func run() throws {
     guard CommandLine.arguments.count == 2 else { throw Invalid.input }
-    let url = URL(fileURLWithPath: CommandLine.arguments[1])
-    let data = try FileHandle(forReadingFrom: url).read(upToCount: (1 << 20) + 1) ?? Data()
-    guard data.count <= 1 << 20 else { throw Invalid.input }
-    let rows = try JSONDecoder().decode([[Float]].self, from: data)
-    guard let width = rows.first?.count, (1...4096).contains(width), rows.count <= 64,
-          rows.allSatisfy({ $0.count == width && $0.allSatisfy(\.isFinite) }) else { throw Invalid.input }
     let wall = ProcessInfo.processInfo.systemUptime
     guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
         throw Invalid.metal
@@ -36,6 +30,19 @@ func run() throws {
         """, options: nil)
     guard let function = library.makeFunction(name: "final_softmax") else { throw Invalid.metal }
     let pipeline = try device.makeComputePipelineState(function: function)
+    let preparedPipeline = ProcessInfo.processInfo.systemUptime
+    let readHandle = try CommandLine.arguments[1] == "--stdin"
+        ? FileHandle.standardInput
+        : FileHandle(forReadingFrom: URL(fileURLWithPath: CommandLine.arguments[1]))
+    var data = Data()
+    while let chunk = try readHandle.read(upToCount: (1 << 20) + 1 - data.count), !chunk.isEmpty {
+        data.append(chunk)
+        guard data.count <= 1 << 20 else { throw Invalid.input }
+    }
+    let rows = try JSONDecoder().decode([[Float]].self, from: data)
+    guard let width = rows.first?.count, (1...4096).contains(width), rows.count <= 64,
+          rows.allSatisfy({ $0.count == width && $0.allSatisfy(\.isFinite) }) else { throw Invalid.input }
+    let inputReady = ProcessInfo.processInfo.systemUptime
     let flat = rows.flatMap { $0 }
     let length = flat.count * MemoryLayout<Float>.stride
     let input = flat.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!, length: length) }
@@ -60,7 +67,7 @@ func run() throws {
     let result = rows.indices.map { row in Array(UnsafeBufferPointer(start: values + row * width, count: width)) }
     let json = try JSONSerialization.data(withJSONObject: [
         "output": result, "device": device.name, "kernel": "final_softmax",
-        "gpuMicros": micros, "preparationMillis": (prepared - wall) * 1000,
+        "gpuMicros": micros, "preparationMillis": (preparedPipeline - wall + prepared - inputReady) * 1000,
     ])
     FileHandle.standardOutput.write(json)
 }

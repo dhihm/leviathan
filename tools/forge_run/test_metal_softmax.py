@@ -52,9 +52,9 @@ def test_softmax_declaration_cache_binding(softmax_helper, residual, tmp_path):
                "--contract", str(contract), "--graph", str(graph), "--weights", str(weights),
                "--input", str(x), "--example-input", str(x), "--cache", str(tmp_path / "plans")]
 
-    def build(name, helper=None):
+    def build(name, helper=None, extra=()):
         args = ["--softmax-helper", str(helper)] if helper else []
-        out = subprocess.check_output(command + ["--out", str(tmp_path / name), *args], timeout=75)
+        out = subprocess.check_output(command + ["--out", str(tmp_path / name), *args, *extra], timeout=75)
         return json.loads(out)
 
     contract.write_text(json.dumps(data))
@@ -65,6 +65,12 @@ def test_softmax_declaration_cache_binding(softmax_helper, residual, tmp_path):
     assert not cold["cache"]["hit"] and warm["cache"]["hit"]
     assert cold["cache"]["key"] != logits["cache"]["key"]
     assert cold["run"]["output"] == warm["run"]["output"]
+    concurrent = build("v2-concurrent", softmax_helper, ("--concurrent-softmax",))
+    assert concurrent["cache"]["hit"] and concurrent["run"]["output"] == cold["run"]["output"]
+    record = tmp_path / "plans" / (cold["cache"]["key"] + ".json")
+    record.write_text("{}")
+    recovered = build("v2-corrupt", softmax_helper, ("--concurrent-softmax",))
+    assert not recovered["cache"]["hit"] and recovered["run"]["output"] == cold["run"]["output"]
     np.testing.assert_allclose(cold["run"]["output"], declared.softmax_reference(logits["run"]["output"]),
                                atol=2e-6)
     alternate = tmp_path / "softmax-unoptimized"

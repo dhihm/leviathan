@@ -261,3 +261,63 @@ PyTorch CPU probabilities. Maximum absolute error was 1.19e-7. The
 declared CUDA CLI also verified two extreme rows and rejected an FP32
 overflow input before execution. The preserved pre-change Metal bundle
 loaded with its recorded helper and passed source parity.
+
+## Stage 6 — Independent-process Metal BUILD
+
+Compared with `54efc02` on the home Mac, using six interleaved fresh-process
+trials per configuration, model, and cache state. Cold trials had fresh
+cache directories. Warm trials reused the corresponding verified cold
+selection. The pinned Apache-2.0 MNIST checkpoint and a second residual DAG
+with final-axis Softmax used fixed numeric inputs. Checkpoint conversion
+was outside the timed command. Full process wall time includes Python
+startup, bundle publication, fresh Metal execution, and independent CPU
+comparison. Each paired GPU output matched within 2e-6 absolute error.
+
+| Model and state | Baseline debug, ms | Release + one OpenBLAS thread, ms | Same + concurrent Softmax, ms | Combined change |
+|---|---:|---:|---:|---:|
+| Public cold | 1239 (1028–1432) | 715 (641–845) | 667 (583–828) | −46% |
+| Public warm | 568 (472–591) | 404 (336–432) | 308 (289–390) | −46% |
+| Residual cold | 815 (580–1018) | 803 (659–1390) | 687 (636–796) | −16% |
+| Residual warm | 616 (497–640) | 468 (370–489) | 391 (306–549) | −36% |
+
+Cells show median and min–max. The earlier 788 ms was a separate baseline
+run. Both paired warm improvements exceed 20%, and both cold medians
+improve. With the debug helper alone, overlapping Softmax was inconsistent
+across models. With release and bounded OpenBLAS, overlapping improved
+warm medians by a further 24% and 17%.
+
+Warm component medians on the serial release arm, in milliseconds:
+
+| Exclusive timed component | Public | Residual |
+|---|---:|---:|
+| DAG subprocess overhead (launch, exit, IPC) | 9.88 | 12.07 |
+| DAG bundle validation and I/O, including Swift identity | 183.67 | 204.34 |
+| DAG Metal preparation | 37.58 | 45.35 |
+| DAG GPU execution | 1.01 | 0.11 |
+| Independent CPU reference and comparisons | 0.64 | 0.68 |
+| Separate Softmax subprocess envelope | 51.25 | 57.84 |
+
+Phase medians are individually calculated. Additional time includes Python
+startup, declaration preparation, report reading, dispatch/readback overhead
+and publication. The isolated system Swift version subprocess took a median
+129 ms. It is part of bundle validation and is not added to the table.
+CPU comparisons exclude Softmax subprocess time. With concurrency the
+reported activation wall time covers the remaining critical-path wait,
+not the overlapped pipeline preparation.
+
+To reproduce, build the release DAG helper with
+`swift build -c release --product leviathan-dag-helper` and rebuild the
+Softmax helper using the `swiftc -O` command in Stage 5. Prefix the declared
+Metal BUILD command with `OPENBLAS_NUM_THREADS=1` when NumPy uses OpenBLAS,
+pass `--helper .build/release/leviathan-dag-helper`, and add
+`--concurrent-softmax`. The option starts pipeline preparation before the
+DAG verification completes and sends only verified logits to the GPU for
+Softmax. Device identity and independent reference checks remain in place.
+The DAG bundle format and recorded helper matching rules are unchanged.
+Use the originally recorded helper when loading an existing bundle.
+
+The next measurement should split toolchain identity probing from bundle
+reading and digest checks. Benchmark any proposed change against this
+release profile and require the same identity and compatibility decisions
+before changing the verification path. CUDA hardware was not rerun in
+this Metal milestone.

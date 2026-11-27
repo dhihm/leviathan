@@ -2,6 +2,7 @@
 
 import argparse
 import ctypes
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -133,17 +134,40 @@ def softmax_reference(logits):
     return (exp / exp.sum(axis=-1, keepdims=True)).astype(np.float32)
 
 
-def verify_softmax(helper, run, expected, scratch):
-    data = scratch / "softmax-input.json"
-    data.write_bytes(encode([run["output"]]))
+@contextmanager
+def prepare_softmax(helper):
+    if helper is None:
+        yield None
+        return
+    with subprocess.Popen([str(helper), "--stdin"], stdin=subprocess.PIPE,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
+        try:
+            yield proc
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+
+
+def verify_softmax(helper, run, expected, scratch, prepared=None):
+    payload = encode([run["output"]])
     start = time.perf_counter()
-    result = json.loads(helper_call(helper, data))
+    if prepared is None:
+        data = scratch / "softmax-input.json"
+        data.write_bytes(payload)
+        output_data = helper_call(helper, data)
+    else:
+        output_data, error = prepared.communicate(payload, timeout=120)
+        if prepared.returncode:
+            raise BuildError(error.decode(errors="replace")[:1000])
+    result = json.loads(output_data)
     result["wallMillis"] = (time.perf_counter() - start) * 1000
+    parity_start = time.perf_counter()
     output = np.asarray(result["output"], dtype=np.float32)
     if (result["device"] != run["gpu"]["deviceName"] or result["kernel"] != "final_softmax"
             or not 0 < result["gpuMicros"] < float("inf") or output.shape != (1, len(expected))
             or not np.allclose(output[0], expected, atol=2e-6, rtol=1e-5)):
         raise BuildError("Metal Softmax evidence or independent parity failed")
+    result["cpuParityMillis"] = (time.perf_counter() - parity_start) * 1000
     return result
 
 
@@ -158,9 +182,12 @@ def verify(helper, stage, x, wanted, scratch):
     input_path, report_path = scratch / "input.f32", scratch / "run.json"
     input_path.write_bytes(x.tobytes())
     report_path.unlink(missing_ok=True)
+    spawned = time.perf_counter()
     helper_call(helper, "run", "--bundle", stage, "--input-f32", input_path,
                 "--output-json", report_path)
+    returned = time.perf_counter()
     report = json.loads(read(report_path))
+    compared = time.perf_counter()
     gpu = report["gpu"]
     actual = np.asarray(report["output"], dtype=np.float32)
     if (report["format"] != "leviathan-dag-run-1"
@@ -170,6 +197,10 @@ def verify(helper, stage, x, wanted, scratch):
             or actual.shape != wanted.shape
             or not np.allclose(actual, wanted, atol=1e-4, rtol=1e-4)):
         raise BuildError("Metal evidence or independent CPU parity failed")
+    timing = report["timing"]
+    timing.update(helperProcessWallMillis=(returned - spawned) * 1000,
+                  reportReadMillis=(compared - returned) * 1000,
+                  cpuParityMillis=(time.perf_counter() - compared) * 1000)
     return report
 
 
@@ -212,11 +243,16 @@ def build(args):
     contract, graph, graph_data, blob, weights, layouts = load_model(args.contract, args.graph, args.weights)
     example = read_input(args.example_input, graph["inputDim"])
     actual = read_input(args.input, graph["inputDim"])
+    softmax = contract.get("outputActivation") == "softmax"
+    cpu_started = time.perf_counter()
     ref_example = reference(graph, weights, layouts, example)
     ref_actual = reference(graph, weights, layouts, actual)
+    ref_probs = softmax_reference(ref_actual) if softmax else None
+    cpu_reference_millis = (time.perf_counter() - cpu_started) * 1000
     source = b"# Declarative DAG; contract is encoded below.\n# " + encode(contract) + b"\n"
     backend = digest(Path(__file__).read_bytes())
-    softmax = contract.get("outputActivation") == "softmax"
+    if args.concurrent_softmax and not softmax:
+        raise BuildError("--concurrent-softmax requires a Softmax declaration")
     if softmax != (args.softmax_helper is not None):
         raise BuildError("Softmax declarations require --softmax-helper; v1 uses only --helper")
     softmax_identity = digest(read(args.softmax_helper, 512 << 20)) if softmax else None
@@ -235,7 +271,9 @@ def build(args):
                          digest(read(args.helper, 512 << 20)), args.diagnostic_fail_optimizations, softmax_identity]))
     path = cache_path(args.cache, key) if args.cache else None
     prepared = time.perf_counter()
-    with tempfile.TemporaryDirectory(prefix=".lev-declared-", dir=args.out.parent) as temporary:
+    prewarm = args.softmax_helper if args.concurrent_softmax else None
+    with (tempfile.TemporaryDirectory(prefix=".lev-declared-", dir=args.out.parent) as temporary,
+          prepare_softmax(prewarm) as concurrent):
         scratch = Path(temporary)
         stage = scratch / "bundle"
         stage.mkdir()
@@ -273,7 +311,7 @@ def build(args):
             forge_millis = (time.perf_counter() - forge_start) * 1000
             report = verify(args.helper, stage, actual, ref_actual, scratch)
         if softmax:
-            activation = verify_softmax(args.softmax_helper, report, softmax_reference(ref_actual), scratch)
+            activation = verify_softmax(args.softmax_helper, report, ref_probs, scratch, concurrent)
             report["logits"] = report["output"]
             report["output"] = activation.pop("output")[0]
             report["outputActivation"] = activation
@@ -283,6 +321,7 @@ def build(args):
     return {"cache": {"hit": reason == "verified", "reason": reason, "key": key},
             "selection": selection, "run": report, "parity": True,
             "timing": {"prepareMillis": (prepared - started) * 1000, "forgeMillis": forge_millis,
+                       "cpuReferenceMillis": cpu_reference_millis,
                        "totalMillis": (time.perf_counter() - started) * 1000}}
 
 
@@ -292,6 +331,7 @@ def main():
         parser.add_argument("--" + name, required=True, type=Path)
     parser.add_argument("--cache", type=Path)
     parser.add_argument("--softmax-helper", type=Path)
+    parser.add_argument("--concurrent-softmax", action="store_true")
     parser.add_argument("--diagnostic-fail-optimizations", action="store_true")
     try:
         print(encode(build(parser.parse_args())).decode())
