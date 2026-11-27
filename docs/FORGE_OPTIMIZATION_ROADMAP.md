@@ -202,3 +202,56 @@ The [dacorvo alternative](https://huggingface.co/dacorvo/mnist-mlp/blob/7ed1e96d
 returns Softmax probabilities and remains outside the current contract.
 A future output-operator expansion should implement and test Softmax
 end to end on both backends before accepting that model.
+
+## Stage 5 — Final-axis Softmax
+
+Version `leviathan-declared-dag-2` adds an explicit `outputActivation:
+"softmax"`. Metal verifies the original DAG logits, then dispatches
+Softmax with a separate GPU helper. For v2, `run.output` contains
+probabilities and `run.logits` preserves the verified logits. CUDA includes
+Softmax in its GPU event. An independent Float64 NumPy reference subtracts
+each row maximum before exponentiation. The Metal helper accepts up to 64
+rows; each DAG request remains a single row. Existing v1 bundles keep
+their helper identity. The v2 cache key and bound source metadata include
+the activation helper hash.
+
+```sh
+swiftc -O tools/forge_run/metal_softmax.swift -o .build/leviathan-metal-softmax
+revision=7ed1e96d182395fd7380ea8495b9eb2364ce9dc1
+curl -fL "https://huggingface.co/dacorvo/mnist-mlp/resolve/$revision/model.safetensors" \
+  -o /tmp/softmax-mnist.safetensors
+python3 tools/forge_run/import_public_softmax_mnist.py \
+  --checkpoint /tmp/softmax-mnist.safetensors --out /tmp/softmax-declared
+```
+
+Use the earlier Metal BUILD command with `--softmax-helper
+.build/leviathan-metal-softmax`, or the same declared CUDA CLI. The pinned
+Apache-2.0 [dacorvo release](https://huggingface.co/dacorvo/mnist-mlp/tree/main)
+uses Dense–ReLU–Dense–ReLU–Dense–Softmax. The benchmark used public
+normalized MNIST rows from the Badak release as numeric inputs and
+recomputed the published forward in PyTorch with the pinned dacorvo
+weights. It makes no accuracy claim about preprocessing.
+
+Six alternating independent-process Metal pairs gave cold median
+1,511 ms (1,257–1,987) and verified warm median 788 ms (623–890).
+Import time is excluded. All six paired probability vectors were exactly
+equal and passed PyTorch comparison. Multiple rows, finite FP32 logits
+through ±3e38, invalid numbers and ragged shapes were tested on Metal.
+Changing either declaration version or the Softmax helper invalidates
+selection reuse.
+
+Warm BUILD costs ranked by measured medians:
+
+1. Existing Metal DAG helper work: 369 ms (inside the process).
+2. Declaration preparation: 86 ms, including validation and hashing.
+3. Separate Softmax process: 78 ms including 61 ms Metal preparation.
+   The GPU Softmax itself took 0.025 ms.
+
+The implementation reuses the already verified weight digest to construct
+the manifest. A 100-run hash microbenchmark on the 1.08 MB package
+measured 0.90 ms for two hashes and 0.45 ms for one. This isolates hashing,
+not a claimed BUILD speedup. Next, split DAG helper startup from GPU
+preparation, then compare a shared prepared session against fresh-helper
+validation. Keep the fresh helper on the default path until six
+interleaved pairs show lower end-to-end time and matching old-bundle and
+corruption gates. Kernel tuning is lower priority at the measured width.

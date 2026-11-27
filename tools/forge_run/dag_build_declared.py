@@ -16,6 +16,7 @@ import time
 import numpy as np
 
 FORMAT = "leviathan-declared-dag-1"
+SOFTMAX_FORMAT = "leviathan-declared-dag-2"
 MAX_JSON = 1 << 20
 ATEN = {"dense": "aten.linear.default", "relu": "aten.relu.default", "add": "aten.add.Tensor"}
 
@@ -45,8 +46,12 @@ def load_model(contract_path, graph_path, weights_path):
     graph_data = read(graph_path)
     blob = read(weights_path, 16 << 20)
     graph = json.loads(graph_data)
-    if (set(contract) != {"format", "graphSha256", "weightsSha256", "inputShape", "outputShape"}
-            or contract["format"] != FORMAT or contract["graphSha256"] != digest(graph_data)
+    fields = {"format", "graphSha256", "weightsSha256", "inputShape", "outputShape"}
+    if contract.get("format") == SOFTMAX_FORMAT and contract.get("outputActivation") == "softmax":
+        fields.add("outputActivation")
+    elif contract.get("format") != FORMAT:
+        raise BuildError("unsupported declaration format or output activation")
+    if (set(contract) != fields or contract["graphSha256"] != digest(graph_data)
             or contract["weightsSha256"] != digest(blob)):
         raise BuildError("declaration format or content hash mismatch")
     if (set(graph) != {"format", "inputDim", "nodes", "outputValue"}
@@ -119,6 +124,29 @@ def reference(graph, weights, layouts, x):
     return out
 
 
+
+def softmax_reference(logits):
+    values = np.asarray(logits, dtype=np.float64)
+    if values.ndim == 0 or not values.size or not np.isfinite(values).all():
+        raise BuildError("Softmax requires finite nonempty rows")
+    exp = np.exp(values - values.max(axis=-1, keepdims=True))
+    return (exp / exp.sum(axis=-1, keepdims=True)).astype(np.float32)
+
+
+def verify_softmax(helper, run, expected, scratch):
+    data = scratch / "softmax-input.json"
+    data.write_bytes(encode([run["output"]]))
+    start = time.perf_counter()
+    result = json.loads(helper_call(helper, data))
+    result["wallMillis"] = (time.perf_counter() - start) * 1000
+    output = np.asarray(result["output"], dtype=np.float32)
+    if (result["device"] != run["gpu"]["deviceName"] or result["kernel"] != "final_softmax"
+            or not 0 < result["gpuMicros"] < float("inf") or output.shape != (1, len(expected))
+            or not np.allclose(output[0], expected, atol=2e-6, rtol=1e-5)):
+        raise BuildError("Metal Softmax evidence or independent parity failed")
+    return result
+
+
 def helper_call(helper, *args):
     result = subprocess.run([str(helper), *map(str, args)], capture_output=True, timeout=120)
     if result.returncode:
@@ -188,8 +216,14 @@ def build(args):
     ref_actual = reference(graph, weights, layouts, actual)
     source = b"# Declarative DAG; contract is encoded below.\n# " + encode(contract) + b"\n"
     backend = digest(Path(__file__).read_bytes())
+    softmax = contract.get("outputActivation") == "softmax"
+    if softmax != (args.softmax_helper is not None):
+        raise BuildError("Softmax declarations require --softmax-helper; v1 uses only --helper")
+    softmax_identity = digest(read(args.softmax_helper, 512 << 20)) if softmax else None
+    if softmax:
+        source += b"# Metal Softmax helper SHA-256: " + softmax_identity.encode() + b"\n"
     manifest = encode(dict(format="leviathan-dag-weights-1", inputDim=graph["inputDim"],
-                           floatCount=len(weights), weightsSha256=digest(blob), layouts=layouts,
+                           floatCount=len(weights), weightsSha256=contract["weightsSha256"], layouts=layouts,
                            refInput=example.tolist(), refOutput=ref_example.tolist(), modelSeed=0))
     binding = encode(dict(modelSourceSha256=digest(source), modelSourceName="declared-dag",
                           modelSeed=0, backendSourceSha256=backend, backendSourceFiles=1,
@@ -197,8 +231,8 @@ def build(args):
                           pythonVersion=platform.python_version(),
                           atenOps=[ATEN[n["op"]] for n in graph["nodes"]],
                           exampleInputSha256=digest(example.tobytes())))
-    key = digest(encode([FORMAT, "metal", platform.mac_ver()[0], digest(binding), digest(manifest),
-                         digest(read(args.helper, 512 << 20)), args.diagnostic_fail_optimizations]))
+    key = digest(encode([contract["format"], "metal", platform.mac_ver()[0], digest(binding), digest(manifest),
+                         digest(read(args.helper, 512 << 20)), args.diagnostic_fail_optimizations, softmax_identity]))
     path = cache_path(args.cache, key) if args.cache else None
     prepared = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix=".lev-declared-", dir=args.out.parent) as temporary:
@@ -238,8 +272,13 @@ def build(args):
                                                "--python-binding", binding_file, *flags))
             forge_millis = (time.perf_counter() - forge_start) * 1000
             report = verify(args.helper, stage, actual, ref_actual, scratch)
-            if path is not None:
-                save_cache(path, key, stage)
+        if softmax:
+            activation = verify_softmax(args.softmax_helper, report, softmax_reference(ref_actual), scratch)
+            report["logits"] = report["output"]
+            report["output"] = activation.pop("output")[0]
+            report["outputActivation"] = activation
+        if path is not None and selection is not None:
+            save_cache(path, key, stage)
         publish(stage, args.out)
     return {"cache": {"hit": reason == "verified", "reason": reason, "key": key},
             "selection": selection, "run": report, "parity": True,
@@ -252,6 +291,7 @@ def main():
     for name in ("contract", "graph", "weights", "example-input", "input", "helper", "out"):
         parser.add_argument("--" + name, required=True, type=Path)
     parser.add_argument("--cache", type=Path)
+    parser.add_argument("--softmax-helper", type=Path)
     parser.add_argument("--diagnostic-fail-optimizations", action="store_true")
     try:
         print(encode(build(parser.parse_args())).decode())
