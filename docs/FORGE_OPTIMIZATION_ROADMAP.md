@@ -190,3 +190,15 @@ one invocation. Metal tuning records are scoped to Metal and each CUDA
 process prepares its own device tensors. Tests cover invalid hashes and
 unreachable operations before CUDA initialization, plus the existing
 Metal invalidation and corruption-recovery cases.
+
+Colab Tesla T4, implementation `efc954c`: all 16 published normalized
+rows ran through the declared CUDA CLI with positive CUDA events.
+Maximum absolute error against the published PyTorch logits was
+9.06e-6. A corrupted copy of the weights was rejected with no output.
+The CUDA executor creates its own device weights each process;
+the cold/warm table above measures Metal plan reuse.
+
+The [dacorvo alternative](https://huggingface.co/dacorvo/mnist-mlp/blob/7ed1e96d182395fd7380ea8495b9eb2364ce9dc1/modeling_mlp.py)
+returns Softmax probabilities and remains outside the current contract.
+A future output-operator expansion should implement and test Softmax
+end to end on both backends before accepting that model.
