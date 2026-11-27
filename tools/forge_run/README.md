@@ -67,3 +67,38 @@ Run all GPU acceptance and focused fault tests with:
 ```sh
 LEVIATHAN_FORGE_KEEP_TEST_OUTPUT=1 python3.11 -m unittest discover -s tools/forge_run -p 'test_*.py' -v
 ```
+
+### Declared native Metal Conv2D
+
+Build the single-operator helper with `swiftc -O`. The CLI consumes a
+JSON declaration and raw little-endian FP32 input and weight files.
+Tensor layouts are contiguous NCHW and OIHW. The output directory must
+not exist. Its parent must exist.
+
+```sh
+swiftc -O tools/forge_run/metal_conv2d.swift -o .build/leviathan-metal-conv2d
+python3 tools/forge_run/conv2d_build_declared.py \
+  --helper .build/leviathan-metal-conv2d --contract contract.json \
+  --input input.f32 --weights weights.f32 --out conv-result --cache conv-plans
+```
+
+For the ResNet-18 stem with a 113×151 image, set `format` to
+`leviathan-declared-conv2d-1`, `inputShape` to `[1,3,113,151]`,
+`weightShape` to `[64,3,7,7]`, `outputShape` to `[1,64,57,76]`,
+`stride` to 2, `padding` to 3, and `groups` and `dilation` to 1.
+Set `weightsSha256` to the SHA-256 of the raw weights file. Bias and
+batch sizes above one are outside the version 1 contract. A successful
+run writes `output.f32` and `report.json` after independent CPU parity.
+The optional private cache reuses dispatch parameters after checking
+the current device and pipeline. Each invocation executes the kernel
+and performs the reference comparison.
+
+Reproduce the full feature-map test with the public TorchVision weights
+and Python with NumPy, PyTorch, and pytest installed.
+
+```sh
+scratch=$(mktemp -d)
+curl -fL https://download.pytorch.org/models/resnet18-f37072fd.pth -o "$scratch/resnet18.pth"
+LEVIATHAN_RESNET18_CHECKPOINT="$scratch/resnet18.pth" \
+  python3 -m pytest -q -s tools/forge_run/test_conv2d_declared.py
+```

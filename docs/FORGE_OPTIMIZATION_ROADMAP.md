@@ -392,3 +392,41 @@ Require exact shape, finite values, numerical parity, rejection of
 unsupported geometry, and cache invalidation on kernel or stride
 changes before adding batch norm and pooling. The Stage 6 validation
 binding remains the baseline for that work.
+
+## Stage 8 — Native Metal ResNet-18 stem convolution
+
+The declared Conv2D CLI runs a single native FP32 Metal cross-correlation
+over the full NCHW image. Version 1 accepts batch size 1 and contiguous
+little-endian FP32 input and OIHW weights, with symmetric zero padding,
+a uniform stride, groups 1 and dilation 1, and no bias. It bounds tensor
+sizes and total work before dispatch. A separate NumPy float64 reference
+checks every output value before publishing the result. The optional
+cache records a dispatch plan bound to the declaration, weight digest,
+helper, host OS, and a GPU registry ID checked by the helper. It does
+not cache output or GPU execution, and no warm speedup is claimed.
+
+The official IMAGENET1K_V1 ResNet-18 stem took input `[1,3,113,151]`,
+including all padding borders, and produced `[1,64,57,76]`.
+All 277,248 FP32 values matched PyTorch on the tested image. Metal
+reported `conv2d_fp32` completion on Apple M1 Max. The checkpoint and
+exact test are reproducible from the [Forge CLI guide](../tools/forge_run/README.md).
+The existing value DAG schema and helper were unchanged.
+
+For a full checkpoint the next slice is one complete residual block.
+It needs intermediate NCHW values, 3×3 convolution chained with ReLU
+and residual add, and either an inference BatchNorm op or verified
+folding into convolution weights and bias. Then cover the stem 3×3
+max pool with its padding semantics, stride-2 projection shortcuts
+(1×1 convolution and normalization), four residual stages, global
+average pooling, flatten, and the existing Dense classifier. Check
+layer boundaries and final logits against PyTorch on a standard
+224×224 input before making any whole-model support claim. Revisit the
+bounded work limit for larger layers using measured GPU cost and add
+separate CUDA parity when a GPU is available.
+
+Existing DAG warm hits call `loadValidatedBundle` in a fresh helper.
+It compares the complete recorded toolchain string against
+`Forge.toolchainIdentifier`, which queries `/usr/bin/swift --version`
+once per process. This probe is part of the current warm validation
+contract. No replacement was validated that detects changes in toolchain
+resolution and version under all of the current launch configurations.
