@@ -483,3 +483,25 @@ def test_run_many_cli_preserves_order_and_rejects_corruption(residual, tmp_path)
     failed = subprocess.run(args + ["--bundle", str(corrupt)], capture_output=True, text=True, timeout=60)
     assert failed.returncode == 2 and not failed.stdout
     assert "sha256 mismatch" in failed.stderr
+
+
+def test_build_many_cli_validates_each_job(residual, tmp_path):
+    _, source, _, _, _ = residual
+    example = tmp_path / "input.json"
+    example.write_text(json.dumps([[0.25] * 32]))
+    bundles = [tmp_path / name for name in ("first", "same", "changed")]
+    jobs = [arg for seed, bundle in zip((0, 0, 1), bundles, strict=True)
+            for arg in ("--job", str(seed), str(bundle))]
+    args = [sys.executable, str(TOOL_DIR / "dag_build_many.py"), "--model", str(source),
+            "--helper", str(HELPER), "--example-input", str(example), "--input", str(example)]
+    run = subprocess.run(args + jobs, capture_output=True, text=True, timeout=90)
+    assert run.returncode == 0, run.stderr
+    rows = [json.loads(line) for line in run.stdout.splitlines()]
+    assert [row["seed"] for row in rows] == [0, 0, 1]
+    outputs = []
+    for row, bundle in zip(rows, bundles, strict=True):
+        fresh = f.run_bundle(bundle, source, example, helper=HELPER)
+        assert fresh["parity"] == row["report"]["run"]["parity"]
+        assert fresh["output"] == row["report"]["run"]["output"]
+        outputs.append(fresh["output"])
+    assert outputs[0] == outputs[1] != outputs[2]

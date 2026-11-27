@@ -122,15 +122,16 @@ for a changed input. The batched CLI paid 1,005 ms median startup once, then
 parity reports exactly matched their fresh counterparts. These are internal
 CLI timings excluding Python import, and describe this fixture only.
 
-## Build qualification preparation
+## Historical build preparation experiment
 
-The Forge helper prepares the Metal pipelines, weights, and value buffers
+The experiment prepared the Metal pipelines, weights, and value buffers
 once per build. The source example and three seeded qualification inputs
 each upload their own input and execute every applicable candidate.
 The post-build run still recaptures the PyTorch graph, checks the staged
 bundle, starts a fresh Metal helper, and compares against the eager model.
-Each build creates its own prepared state and timing selection. Bundles
-from an earlier backend revision require explicit re-forging.
+The preparation change was reverted after the measurements below.
+Bundle validation continues to require the exact helper binary recorded
+in the bundle.
 
 On the M1 Max synthetic residual fixture, the instrumented before/after
 comparison used the same debug configuration, input files, and fresh output
@@ -151,3 +152,44 @@ higher in these runs. All five paired outputs matched exactly.
 `freshVerificationMillis` expose the measured boundaries. The export
 metric includes the Python source/export probe checks. This sample does
 not establish a full-model speedup.
+
+## Build independent bundles in one interpreter
+
+Use the opt-in command for multiple builds of a trusted, deterministic model:
+
+```sh
+python3 tools/forge_run/dag_build_many.py \
+  --model tools/forge_run/examples/residual_block.py \
+  --example-input /tmp/example-32.json --input /tmp/input-32.json \
+  --job 0 /tmp/first --job 0 /tmp/repeat --job 1 /tmp/changed
+```
+
+Each job captures and lowers the model, benchmarks and qualifies Metal
+candidates, then verifies the staged bundle in a fresh helper and compares
+the output against the source model. The command emits one JSON line per
+published bundle and stops at the first failed job. Use the separate
+`dag_forge.py build` process for models that require process isolation
+between builds. The only reuse is the interpreter and its initialized
+PyTorch machinery. Export results are generated afresh for every capture.
+
+On an M1 Max with the synthetic residual fixture, five paired measurements
+alternated which CLI ran first. Each measurement built three fresh output
+directories with seeds 0, 0, and 1. Wall times include Python startup.
+
+| Three-build wall time | Median | Range |
+|---|---:|---:|
+| Three independent CLI processes | 9.558 s | 7.972–11.599 s |
+| One build-many process | 4.452 s | 3.732–4.854 s |
+| Paired time saved | 5.611 s | 3.740–7.147 s |
+
+All 15 paired GPU outputs matched exactly and passed original-model parity.
+Separate instrumentation on five builds measured the first strict
+`torch.export` at 1,108 ms and nine subsequent captures at 28 ms median.
+Lowering took 0.37–0.83 ms and exported-module creation plus source
+comparison took 2.61–3.82 ms per capture. This is a synthetic fixture,
+and the speedup concerns groups of builds.
+
+The backend sources used for the pre-experiment bundle fingerprint were
+restored byte for byte. Older bundles also require the exact helper binary
+they recorded. A newly rebuilt helper had a different binary hash and
+correctly rejected the historical bundle after the Python source checks.

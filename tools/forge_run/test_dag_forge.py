@@ -217,8 +217,6 @@ class DagForgeAcceptance(unittest.TestCase):
         for report, bundle, model, name in self.cases():
             with self.subTest(model=model.name):
                 run = report["run"]
-                self.assertEqual(report["forge"]["metalPreparations"], 1)
-                self.assertGreater(report["forge"]["metalPreparationMillis"], 0)
                 self.assertTrue(run["parity"]["passed"])
                 self.assert_gpu(run, bundle)
                 ref = source_reference(model, self.inputs[(name, "input")])
