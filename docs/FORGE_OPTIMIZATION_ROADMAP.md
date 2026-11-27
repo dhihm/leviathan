@@ -1017,3 +1017,72 @@ to 372 MiB by request 10 and remained at 372 MiB after requests 20
 and 30. Host RSS was 350.23 MiB at ready and 482.95 MiB at each
 of the three later snapshots. These snapshots cover this workload
 and do not measure in-flight peaks.
+
+## Stage 19 — Consumer-visible Llama streaming and round close
+
+`llama-serve --stream jsonl` at `fcd5cb1` emits one newline-terminated
+event for each selected token and retains a terminal result. The
+untimed and timed default commands retain their existing outputs, and
+the default serve mode emits only the completed result. The optional
+CUDA callback ABI leaves the default resident ABI available. Cancellation
+can follow already delivered partial tokens, but the terminal cancelled
+record carries no completed token list. Complete malformed or invalid
+requests recover. Truncated framing at EOF terminates the worker.
+
+The test consumer was a separate Python process reading the Swift
+worker's stdout pipe. It measured from just before writing the request
+to the receipt of a complete line, before JSON parsing. Each model
+ran two prompts, with six warm samples per prompt and mode. Workers
+were already loaded, and the default and streamed measurements were
+collected in separate sessions. Both modes matched the pinned greedy
+IDs. The test checked ID and index ordering, EOF, malformed input,
+invalid vocabulary IDs, and a valid reply after cancellation. The
+numbers establish when tokens become available on the local pipe.
+They do not establish better decode throughput or HTTP/GUI latency.
+
+| Home Mac CPU, ms | First streamed event | Stream terminal | Default single result |
+|---|---:|---:|---:|
+| Stories15M, 1-token prompt | 9.09 | 44.50 | 44.97 |
+| Stories15M, 4-token prompt | 20.18 | 55.85 | 56.01 |
+| SmolLM2 FP16, 4-token prompt | 355.89 | 784.42 | 860.54 |
+| SmolLM2 FP16, 5-token prompt | 445.21 | 863.39 | 1022.65 |
+
+The SmolLM2 default completion samples were noisier than streaming.
+Separate-session differences in full completion are not a throughput
+claim. The persistent model load is outside these measurements.
+
+| Free Colab Tesla T4, ms | First streamed event | Stream terminal | Default single result |
+|---|---:|---:|---:|
+| Stories15M, 1-token prompt | 11.66 | 17.88 | 19.24 |
+| Stories15M, 4-token prompt | 12.28 | 18.93 | 20.39 |
+| SmolLM2 FP16, 4-token prompt | 19.41 | 37.65 | 43.83 |
+| SmolLM2 FP16, 5-token prompt | 20.13 | 38.19 | 42.93 |
+
+The T4 run used the same pinned b12808 CUDA 12.8 shared libraries
+as Stage 18. Every successful reply reported a completed CUDA matrix
+multiply per decode. Hiding the GPU yielded no ready line or tokens.
+Across both platforms, every measured stream showed the first token
+before the terminal reply. Phase measurements remain in the terminal
+timing object, with token pipe writes outside the engine's token
+selection timers.
+
+This closes the round with full ResNet-18 parity across CPU, Metal
+and T4, plus public Llama serving validation for Stories15M and
+SmolLM2-135M FP16. For the Llama path, the evidence now includes
+fresh-process phases, resident-model parity and cancellation recovery,
+and measured first token delivery to a separate process. Llama CPU
+still uses a bounded scalar FP32 representation after loading and the
+T4 runner is a serial request loop with a fresh context per call.
+Network delivery, asynchronous client cancellation, concurrent
+throughput, long-prompt behavior, and larger checkpoints remain
+outside the measured scope.
+
+For a larger checkpoint, first pin one supported model and tensor
+format and establish a correctly bounded weight and KV memory
+budget before loading it. Measure peak host/VRAM during load and
+decode as well as idle residency. Extend token parity and failure
+recovery to longer prompts, and measure cold startup, client-side
+first token, inter-token latency and tail latency under load. A
+slow-reader test and explicit backpressure/cancellation semantics
+are required before using this serial pipe API as a concurrent
+service. The current FP32 decoded-weight cap remains 520 MiB.
