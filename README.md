@@ -13,6 +13,8 @@ Leviathan is a personal project building a local LLM inference engine for Mac GP
 Run dense Llama F32/F16 GGUF on the Swift scalar CPU backend with
 `leviathan-cli llama-generate`. The [Colab CPU quickstart](docs/COLAB_CPU.md)
 uses a small synthetic model to verify model loading and token generation.
+The [Colab CUDA guide](docs/COLAB_CUDA.md) uses the same CLI with the
+llama.cpp CUDA backend on NVIDIA GPUs.
 
 ## Current Progress
 

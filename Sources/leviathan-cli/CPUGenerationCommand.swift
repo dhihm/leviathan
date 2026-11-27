@@ -3,13 +3,13 @@ import LeviathanCore
 
 enum CPUGenerationCommand {
     static func run(_ arguments: [String]) -> Int32 {
-        let usage = "Usage: leviathan-cli llama-generate --file MODEL.gguf --prompt-ids 1,2 [--gen-tokens N] [--backend cpu-scalar]"
+        let usage = "Usage: leviathan-cli llama-generate --file MODEL.gguf --prompt-ids 1,2 [--gen-tokens N] [--backend cpu-scalar|cuda] [--cuda-library PATH]"
         if arguments.isEmpty || arguments == ["--help"] || arguments == ["llama-generate", "--help"] {
             print(usage)
             return 0
         }
         do {
-            let validFlags: Set<String> = ["--file", "--prompt-ids", "--gen-tokens", "--backend"]
+            let validFlags: Set<String> = ["--file", "--prompt-ids", "--gen-tokens", "--backend", "--cuda-library"]
             guard arguments.first == "llama-generate", arguments.count % 2 == 1 else {
                 throw LlamaCPUError.invalid(usage)
             }
@@ -20,8 +20,9 @@ enum CPUGenerationCommand {
                 }
                 options[arguments[i]] = arguments[i + 1]
             }
-            guard options["--backend", default: "cpu-scalar"] == "cpu-scalar" else {
-                throw LlamaCPUError.unsupported("llama-generate supports --backend cpu-scalar")
+            let backend = options["--backend", default: "cpu-scalar"]
+            guard backend == "cpu-scalar" || backend == "cuda" else {
+                throw LlamaCPUError.unsupported("llama-generate supports cpu-scalar or cuda")
             }
             guard let path = options["--file"], let ids = options["--prompt-ids"],
                   let count = Int(options["--gen-tokens", default: "8"]) else {
@@ -34,6 +35,19 @@ enum CPUGenerationCommand {
                 throw LlamaCPUError.invalid("invalid prompt IDs or generation count")
             }
 
+            if backend == "cuda" {
+                guard let library = options["--cuda-library"] else {
+                    throw LlamaCPUError.invalid("--backend cuda requires --cuda-library")
+                }
+                let result = try CUDAGeneration.run(library: library, model: path, prompt: prompt, count: count)
+                print("backend: cuda (llama.cpp)")
+                print("device: " + result.evidence)
+                print("generated token IDs: " + result.tokens.map(String.init).joined(separator: ","))
+                return 0
+            }
+            guard options["--cuda-library"] == nil else {
+                throw LlamaCPUError.invalid("--cuda-library requires --backend cuda")
+            }
             let file = try GGUFReader.read(URL(fileURLWithPath: path))
             let model = try LlamaCPU(file: file)
             let eos = try file.metadata["tokenizer.ggml.eos_token_id"].map { _ in

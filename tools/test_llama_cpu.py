@@ -80,7 +80,7 @@ def verify(cli, model):
     result = generate("3")
     assert result.returncode != 0 and "token IDs" in result.stderr, result
     result = generate("0", "--backend", "cuda")
-    assert result.returncode != 0 and "cpu-scalar" in result.stderr, result
+    assert result.returncode != 0 and "--cuda-library" in result.stderr, result
 
     model.write_bytes(model.read_bytes()[:32])
     result = generate("0")

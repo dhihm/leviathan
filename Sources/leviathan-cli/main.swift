@@ -11,7 +11,8 @@ func usage() -> Never {
 
     Commands:
       llama-generate --file <model.gguf> --prompt-ids 1,2 [--gen-tokens N]
-          Greedy generation for dense Llama F32/F16 GGUF on Swift CPU.
+          Greedy Llama GGUF generation with Swift CPU or llama.cpp CUDA.
+          CUDA requires --backend cuda --cuda-library <path>.
       compile --graph <file.json> --out <file.lvi> [--seed N]
           Validate a graph JSON file, lower it, and write an
           integrity-checked artifact.
