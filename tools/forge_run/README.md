@@ -309,6 +309,6 @@ python3 tools/test_llama_serve.py --fixture smollm2-135m \
 The fixture checks the GGUF SHA-256, exact five-token outputs, and six
 fresh/resident pairs per raw prompt. Add `--library` to check the CUDA
 path with the same CPU golden tokens. It samples host RSS at ready and
-after the requests and reports per-process GPU memory when the driver
+after the requests and macOS physical footprint when available. It reports per-process GPU memory when the driver
 exposes it. These are idle endpoint samples. They exclude transient
 memory peaks during loading or decode.

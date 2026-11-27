@@ -923,3 +923,97 @@ made the server fail without a ready record or token output.
 Next measure whether reusable context allocation can reduce the
 remaining T4 warm setup without sharing KV or sampler state. Keep
 the current fresh-context parity test as the acceptance baseline.
+
+## Stage 18 — SmolLM2-135M FP16 resident serving
+
+The tested source is HuggingFaceTB's Apache-2.0 SmolLM2-135M-Instruct.
+The FP16 GGUF conversion is pinned at
+`b57b6475ae6f5f2b1b51c43a1190a64cab325ef4` and SHA-256
+`f535f83ec568d040f88ddc04a199fa6da90923bbb41d4dcaed02caa924d6ef57`.
+[Original model card](https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct) ·
+[Pinned FP16 conversion](https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/blob/b57b6475ae6f5f2b1b51c43a1190a64cab325ef4/SmolLM2-135M-Instruct-f16.gguf)
+
+The file declares Llama, 30 blocks, width 576, nine attention heads,
+and three KV heads. Its 134,515,008 tensor elements expand to
+538,060,032 bytes (513.134 MiB) in the existing scalar FP32 storage
+format. The previous 512 MiB ceiling alone blocked the checkpoint.
+The ceiling is now 520 MiB. Tensor dtype, shape, architecture and
+finite-value checks, the 128 MiB KV ceiling, and the request limits
+remain in place.
+
+The two prompts were encoded without a chat template or added
+special tokens using tokenizer revision
+`12fd25f77366fa6b3b4b768ec3050bf629380bac`.
+
+| Prompt | Input IDs | Expected greedy continuation IDs |
+|---|---|---|
+| Once upon a time | 6403,1980,253,655 | 28,339,436,253,1805 |
+| The capital of France is | 504,3575,282,4649,314 | 7042,30,7042,314,260 |
+
+The home Mac Release CPU and free Colab T4 runs alternated both
+prompts through one loaded worker and compared six pairs per prompt.
+The timed path to the first token sums model load, preparation,
+prefill and first-token selection for each request. The worker emits
+one reply after all tokens. Fresh runs include opening a new model;
+worker timings start after the ready record.
+
+| Home Mac CPU phase, ms | Once upon a time, fresh → resident | The capital of France is, fresh → resident |
+|---|---:|---:|
+| Model map and parse | 15.804 → 0 | 18.377 → 0 |
+| Preparation | 495.203 → 0.003 | 596.151 → 0.005 |
+| Prefill | 451.147 → 365.095 | 555.267 → 489.834 |
+| First-token selection | 29.921 → 26.954 | 35.952 → 84.853 |
+| Four later decode steps | 453.689 → 431.748 | 435.852 → 451.506 |
+| Timed path to first token | 989.134 → 391.939 | 1211.919 → 582.807 |
+| Full process or reply wall | 1473.457 → 832.336 | 1717.613 → 1117.956 |
+
+These are medians from the run with footprint sampling. Another
+six-pair CPU run measured 872 → 369 ms and 936 → 449 ms through the
+first token. Token parity held in both runs. The resident CPU worker
+reported 15.37 ms map/parse and 405.49 ms one-time preparation in
+the footprint run. macOS physical footprint was 523.4M at ready
+and 524.5M after the requests. Raw RSS changed from 528.28 to
+6.84 MiB in that run. RSS can omit nonresident pages and is not an
+allocation or peak metric. The endpoint samples do not establish
+a general memory-leak or peak-memory bound.
+
+CPU KV and token position are per call. The tested eight- and
+nine-position requests have a logical FP32 KV size of 360 and
+405 KiB, excluding allocator overhead. Invalid requests and a
+cancellation after two generated tokens were followed by matching
+valid outputs. Stories15M's original paired harness and the F16/F32
+synthetic CLI fixture also passed after the cap adjustment.
+
+| Colab Tesla T4 phase, ms | Once upon a time, fresh → resident | The capital of France is, fresh → resident |
+|---|---:|---:|
+| Model load/upload | 371.936 → 0 | 371.438 → 0 |
+| Backend/context preparation | 137.771 → 17.285 | 136.636 → 16.590 |
+| Prefill | 181.873 → 5.920 | 185.609 → 6.568 |
+| First-token selection | 0.203 → 0.211 | 0.209 → 0.218 |
+| Four later decode steps | 47.812 → 21.929 | 48.312 → 23.842 |
+| Timed path to first token | 695.041 → 23.357 | 692.274 → 23.318 |
+| Full process or reply wall | 903.198 → 46.767 | 899.388 → 49.215 |
+
+The T4 worker reported 388.56 ms one-time load/upload and 156.95 ms
+one-time preparation. This run used the same pinned b12808 CUDA
+12.8 libraries as Stage 17 and the verified model and toolchain
+archives. Both untimed and timed fresh CUDA and all warm CUDA
+outputs matched the CPU greedy IDs. Every successful request
+reported CUDA matrix multiplication in each decode call. Hiding
+CUDA made the server fail without a ready record or tokens.
+
+The CUDA adapter constructs and destroys a new context for each
+request. llama.cpp reported a 5.62 MiB CUDA KV buffer for these short
+requests. The harness observed 360 → 372 MiB of worker GPU memory
+and 350.02 → 482.85 MiB of host RSS at the ready/after endpoints.
+Those process counters include allocator and backend state. The
+per-request KV scope and output sequence checks are the evidence
+for isolation.
+
+A separate 30-request T4 run alternated both prompts and cancelled
+requests 5, 15 and 25 after two generated tokens. All 27 completed
+requests matched the golden output. Idle GPU memory rose from 360
+to 372 MiB by request 10 and remained at 372 MiB after requests 20
+and 30. Host RSS was 350.23 MiB at ready and 482.95 MiB at each
+of the three later snapshots. These snapshots cover this workload
+and do not measure in-flight peaks.
