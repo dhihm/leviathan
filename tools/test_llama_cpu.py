@@ -1,6 +1,7 @@
 """Generate a synthetic Llama GGUF and exercise the actual Swift CLI."""
 
 import argparse
+import json
 from pathlib import Path
 import struct
 import subprocess
@@ -76,6 +77,15 @@ def verify(cli, model):
         assert result.stdout.splitlines() == [
             "backend: cpu-scalar", f"generated token IDs: {expected}",
         ], result.stdout
+        assert not result.stderr
+        instrumented = generate(prompt, *flags, "--timing", "json")
+        assert instrumented.returncode == 0 and instrumented.stdout == result.stdout
+        timing = json.loads(instrumented.stderr)
+        assert timing["format"] == "leviathan-llama-timing-1" and timing["backend"] == "cpu-scalar"
+        assert len(timing["decodeMillis"]) == expected.count(",")
+
+    result = generate("0", "--timing", "invalid")
+    assert result.returncode != 0 and not result.stdout and "--timing must be json" in result.stderr
 
     result = generate("3")
     assert result.returncode != 0 and "token IDs" in result.stderr, result

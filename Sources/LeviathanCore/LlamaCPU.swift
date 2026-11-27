@@ -185,8 +185,21 @@ public struct LlamaCPU {
         return result
     }
 
+    public struct GenerationTiming {
+        public fileprivate(set) var setupMillis = 0.0
+        public fileprivate(set) var prefillMillis = 0.0
+        public fileprivate(set) var firstTokenMillis = 0.0
+        public fileprivate(set) var decodeMillis: [Double] = []
+    }
+
     /// Returns at most `count` continuation IDs, including EOS when emitted.
     public func generate(prompt: [Int], count: Int, eos: Int? = nil) throws -> [Int] {
+        try generate(prompt: prompt, count: count, eos: eos, timing: nil)
+    }
+
+    public func generate(prompt: [Int], count: Int, eos: Int? = nil,
+                         timing: ((GenerationTiming) -> Void)?) throws -> [Int] {
+        let setupStart = timing == nil ? 0 : ProcessInfo.processInfo.systemUptime
         let limit = min(context, 512)
         guard count > 0, count <= 128, !prompt.isEmpty, prompt.count <= limit - count + 1,
               prompt.allSatisfy({ (0..<vocabulary).contains($0) }),
@@ -200,7 +213,12 @@ public struct LlamaCPU {
         }
         var caches = [Cache](repeating: Cache(), count: layers.count)
         var generated: [Int] = []
+        var measurements = GenerationTiming()
+        let prefillStart = timing == nil ? 0 : ProcessInfo.processInfo.systemUptime
+        if timing != nil { measurements.setupMillis = (prefillStart - setupStart) * 1000 }
         for position in 0..<steps {
+            let decodeStart = timing != nil && position >= prompt.count
+                ? ProcessInfo.processInfo.systemUptime : 0
             let token = position < prompt.count ? prompt[position] : generated[generated.count - 1]
             var x = Array(embedding[(token * width)..<((token + 1) * width)])
             for (index, layer) in layers.enumerated() {
@@ -220,12 +238,26 @@ public struct LlamaCPU {
                 for i in x.indices { x[i] += delta[i] }
             }
             guard position >= prompt.count - 1 else { continue }
+            var firstStart = 0.0
+            if timing != nil && position == prompt.count - 1 {
+                firstStart = ProcessInfo.processInfo.systemUptime
+                measurements.prefillMillis = (firstStart - prefillStart) * 1000
+            }
             let logits = project(normalize(x, outputNorm), output)
             guard logits.allSatisfy(\.isFinite) else { throw LlamaCPUError.invalid("non-finite logits") }
             let next = logits.indices.max { logits[$0] < logits[$1] }!
             generated.append(next)
+            if timing != nil {
+                let ended = ProcessInfo.processInfo.systemUptime
+                if position == prompt.count - 1 {
+                    measurements.firstTokenMillis = (ended - firstStart) * 1000
+                } else {
+                    measurements.decodeMillis.append((ended - decodeStart) * 1000)
+                }
+            }
             if next == eos { break }
         }
+        timing?(measurements)
         return generated
     }
 }

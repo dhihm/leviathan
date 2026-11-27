@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -26,12 +27,15 @@ bool observe_cuda_matmul(ggml_tensor * tensor, bool ask, void * opaque) {
         ggml_backend_buft_get_device(ggml_backend_buffer_get_type(tensor->buffer)) ==
             evaluation.device;
 }
+using Clock = std::chrono::steady_clock;
+
+double millis(Clock::time_point a, Clock::time_point b) {
+    return std::chrono::duration<double, std::milli>(b - a).count();
 }
 
-// Returns the generated token count, or -1 with a diagnostic in message.
-extern "C" int32_t leviathan_llama_cuda_generate_v1(
+int32_t generate(
     const char * path, const int32_t * prompt, int32_t prompt_count, int32_t count,
-    int32_t * output, char * message, int32_t capacity) {
+    int32_t * output, char * message, int32_t capacity, double * timing) {
     auto fail = [&](const char * reason) {
         std::snprintf(message, capacity, "%s", reason);
         return -1;
@@ -41,6 +45,7 @@ extern "C" int32_t leviathan_llama_cuda_generate_v1(
             prompt_count + count - 1 > 512) {
             return fail("CUDA prompt or generation exceeds the supported context");
         }
+        const auto backend_start = timing ? Clock::now() : Clock::time_point{};
         llama_backend_init();
         struct Shutdown { ~Shutdown() { llama_backend_free(); } } shutdown;
 
@@ -55,8 +60,11 @@ extern "C" int32_t leviathan_llama_cuda_generate_v1(
         model_params.n_gpu_layers = -1;
         model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
         model_params.main_gpu = 0;
+        const auto load_start = timing ? Clock::now() : Clock::time_point{};
         std::unique_ptr<llama_model, decltype(&llama_model_free)> model(
             llama_model_load_from_file(path, model_params), llama_model_free);
+        const auto loaded = timing ? Clock::now() : Clock::time_point{};
+        if (timing) timing[0] = millis(load_start, loaded);
         if (!model) return fail("llama.cpp could not load model on the CUDA device");
 
         char architecture[16] = {};
@@ -84,11 +92,19 @@ extern "C" int32_t leviathan_llama_cuda_generate_v1(
             llama_init_from_model(model.get(), params), llama_free);
         if (!ctx) return fail("llama.cpp could not initialize the CUDA context");
 
+        if (timing) timing[1] = millis(backend_start, load_start) + millis(loaded, Clock::now());
         int32_t generated = 0;
         while (generated < count) {
+            const auto decode_start = timing ? Clock::now() : Clock::time_point{};
             evaluation.observed = false;
             if (llama_decode(ctx.get(), llama_batch_get_one(tokens.data(), tokens.size())) != 0) {
                 return fail("llama.cpp CUDA decode failed");
+            }
+            auto sample_start = decode_start;
+            if (timing) llama_synchronize(ctx.get());
+            if (timing && generated == 0) {
+                sample_start = Clock::now();
+                timing[2] = millis(decode_start, sample_start);
             }
             const auto * logits = llama_get_logits_ith(ctx.get(), -1);
             if (!evaluation.observed) return fail("decode produced no completed CUDA matrix multiply");
@@ -98,6 +114,10 @@ extern "C" int32_t leviathan_llama_cuda_generate_v1(
             }
             const llama_token next = std::max_element(logits, logits + vocabulary) - logits;
             output[generated++] = next;
+            if (timing) {
+                const auto ended = Clock::now();
+                timing[2 + generated] = millis(sample_start, ended);
+            }
             if (llama_vocab_is_eog(vocab, next)) break;
             tokens.assign(1, next);
         }
@@ -107,4 +127,24 @@ extern "C" int32_t leviathan_llama_cuda_generate_v1(
     } catch (...) {
         return fail("llama.cpp CUDA backend raised an exception");
     }
+}
+
+}
+
+// v1 remains available to clients that do not request timing.
+extern "C" int32_t leviathan_llama_cuda_generate_v1(
+    const char * path, const int32_t * prompt, int32_t prompt_count, int32_t count,
+    int32_t * output, char * message, int32_t capacity) {
+    return generate(path, prompt, prompt_count, count, output, message, capacity, nullptr);
+}
+
+// Output: model load, backend/context, prefill, first token, then one sample per later token.
+extern "C" int32_t leviathan_llama_cuda_generate_v2(
+    const char * path, const int32_t * prompt, int32_t prompt_count, int32_t count,
+    int32_t * output, char * message, int32_t capacity, double * timing, int32_t timing_capacity) {
+    if (timing == nullptr || count < 1 || count > 128 || timing_capacity < count + 3) {
+        std::snprintf(message, capacity, "%s", "invalid CUDA timing buffer");
+        return -1;
+    }
+    return generate(path, prompt, prompt_count, count, output, message, capacity, timing);
 }
