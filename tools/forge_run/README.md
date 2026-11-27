@@ -199,3 +199,21 @@ files there, and omit it for CPU. Stage1 alone can be tested with:
 ```sh
 python3 -m pytest -q -s tools/forge_run/test_resnet_portable.py -k stage1
 ```
+
+On a CUDA runtime with the same public checkpoint and image setup,
+run the full-model portability test once for each input:
+
+```sh
+export LEVIATHAN_RESNET18_BACKEND=cuda LEVIATHAN_RESNET18_REPEAT=6
+export LEVIATHAN_RESNET18_CHECKPOINT="$scratch/resnet18.pth"
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=2
+env -u LEVIATHAN_RESNET18_IMAGE python3 -m pytest -q -s tools/forge_run/test_resnet_portable.py -k full
+LEVIATHAN_RESNET18_IMAGE="$scratch/astronaut.png" \
+  python3 -m pytest -q -s tools/forge_run/test_resnet_portable.py -k full
+```
+
+The repeated CLI run verifies identical boundary hashes every time.
+Its CUDA report separates initialization, transfer and first-forward
+timing from the later forward events, and includes an untimed
+device audit of dispatcher operations. Remove the backend environment
+variable to run the same check on CPU.

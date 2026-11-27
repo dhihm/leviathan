@@ -725,3 +725,62 @@ passed in 18.91 s including the external oracle and rejection test.
 The full-model CUDA route remains unverified on hardware. The home Mac
 passed three portable checks, seven existing Metal/value-DAG checks,
 and an explicit historical bundle load.
+
+## Stage 15 — Full ResNet-18 portability closed
+
+The existing free Colab Tesla T4 (compute capability 7.5) ran commit
+`20eb817` with the same FP32 declaration, source weights, and 224×224
+inputs used on the home Mac. Each input used a new CLI process with
+the same resident device weights across one first and five warm
+executions. Each execution verified all nine boundaries against the
+independent NumPy FP64 reference. Repeats produced identical boundary
+hashes, and those tensors matched the unmodified TorchVision CPU
+model and exact ordered top-5. A separate untimed dispatch audit
+observed 72 PyTorch operations per input with every tensor operand
+and result on CUDA. The explicit CUDA CLI has no CPU fallback.
+The test also rejected an incorrect source digest for each input.
+
+| Boundary | T4 max absolute error, synthetic | T4 max absolute error, photo |
+|---|---:|---:|
+| Stem | 7.00e-7 | 2.58e-6 |
+| Max pool | 5.66e-7 | 1.79e-6 |
+| First block | 1.31e-6 | 2.26e-6 |
+| Layer1 | 4.71e-6 | 8.79e-6 |
+| Layer2 | 2.92e-6 | 4.44e-6 |
+| Layer3 | 4.29e-6 | 3.34e-6 |
+| Layer4 | 1.38e-5 | 1.40e-5 |
+| Pooled features | 3.10e-6 | 5.36e-6 |
+| Final 1000 logits | 3.58e-6 | 8.11e-6 |
+
+Top-5 class indices were 623, 111, 499, 446, 812 for synthetic and
+758, 823, 542, 570, 560 for the photograph.
+
+| T4 timing, ms | Synthetic | Photo |
+|---|---:|---:|
+| CUDA availability and context initialization, host wall | 110.86 | 107.63 |
+| Tensor materialization, transfer and synchronization, host wall | 191.53 | 195.89 |
+| First forward, CUDA event | 360.59 | 288.13 |
+| Warm forward, CUDA event median (five runs) | 4.04 | 4.03 |
+| Warm forward, CUDA event range | 4.02–4.27 | 4.03–4.33 |
+| Independent NumPy CPU reference, host wall | 218.97 | 222.10 |
+
+The first forward includes lazy library and kernel startup effects
+inside the event interval. The warm events measure the forward
+stream with resident tensors and exclude CPU comparison, boundary
+readback, archive publication, and process startup. Stage 12's home
+Mac Metal numbers were 30.76 and 40.44 ms of command-buffer time,
+and 564 and 563 ms of fresh-process warm BUILD wall time, for the
+same inputs. Those were separate Metal processes and their timings
+do not measure the same execution boundary as T4 warm forwards.
+Stage 14 established home Mac CPU parity, without a matched CPU
+forward-only benchmark. CPU reference times above are oracle costs.
+
+Completion is scoped to batch-1 FP32 ResNet-18 with the pinned weights
+and tested inputs. CPU, Metal and T4 preserve the declaration and
+source digest and pass all boundary and top-5 gates. For the next Forge
+LLM milestone, baseline the existing `llama-generate` CLI on the pinned
+public Stories15M GGUF and its fixed prompt. Time GGUF identity and
+model load, backend preparation, prefill, first token, and steady
+decode separately across fresh processes and a reused model session.
+Require the existing exact greedy-token sequence and CUDA evidence
+for each decode before attempting any preparation or cache reuse.
