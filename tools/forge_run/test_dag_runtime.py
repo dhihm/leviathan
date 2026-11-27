@@ -456,3 +456,30 @@ def test_pipe_truncated_eof_without_newline(residual):
     out = [l for l in proc.stdout.decode().splitlines() if l.strip()]
     assert len(out) == 1  # only ready; truncated EOF is a protocol error, not a valid request
     json.loads(out[0])
+
+
+def test_run_many_cli_preserves_order_and_rejects_corruption(residual, tmp_path):
+    _, source, bundle, _, _ = residual
+    inputs = []
+    for index, value in enumerate((0.25, 0.75)):
+        path = tmp_path / f"input-{index}.json"
+        path.write_text(json.dumps([[value] * 32]))
+        inputs.append(path)
+    args = [sys.executable, str(TOOL_DIR / "dag_run_many.py"), "--model", str(source),
+            "--helper", str(HELPER), "--input", str(inputs[0]), "--input", str(inputs[1]),
+            "--input", str(inputs[0])]
+    run = subprocess.run(args + ["--bundle", str(bundle)], capture_output=True, text=True, timeout=60)
+    assert run.returncode == 0, run.stderr
+    reports = json.loads(run.stdout)["results"]
+    for report, path in zip(reports, [*inputs, inputs[0]], strict=True):
+        fresh = f.run_bundle(bundle, source, path, helper=HELPER)
+        assert report["output"] == fresh["output"]
+        assert report["parity"] == fresh["parity"]
+    assert reports[0]["output"] != reports[1]["output"]
+
+    corrupt = tmp_path / "corrupt"
+    shutil.copytree(bundle, corrupt)
+    (corrupt / "model.weights.f32").write_bytes(b"bad")
+    failed = subprocess.run(args + ["--bundle", str(corrupt)], capture_output=True, text=True, timeout=60)
+    assert failed.returncode == 2 and not failed.stdout
+    assert "sha256 mismatch" in failed.stderr

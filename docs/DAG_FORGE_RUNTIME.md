@@ -96,3 +96,28 @@ The existing validated MVP working copy remained byte-identical across all 254 r
 - Apple Metal command-buffer [gpuStartTime](https://developer.apple.com/documentation/metal/mtlcommandbuffer/gpustarttime) and [gpuEndTime](https://developer.apple.com/documentation/metal/mtlcommandbuffer/gpuendtime): the device-time fields used after completion.
 
 These references describe upstream APIs; acceptance evidence above comes from the actual local implementation and tests. No upstream example implementation was copied.
+
+## Reuse one validated Metal worker from the CLI
+
+After `build`, pass multiple inputs to one invocation:
+
+```sh
+python3 tools/forge_run/dag_run_many.py --bundle /tmp/my-new-dag-bundle \
+  --model tools/forge_run/examples/residual_block.py \
+  --input /tmp/input-32.json --input /tmp/different-input-32.json
+```
+
+The command reports startup separately and returns one ordered report per input.
+It validates the bundle, recaptures the model, and prepares Metal once per
+invocation. Each input still runs on the GPU and passes eager CPU parity.
+Reusing the prepared worker does not reuse previous outputs. A new invocation
+validates again. A corrupt or incompatible bundle is rejected before execution
+and can be replaced by building a new bundle at a new path.
+
+On an M1 Max with the 32-feature synthetic residual example, three fresh bundle
+builds took a median 1,570 ms including the post-build run. On the resulting
+bundles, the fresh CLI took a median 1,216 ms for the original input and 1,193 ms
+for a changed input. The batched CLI paid 1,005 ms median startup once, then
+3.540 ms and 1.203 ms median per request, respectively. All six outputs and
+parity reports exactly matched their fresh counterparts. These are internal
+CLI timings excluding Python import, and describe this fixture only.
