@@ -253,3 +253,46 @@ decode sample includes synchronized inference and selection.
 CUDA values are host-observed elapsed time, separate from device
 evidence. Compare within each backend's timing boundary. The phase
 fields omit process startup, reporting and teardown.
+
+### Reuse loaded Llama weights across requests
+
+`llama-serve` is a serial stdin/stdout JSON Lines interface. Start it
+once with a GGUF path, wait for the `ready` record, then send requests
+with a positive integer ID, a prompt token array and a generation count:
+
+```sh
+printf '%s\n' \
+  '{"id":1,"promptIds":[1],"count":5}' \
+  '{"id":2,"promptIds":[1,9038,2501,263],"count":5}' |
+  .build/release/leviathan-cli llama-serve --file stories15M.gguf
+```
+
+Each successful `result` includes the ID, token IDs and timings.
+Adding `"cancelAfterTokens":2` to a five-token request stops after two
+internal token steps and produces a `cancelled` result without partial
+tokens. This protocol cancels at a token boundary using the budget
+attached to the request. It does not accept an asynchronous cancel
+message. Invalid requests return `error` and the next complete request
+can still run. Input is newline-terminated and bounded to 16 KiB per
+request. EOF closes the session. Open a new process to use different
+weights.
+
+The ready record reports one-time weight loading and model preparation.
+Each CPU request starts with fresh KV and position state. CUDA shares
+the model but creates and frees a context per request. Greedy selection
+has no persistent sampler state. For CUDA, use `--backend cuda` and
+`--cuda-library PATH` with an adapter built from this version. CUDA
+requests require completed device work, and the command does not fall
+back to the scalar backend.
+
+```sh
+python3 tools/test_llama_serve.py --cli .build/release/leviathan-cli --model stories15M.gguf
+# Add --library /path/to/libleviathan_llama_cuda.so for the NVIDIA check.
+```
+
+The harness alternates the two pinned prompts through one loaded model
+and compares each result with a fresh timed `llama-generate` call. It
+reports six pairs per prompt. Its time-to-first-token figure sums the
+non-overlapping in-engine phases through first-token selection. The
+JSON protocol returns the full response at once. Reply wall time
+includes later decode and serialization and is reported separately.

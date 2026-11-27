@@ -857,3 +857,69 @@ warm request time to the first token versus newly opened fresh
 processes at the same measurement boundary. Retain per-decode device
 evidence and exact token parity, and verify that identity changes
 reject reuse.
+
+## Stage 17 — Resident Stories15M requests
+
+`llama-serve` loads one model and accepts serial JSON Lines requests.
+Only model tensors are shared. The scalar backend allocates new KV and
+position state per call, and the CUDA adapter opens a new context for
+each request. Greedy selection does not retain sampler state. The
+benchmark alternates two prompts in the same process and revisits them
+after a validation failure and an in-generation cancellation after two
+tokens. Failed and cancelled requests publish no partial token list.
+The one-shot CLI still emitted byte-identical stdout to the prior
+release executable for both prompts.
+
+Home Mac M1 Max Release, six pairs per prompt, comparing the same
+binary's fresh process with an already loaded worker. Values are
+median milliseconds. Initial model map and preparation for the
+worker were 6.55 and 84.34 ms, measured at its ready boundary.
+
+| CPU phase | `1` fresh → resident | `1,9038,2501,263` fresh → resident |
+|---|---:|---:|
+| GGUF load per request | 6.689 → 0 | 6.568 → 0 |
+| Backend or fresh KV setup | 78.841 → 0.001 | 77.020 → 0.001 |
+| Prefill | 4.795 → 3.726 | 15.900 → 14.857 |
+| First-token selection | 5.680 → 5.237 | 5.836 → 5.189 |
+| Four later decode steps | 35.749 → 35.660 | 36.238 → 35.684 |
+| Timed phases through first token | 96.215 → 8.958 | 104.850 → 19.975 |
+| Process or full reply wall | 143.968 → 44.893 | 151.942 → 56.073 |
+
+The preparation goal is met for a loaded CPU worker. Preparation is
+amortized at startup. The timed first-token statistic is calculated
+per pair from the non-overlapping phases and the protocol emits its
+full result after generation. The wall columns intentionally have
+different boundaries, with process startup in the fresh command and
+no startup in the ready-worker reply.
+
+The same test on the existing free Colab Tesla T4 used commit
+`a30acae` and linked the adapter against the pinned b12808 CUDA
+12.8 release libraries as in Stage 16. The resident worker
+reported 315.61 ms for one-time model load/upload and 372.45 ms
+for one-time adapter and backend preparation. It then passed six
+pairs per prompt, alternating the independent and worker order.
+
+| T4 phase | `1` fresh → resident, ms | `1,9038,2501,263` fresh → resident, ms |
+|---|---:|---:|
+| Model load/upload per request | 244.968 → 0 | 247.936 → 0 |
+| Backend/context preparation | 131.355 → 10.822 | 133.445 → 11.139 |
+| Prefill | 124.407 → 1.373 | 132.400 → 1.694 |
+| First-token selection | 0.136 → 0.156 | 0.141 → 0.141 |
+| Four later decodes | 5.793 → 5.256 | 6.267 → 5.575 |
+| Timed phases through first token | 501.831 → 12.368 | 514.402 → 13.026 |
+| Process or full reply wall | 661.401 → 18.839 | 670.314 → 19.881 |
+
+Both T4 prompts exceeded the 30% warm first-token target, with
+about 97.5% lower timed-path medians. Prefill also benefited from
+the already initialized runtime. These measurements do not imply
+the same reduction for the initial request in a new worker. All
+successful requests contained completed CUDA matrix-multiply
+evidence for each decode and exact expected greedy tokens. Both
+backends recovered after an invalid vocabulary ID, cancellation
+after two generated steps, and an attempted model override.
+The default CUDA CLI compatibility test passed. Hiding the GPU
+made the server fail without a ready record or token output.
+
+Next measure whether reusable context allocation can reduce the
+remaining T4 warm setup without sharing KV or sampler state. Keep
+the current fresh-context parity test as the acceptance baseline.
