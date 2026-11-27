@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 import Metal
 import LeviathanCore
@@ -9,6 +10,8 @@ func usage() -> Never {
     USAGE: \(programName) <command> [options]
 
     Commands:
+      llama-generate --file <model.gguf> --prompt-ids 1,2 [--gen-tokens N]
+          Greedy generation for dense Llama F32/F16 GGUF on Swift CPU.
       compile --graph <file.json> --out <file.lvi> [--seed N]
           Validate a graph JSON file, lower it, and write an
           integrity-checked artifact.
@@ -198,6 +201,9 @@ func metalRunWithEvidence(_ program: LoweredProgram, batch: Int, input: [Float])
 }
 
 switch command {
+case "llama-generate":
+    exit(CPUGenerationCommand.run(args))
+
 case "compile":
     let graphPath = requireValue("--graph", args)
     let outPath = requireValue("--out", args)
@@ -4235,3 +4241,9 @@ case "forge":
     default:
         usage()
 }
+
+#else
+import Foundation
+
+exit(CPUGenerationCommand.run(Array(CommandLine.arguments.dropFirst())))
+#endif

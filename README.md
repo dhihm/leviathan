@@ -8,6 +8,12 @@
 
 Leviathan is a personal project building a local LLM inference engine for Mac GPUs. It aims to automatically profile the actual hardware and model, compile and optimize Python-described workloads without an agent involved at optimization or runtime, and efficiently serve reused, bounded execution plans. Lightweight small models are the target class — the current 26B MoE model serves as a probe — and performance competitive with MLX or Ollama is the goal, with broader Python model coverage and the performance gap still unfinished.
 
+## Linux and Google Colab
+
+Run dense Llama F32/F16 GGUF on the Swift scalar CPU backend with
+`leviathan-cli llama-generate`. The [Colab CPU quickstart](docs/COLAB_CPU.md)
+uses a small synthetic model to verify model loading and token generation.
+
 ## Current Progress
 
 - A Python frontend lowers static `torch.export` graphs to a validated model/compute DAG, with correctness-gated, measured Metal lowering and a persistent loaded-actual-input GPU runtime ([runtime details](docs/DAG_FORGE_RUNTIME.md)).

@@ -1,6 +1,27 @@
 // swift-tools-version:6.0
 import PackageDescription
 
+#if os(Linux)
+import Foundation
+
+let corePath = "Sources/LeviathanCore"
+let portableSources = ["GGUF.swift", "LlamaCPU.swift"]
+let coreDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    .appendingPathComponent(corePath)
+let macOnlySources = try FileManager.default.contentsOfDirectory(atPath: coreDirectory.path)
+    .filter { $0.hasSuffix(".swift") && !portableSources.contains($0) }
+    .sorted()
+
+let package = Package(
+    name: "leviathan",
+    targets: [
+        .target(name: "LeviathanCore", path: corePath,
+                exclude: macOnlySources, sources: portableSources),
+        .executableTarget(name: "leviathan-cli", dependencies: ["LeviathanCore"],
+                          path: "Sources/leviathan-cli", exclude: ["CompositeCLI.swift"]),
+    ]
+)
+#else
 let package = Package(
     name: "leviathan",
     platforms: [.macOS(.v13)],
@@ -186,3 +207,4 @@ let package = Package(
         ),
     ]
 )
+#endif
