@@ -217,3 +217,39 @@ Its CUDA report separates initialization, transfer and first-forward
 timing from the later forward events, and includes an untimed
 device audit of dispatcher operations. Remove the backend environment
 variable to run the same check on CPU.
+
+### Stories15M generation timing
+
+`llama-generate --timing json` adds one versioned JSON line to stderr
+and leaves the normal token and backend lines on stdout. For CUDA
+timing, rebuild the pinned llama.cpp adapter with its v2 timing ABI.
+Untimed generation accepts the existing v1 adapter. Use the public
+Stories15M F32 GGUF and the release CLI:
+
+```sh
+python3 tools/test_llama_timing.py --cli .build/release/leviathan-cli --model stories15M.gguf
+# On an NVIDIA host, add --library /path/to/libleviathan_llama_cuda.so.
+```
+
+The test pins the model SHA-256, checks exact greedy token sequences
+for two fixed prompts, and reports six fresh-process samples per
+prompt. It checks that enabling timing preserves stdout byte for
+byte and that CUDA generation reports a completed device matrix
+multiply in each decode call.
+
+The five non-overlapping timing fields use monotonic host clocks.
+On CPU, model load maps and parses GGUF, and preparation materializes
+the model tensors, validates generation inputs and sets up the KV
+cache. Prefill covers the prompt transformer work. First-token time
+covers final projection and greedy selection. Each later decode
+sample covers one new input token and the output selection.
+
+On CUDA, model load is llama.cpp's combined load/upload API. The
+preparation field includes adapter loading, backend initialization,
+and context creation. Prefill is the synchronized prompt decode,
+which already computes first-token logits. First-token time covers
+retrieval, validation, and greedy selection of those logits. A later
+decode sample includes synchronized inference and selection.
+CUDA values are host-observed elapsed time, separate from device
+evidence. Compare within each backend's timing boundary. The phase
+fields omit process startup, reporting and teardown.

@@ -784,3 +784,76 @@ model load, backend preparation, prefill, first token, and steady
 decode separately across fresh processes and a reused model session.
 Require the existing exact greedy-token sequence and CUDA evidence
 for each decode before attempting any preparation or cache reuse.
+
+## Stage 16 — Stories15M LLM generation baseline
+
+The real `llama-generate` CLI at `82ee63f` emits a structured stderr
+record only with `--timing json`. It keeps the normal output and
+untimed CUDA v1 ABI. CUDA timing uses the v2 ABI. The timing contract
+and reproduction command are in the [Forge guide](../tools/forge_run/README.md).
+
+On the home Mac Apple M1 Max, the Release scalar CLI ran the pinned
+public F32 Stories15M GGUF six times per prompt, each in a fresh
+process. The file was not evicted from the OS cache. Medians and
+min–max ranges are in milliseconds. The decode total covers four
+tokens after the first greedy token.
+
+| Phase | Prompt `1` | Prompt `1,9038,2501,263` |
+|---|---:|---:|
+| GGUF map and parse | 6.61 (6.37–6.87) | 6.52 (6.22–6.80) |
+| Backend and KV preparation | 95.82 (85.89–124.35) | 83.56 (79.63–88.88) |
+| Prompt prefill | 6.16 (5.41–7.62) | 17.51 (16.78–18.18) |
+| First token selection, including CPU output projection | 6.96 (6.16–8.29) | 5.84 (5.70–7.02) |
+| Later decode total | 40.27 (37.50–49.22) | 38.13 (36.66–39.39) |
+| Overall process wall | 175.39 (159.42–204.71) | 164.75 (157.55–171.98) |
+
+All timed stdout matched the untimed stdout byte for byte.
+The first prompt produced `9038,2501,263,931,29892`, and the second
+produced `931,29892,727,471,263`. The synthetic fixture also passed
+single-token EOS, multiple-token generation, invalid token and
+truncated-file rejection, and absence of timing on the default path.
+
+Backend preparation is the largest measured CPU phase. Target at
+least 30% less host preparation for both prompts, from 95.82 to at
+most 67 ms and from 83.56 to at most 59 ms in a same-session paired
+baseline. First isolate tensor materialization from per-request KV
+setup, then measure reuse of a validated loaded model with a new
+generation state per request. Require no more than 5% regression in
+fresh-process wall time, exact greedy IDs and unchanged failure
+behavior. Do not infer throughput for larger GGUFs from Stories15M.
+
+The existing free Colab T4 ran the same CLI commit on Linux with
+the C++ adapter linked to the official llama.cpp b12808 CUDA 12.8
+shared libraries. The release tag resolves to the repository's pinned
+`ed2153e708de813c35559102aed43b3085179c27` commit. The archive digests
+were verified and Colab's existing NVIDIA driver path was retained.
+The slower dedicated static dependency build was stopped before the
+measurement. [Pinned llama.cpp CUDA release](https://github.com/ggml-org/llama.cpp/releases/tag/b12808)
+
+| T4 phase | Prompt `1`, median (range) ms | Prompt `1,9038,2501,263`, median (range) ms |
+|---|---:|---:|
+| llama.cpp model load and upload | 261.48 (239.83–285.62) | 233.72 (229.25–249.01) |
+| Adapter, backend and context preparation | 194.26 (173.32–257.49) | 175.38 (171.99–181.74) |
+| Synchronized prompt prefill | 136.27 (124.29–175.44) | 133.15 (128.58–139.78) |
+| Logit validation and first-token selection | 0.157 (0.139–0.200) | 0.153 (0.141–0.163) |
+| Later decode total | 6.54 (6.20–7.56) | 6.56 (6.07–7.77) |
+| Overall process wall | 853.55 (751.28–875.81) | 758.28 (739.07–771.91) |
+
+Each prompt had six fresh-process samples after a device smoke run.
+One initial probe measured 104.38 seconds inside prefill while the
+source build was also running. The table does not characterize a
+clean driver-cache first start. Both prompts matched the pinned CPU
+greedy IDs and untimed stdout. The adapter reported a completed CUDA
+matrix multiply in every decode call, and llama.cpp reported offloading
+7/7 layers in the smoke run. With the device hidden, both timed and
+untimed explicit CUDA requests failed without generating tokens.
+Host orchestration and greedy output selection are part of the backend.
+
+On T4 the largest measured phase was model load/upload, followed by
+backend and context preparation. The next CUDA experiment should keep
+a validated model resident across requests and report model reuse
+separately from fresh context creation. Aim for at least 30% lower
+warm request time to the first token versus newly opened fresh
+processes at the same measurement boundary. Retain per-decode device
+evidence and exact token parity, and verify that identity changes
+reject reuse.
