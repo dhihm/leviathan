@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -33,43 +34,63 @@ double millis(Clock::time_point a, Clock::time_point b) {
     return std::chrono::duration<double, std::milli>(b - a).count();
 }
 
-int32_t generate(
-    const char * path, const int32_t * prompt, int32_t prompt_count, int32_t count,
-    int32_t * output, char * message, int32_t capacity, double * timing) {
+struct LoadedModel {
+    struct Backend {
+        Backend() { llama_backend_init(); }
+        ~Backend() { llama_backend_free(); }
+    } backend;
+    ggml_backend_dev_t devices[2] = {};
+    std::unique_ptr<llama_model, decltype(&llama_model_free)> model{nullptr, llama_model_free};
+};
+
+std::unique_ptr<LoadedModel> open_model(const char * path, double * timing, bool resident) {
+    const auto backend_start = timing ? Clock::now() : Clock::time_point{};
+    auto loaded_model = std::make_unique<LoadedModel>();
+
+    auto cuda = ggml_backend_reg_by_name("CUDA");
+    if (!cuda || ggml_backend_reg_dev_count(cuda) == 0) {
+        throw std::runtime_error("llama.cpp CUDA backend or NVIDIA device is unavailable");
+    }
+    loaded_model->devices[0] = ggml_backend_reg_dev_get(cuda, 0);
+    auto model_params = llama_model_default_params();
+    model_params.devices = loaded_model->devices;
+    model_params.n_gpu_layers = -1;
+    model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
+    model_params.main_gpu = 0;
+    if (resident) {
+        model_params.load_mode = LLAMA_LOAD_MODE_NONE;
+        model_params.lazy_mode = LLAMA_LAZY_MODE_OFF;
+    }
+    const auto load_start = timing ? Clock::now() : Clock::time_point{};
+    loaded_model->model.reset(llama_model_load_from_file(path, model_params));
+    const auto loaded = timing ? Clock::now() : Clock::time_point{};
+    if (timing) timing[0] = millis(load_start, loaded);
+    if (!loaded_model->model) throw std::runtime_error("llama.cpp could not load model on the CUDA device");
+
+    char architecture[16] = {};
+    llama_model_meta_val_str(loaded_model->model.get(), "general.architecture", architecture, sizeof(architecture));
+    if (std::strcmp(architecture, "llama") != 0) throw std::runtime_error("expected Llama GGUF");
+    if (timing) timing[1] = millis(backend_start, load_start) + millis(loaded, Clock::now());
+    return loaded_model;
+}
+
+bool valid_request(int32_t prompt_count, int32_t count) {
+    return prompt_count >= 1 && prompt_count <= 512 && count >= 1 && count <= 128 &&
+        prompt_count + count - 1 <= 512;
+}
+
+int32_t run_request(
+    LoadedModel & loaded_model, const int32_t * prompt, int32_t prompt_count, int32_t count,
+    int32_t * output, char * message, int32_t capacity, double * timing, int32_t cancel_after) {
     auto fail = [&](const char * reason) {
         std::snprintf(message, capacity, "%s", reason);
         return -1;
     };
     try {
-        if (prompt_count < 1 || prompt_count > 512 || count < 1 || count > 128 ||
-            prompt_count + count - 1 > 512) {
-            return fail("CUDA prompt or generation exceeds the supported context");
-        }
-        const auto backend_start = timing ? Clock::now() : Clock::time_point{};
-        llama_backend_init();
-        struct Shutdown { ~Shutdown() { llama_backend_free(); } } shutdown;
-
-        auto cuda = ggml_backend_reg_by_name("CUDA");
-        if (!cuda || ggml_backend_reg_dev_count(cuda) == 0) {
-            return fail("llama.cpp CUDA backend or NVIDIA device is unavailable");
-        }
-        ggml_backend_dev_t device = ggml_backend_reg_dev_get(cuda, 0);
-        ggml_backend_dev_t devices[] = {device, nullptr};
-        auto model_params = llama_model_default_params();
-        model_params.devices = devices;
-        model_params.n_gpu_layers = -1;
-        model_params.split_mode = LLAMA_SPLIT_MODE_NONE;
-        model_params.main_gpu = 0;
-        const auto load_start = timing ? Clock::now() : Clock::time_point{};
-        std::unique_ptr<llama_model, decltype(&llama_model_free)> model(
-            llama_model_load_from_file(path, model_params), llama_model_free);
-        const auto loaded = timing ? Clock::now() : Clock::time_point{};
-        if (timing) timing[0] = millis(load_start, loaded);
-        if (!model) return fail("llama.cpp could not load model on the CUDA device");
-
-        char architecture[16] = {};
-        llama_model_meta_val_str(model.get(), "general.architecture", architecture, sizeof(architecture));
-        if (std::strcmp(architecture, "llama") != 0) return fail("expected Llama GGUF");
+        if (!valid_request(prompt_count, count)) return fail("CUDA prompt or generation exceeds the supported context");
+        const auto setup_started = timing ? Clock::now() : Clock::time_point{};
+        auto & model = loaded_model.model;
+        auto device = loaded_model.devices[0];
         const auto * vocab = llama_model_get_vocab(model.get());
         const auto vocabulary = llama_vocab_n_tokens(vocab);
         std::vector<llama_token> tokens(prompt, prompt + prompt_count);
@@ -92,7 +113,7 @@ int32_t generate(
             llama_init_from_model(model.get(), params), llama_free);
         if (!ctx) return fail("llama.cpp could not initialize the CUDA context");
 
-        if (timing) timing[1] = millis(backend_start, load_start) + millis(loaded, Clock::now());
+        if (timing) timing[1] += millis(setup_started, Clock::now());
         int32_t generated = 0;
         while (generated < count) {
             const auto decode_start = timing ? Clock::now() : Clock::time_point{};
@@ -118,6 +139,10 @@ int32_t generate(
                 const auto ended = Clock::now();
                 timing[2 + generated] = millis(sample_start, ended);
             }
+            if (cancel_after == generated) {
+                std::snprintf(message, capacity, "%s", "cancelled");
+                return -2;
+            }
             if (llama_vocab_is_eog(vocab, next)) break;
             tokens.assign(1, next);
         }
@@ -126,6 +151,25 @@ int32_t generate(
         return generated;
     } catch (...) {
         return fail("llama.cpp CUDA backend raised an exception");
+    }
+}
+
+int32_t generate(
+    const char * path, const int32_t * prompt, int32_t prompt_count, int32_t count,
+    int32_t * output, char * message, int32_t capacity, double * timing) {
+    if (!valid_request(prompt_count, count)) {
+        std::snprintf(message, capacity, "%s", "CUDA prompt or generation exceeds the supported context");
+        return -1;
+    }
+    try {
+        auto model = open_model(path, timing, false);
+        return run_request(*model, prompt, prompt_count, count, output, message, capacity, timing, 0);
+    } catch (const std::exception & error) {
+        std::snprintf(message, capacity, "%s", error.what());
+        return -1;
+    } catch (...) {
+        std::snprintf(message, capacity, "%s", "llama.cpp CUDA backend raised an exception");
+        return -1;
     }
 }
 
@@ -147,4 +191,35 @@ extern "C" int32_t leviathan_llama_cuda_generate_v2(
         return -1;
     }
     return generate(path, prompt, prompt_count, count, output, message, capacity, timing);
+}
+
+// One serial owner per process. Each run allocates and destroys its own context.
+extern "C" void * leviathan_llama_cuda_open_v1(const char * path, char * message, int32_t capacity,
+                                              double * timing) {
+    try {
+        return open_model(path, timing, true).release();
+    } catch (const std::exception & error) {
+        std::snprintf(message, capacity, "%s", error.what());
+    } catch (...) {
+        std::snprintf(message, capacity, "%s", "llama.cpp CUDA backend raised an exception");
+    }
+    return nullptr;
+}
+
+extern "C" void leviathan_llama_cuda_close_v1(void * session) {
+    delete static_cast<LoadedModel *>(session);
+}
+
+extern "C" int32_t leviathan_llama_cuda_request_v1(
+    void * session, const int32_t * prompt, int32_t prompt_count, int32_t count,
+    int32_t * output, char * message, int32_t capacity, double * timing, int32_t timing_capacity,
+    int32_t cancel_after) {
+    if (!session || !valid_request(prompt_count, count) || !timing || timing_capacity < count + 3 ||
+        cancel_after < 0 || cancel_after >= count) {
+        std::snprintf(message, capacity, "%s", "invalid CUDA session request");
+        return -1;
+    }
+    timing[0] = timing[1] = 0;
+    return run_request(*static_cast<LoadedModel *>(session), prompt, prompt_count, count, output,
+                       message, capacity, timing, cancel_after);
 }

@@ -20,7 +20,23 @@ enum CPUGenerationCommand {
         }
     }
 
+    static func openCPU(_ path: String, timed: Bool) throws
+        -> (model: LlamaCPU, eos: Int?, loadMillis: Double, preparationMillis: Double) {
+        let started = timed ? ProcessInfo.processInfo.systemUptime : 0
+        let file = try GGUFReader.read(URL(fileURLWithPath: path))
+        let loaded = timed ? ProcessInfo.processInfo.systemUptime : 0
+        let model = try LlamaCPU(file: file)
+        let eos = try file.metadata["tokenizer.ggml.eos_token_id"].map { _ in
+            let value = try file.metadataUInt("tokenizer.ggml.eos_token_id")
+            guard let id = Int(exactly: value) else { throw LlamaCPUError.invalid("EOS ID") }
+            return id
+        }
+        let ended = timed ? ProcessInfo.processInfo.systemUptime : 0
+        return (model, eos, (loaded - started) * 1000, (ended - loaded) * 1000)
+    }
+
     static func run(_ arguments: [String]) -> Int32 {
+        if arguments.first == "llama-serve" { return LlamaServeCommand.run(arguments) }
         let usage = "Usage: leviathan-cli llama-generate --file MODEL.gguf --prompt-ids 1,2 [--gen-tokens N] [--backend cpu-scalar|cuda] [--cuda-library PATH] [--timing json]"
         if arguments.isEmpty || arguments == ["--help"] || arguments == ["llama-generate", "--help"] {
             print(usage)
@@ -76,22 +92,13 @@ enum CPUGenerationCommand {
             guard options["--cuda-library"] == nil else {
                 throw LlamaCPUError.invalid("--cuda-library requires --backend cuda")
             }
-            let loadStarted = timed ? ProcessInfo.processInfo.systemUptime : 0
-            let file = try GGUFReader.read(URL(fileURLWithPath: path))
-            let loaded = timed ? ProcessInfo.processInfo.systemUptime : 0
-            let model = try LlamaCPU(file: file)
-            let eos = try file.metadata["tokenizer.ggml.eos_token_id"].map { _ in
-                let value = try file.metadataUInt("tokenizer.ggml.eos_token_id")
-                guard let id = Int(exactly: value) else { throw LlamaCPUError.invalid("EOS ID") }
-                return id
-            }
-            let prepared = timed ? ProcessInfo.processInfo.systemUptime : 0
+            let opened = try openCPU(path, timed: timed)
             var samples: LlamaCPU.GenerationTiming?
             let capture: ((LlamaCPU.GenerationTiming) -> Void)? = timed ? { samples = $0 } : nil
-            let result = try model.generate(prompt: prompt, count: count, eos: eos, timing: capture)
+            let result = try opened.model.generate(prompt: prompt, count: count, eos: opened.eos, timing: capture)
             if let t = samples {
-                try TimingReport(backend: backend, modelLoadMillis: (loaded - loadStarted) * 1000,
-                                 backendPreparationMillis: (prepared - loaded) * 1000 + t.setupMillis,
+                try TimingReport(backend: backend, modelLoadMillis: opened.loadMillis,
+                                 backendPreparationMillis: opened.preparationMillis + t.setupMillis,
                                  prefillMillis: t.prefillMillis, firstTokenMillis: t.firstTokenMillis,
                                  decodeMillis: t.decodeMillis).write()
             }

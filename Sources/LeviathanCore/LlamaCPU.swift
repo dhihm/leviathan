@@ -3,6 +3,7 @@ import Foundation
 public enum LlamaCPUError: Error {
     case unsupported(String)
     case invalid(String)
+    case cancelled
 }
 
 /// Scalar reference inference for dense, bias-free Llama GGUF models with
@@ -198,7 +199,8 @@ public struct LlamaCPU {
     }
 
     public func generate(prompt: [Int], count: Int, eos: Int? = nil,
-                         timing: ((GenerationTiming) -> Void)?) throws -> [Int] {
+                         timing: ((GenerationTiming) -> Void)?,
+                         cancelAfterTokens: Int? = nil) throws -> [Int] {
         let setupStart = timing == nil ? 0 : ProcessInfo.processInfo.systemUptime
         let limit = min(context, 512)
         guard count > 0, count <= 128, !prompt.isEmpty, prompt.count <= limit - count + 1,
@@ -247,6 +249,7 @@ public struct LlamaCPU {
             guard logits.allSatisfy(\.isFinite) else { throw LlamaCPUError.invalid("non-finite logits") }
             let next = logits.indices.max { logits[$0] < logits[$1] }!
             generated.append(next)
+            if generated.count == cancelAfterTokens { throw LlamaCPUError.cancelled }
             if timing != nil {
                 let ended = ProcessInfo.processInfo.systemUptime
                 if position == prompt.count - 1 {
