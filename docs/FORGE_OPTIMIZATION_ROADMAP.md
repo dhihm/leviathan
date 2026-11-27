@@ -703,3 +703,25 @@ the same ordered top-5. Both variants rejected an incorrect original
 weights digest. An explicit CUDA request on this Mac failed without
 CPU fallback. The NumPy FP64 reference runs on CPU for either backend
 and is reported separately from accelerator evidence.
+
+The existing free Colab runtime assigned a Tesla T4 (compute capability
+7.5). Implementation `725bcda` ran the stage1 test using only the public
+checkpoint and photograph. Its input and original weight SHA-256 values
+matched the home Mac CPU stage1 run. All four CUDA device buffers
+matched the original CPU TorchVision outputs at the unchanged
+tolerance. The test also rejected the wrong source digest.
+
+| Boundary | Shape | T4 max absolute error vs. TorchVision |
+|---|---|---:|
+| Stem after ReLU | 1×64×112×112 | 2.58e-6 |
+| Max pool | 1×64×56×56 | 1.79e-6 |
+| First block | 1×64×56×56 | 2.26e-6 |
+| Stage1 output | 1×64×56×56 | 8.79e-6 |
+
+The CLI recorded a positive CUDA event duration of 1148.45 ms on the
+fresh process and separately reported 111.52 ms for its CPU reference.
+This is execution evidence, not a steady-state benchmark. The test
+passed in 18.91 s including the external oracle and rejection test.
+The full-model CUDA route remains unverified on hardware. The home Mac
+passed three portable checks, seven existing Metal/value-DAG checks,
+and an explicit historical bundle load.
