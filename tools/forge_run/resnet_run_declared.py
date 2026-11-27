@@ -52,11 +52,40 @@ def execute(x, sources, classifier, stride, staged):
     return outputs
 
 
+def audit_device(x, params, head, stride, staged):
+    from torch.utils._python_dispatch import TorchDispatchMode
+    from torch.utils._pytree import tree_leaves
+
+    class DeviceAudit(TorchDispatchMode):
+        operations = 0
+
+        def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+            result = func(*args, **(kwargs or {}))
+            for value in tree_leaves((args, kwargs, result)):
+                if isinstance(value, torch.Tensor) and value.device != x.device:
+                    raise conv.BuildError(f"unexpected tensor device in {func}: {value.device}")
+            self.operations += 1
+            return result
+
+    audit = DeviceAudit()
+    with audit:
+        execute(x, params, head, stride, staged)
+    if not audit.operations:
+        raise conv.BuildError("CUDA dispatch audit saw no operations")
+    return audit.operations
+
+
 def run(args):
     cuda = args.backend == "cuda"
+    if not 1 <= args.repeat <= 100:
+        raise conv.BuildError("--repeat must be in 1..100")
+    initialization_started = time.perf_counter()
     if cuda and (torch.version.cuda is None or not torch.cuda.is_available()):
         raise conv.BuildError("CUDA requires an NVIDIA GPU and CUDA-enabled PyTorch")
     device = torch.device("cuda:0" if cuda else "cpu")
+    if cuda:
+        torch.cuda.init()
+    initialization_millis = (time.perf_counter() - initialization_started) * 1000
     declaration = json.loads(conv.read(args.contract))
     format_id = declaration.get("format") if isinstance(declaration, dict) else None
     full = format_id == spec.FULL_FORMAT
@@ -88,42 +117,61 @@ def run(args):
     def tensor(value):
         return torch.from_numpy(value.astype(np.float32, copy=True)).to(device)
 
+    preparation_started = time.perf_counter()
     tx = tensor(x)
     params = [(*map(tensor, layer[:-1]), layer[-1]) for layer in sources]
     head = tensor(classifier) if classifier is not None else None
-    event_millis = None
+    if cuda:
+        torch.cuda.synchronize(device)
+    preparation_millis = (time.perf_counter() - preparation_started) * 1000
+    event_millis = []
+    operation_count = None
+    fingerprints = None
     precision = torch.get_float32_matmul_precision()
     try:
-        with torch.inference_mode(), torch.backends.cudnn.flags(enabled=torch.backends.cudnn.enabled, allow_tf32=False):
+        with torch.inference_mode(), torch.backends.cudnn.flags(
+                enabled=torch.backends.cudnn.enabled, allow_tf32=False):
             if cuda:
                 torch.set_float32_matmul_precision("highest")
-                start = torch.cuda.Event(enable_timing=True)
-                end = torch.cuda.Event(enable_timing=True)
-                start.record()
-            outputs = execute(tx, params, head, stride, staged)
-            if cuda:
-                end.record()
-                end.synchronize()
-                event_millis = start.elapsed_time(end)
+            for _ in range(args.repeat):
+                if cuda:
+                    start = torch.cuda.Event(enable_timing=True)
+                    end = torch.cuda.Event(enable_timing=True)
+                    start.record()
+                outputs = execute(tx, params, head, stride, staged)
+                if cuda:
+                    end.record()
+                    end.synchronize()
+                    elapsed = start.elapsed_time(end)
+                    if not 0 < elapsed < float("inf"):
+                        raise conv.BuildError("CUDA execution returned no device timing evidence")
+                    event_millis.append(elapsed)
+                if set(outputs) != set(references) or set(outputs) != set(shapes):
+                    raise conv.BuildError("execution boundaries do not match declaration")
+                results, boundaries = {}, {}
+                for name, result in outputs.items():
+                    if result.device != device:
+                        raise conv.BuildError(f"unexpected execution device at {name}")
+                    actual = result.cpu().numpy()
+                    reference = references[name]
+                    if (list(actual.shape) != shapes[name] or not np.isfinite(reference).all()
+                            or not np.isfinite(actual).all()
+                            or not np.allclose(actual, reference, atol=2e-4, rtol=2e-4)):
+                        raise conv.BuildError(f"independent unfused parity failed at {name}")
+                    results[name] = actual
+                    boundaries[name] = {
+                        "shape": shapes[name], "maxAbsError": float(np.max(np.abs(actual - reference)))
+                    }
+                if args.repeat > 1:
+                    current = {name: conv.digest(values.tobytes()) for name, values in results.items()}
+                    if fingerprints is not None and current != fingerprints:
+                        raise conv.BuildError("repeated execution changed a boundary tensor")
+                    fingerprints = current
+            if cuda and args.repeat > 1:
+                operation_count = audit_device(tx, params, head, stride, staged)
     finally:
         if cuda:
             torch.set_float32_matmul_precision(precision)
-    if cuda and not 0 < event_millis < float("inf"):
-        raise conv.BuildError("CUDA execution returned no device timing evidence")
-    if set(outputs) != set(references) or set(outputs) != set(shapes):
-        raise conv.BuildError("execution boundaries do not match declaration")
-
-    results, boundaries = {}, {}
-    for name, result in outputs.items():
-        if result.device != device:
-            raise conv.BuildError(f"unexpected execution device at {name}")
-        actual = result.cpu().numpy()
-        reference = references[name]
-        if (list(actual.shape) != shapes[name] or not np.isfinite(reference).all()
-                or not np.isfinite(actual).all() or not np.allclose(actual, reference, atol=2e-4, rtol=2e-4)):
-            raise conv.BuildError(f"independent unfused parity failed at {name}")
-        results[name] = actual
-        boundaries[name] = {"shape": shapes[name], "maxAbsError": float(np.max(np.abs(actual - reference)))}
     # Publish the complete archive exclusively, on the same filesystem.
     with tempfile.TemporaryDirectory(prefix=".lev-resnet-portable-", dir=args.out.parent) as tmp:
         archive = Path(tmp) / "boundaries.npz"
@@ -133,13 +181,19 @@ def run(args):
               "device": torch.cuda.get_device_name(device) if cuda else "cpu",
               "originalSha256": declaration["originalSha256"], "inputSha256": conv.digest(xbytes),
               "cpuReferenceMillis": reference_millis, "boundaries": boundaries}
+    if fingerprints is not None:
+        report.update(verifiedRepeats=args.repeat, boundarySha256=fingerprints)
     if cuda:
-        report["cudaEventMillis"] = event_millis
+        report.update(cudaEventMillis=event_millis[0], cudaInitializationMillis=initialization_millis,
+                      cudaPreparationMillis=preparation_millis)
+        if operation_count is not None:
+            report.update(cudaEventSamplesMillis=event_millis, cudaAuditedOperations=operation_count)
     return report
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repeat", type=int, default=1, help="verify identical boundaries on each execution")
     parser.add_argument("--backend", choices=("cpu", "cuda"), required=True)
     for name in ("contract", "weights", "input", "out"):
         parser.add_argument("--" + name, required=True, type=Path)

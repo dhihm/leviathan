@@ -19,7 +19,8 @@ IMAGE_SHA = "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5"
 def command(tmp_path, backend):
     return [sys.executable, str(TOOLS / "resnet_run_declared.py"), "--backend", backend,
             "--contract", str(tmp_path / "contract"), "--weights", str(tmp_path / "weights"),
-            "--input", str(tmp_path / "input"), "--out", str(tmp_path / "outputs.npz")]
+            "--input", str(tmp_path / "input"), "--out", str(tmp_path / "outputs.npz"),
+            "--repeat", os.environ.get("LEVIATHAN_RESNET18_REPEAT", "1")]
 
 
 @pytest.mark.parametrize("full", [False, True], ids=["stage1", "full"])
@@ -90,8 +91,15 @@ def test_public_portable(tmp_path, full):
     assert proc.returncode == 0, proc.stderr.decode()
     report = json.loads(proc.stdout)
     assert report["backend"] == backend and report["parity"]
+    repeat = int(os.environ.get("LEVIATHAN_RESNET18_REPEAT", "1"))
+    if repeat > 1:
+        assert report["verifiedRepeats"] == repeat
     if backend == "cuda":
         assert report["device"] != "cpu" and report["cudaEventMillis"] > 0
+        if repeat > 1:
+            assert len(report["cudaEventSamplesMillis"]) == repeat
+            assert all(t > 0 for t in report["cudaEventSamplesMillis"])
+            assert report["cudaAuditedOperations"] > 0
     else:
         assert report["device"] == "cpu" and "cudaEventMillis" not in report
     with np.load(tmp_path / "outputs.npz") as results:
@@ -99,12 +107,17 @@ def test_public_portable(tmp_path, full):
         errors = {}
         for name, want in expected.items():
             assert list(results[name].shape) == shapes[name]
+            if repeat > 1:
+                assert report["boundarySha256"][name] == spec.conv.digest(results[name].tobytes())
             np.testing.assert_allclose(results[name], want, atol=2e-4, rtol=2e-4)
             errors[name] = float(np.max(np.abs(results[name] - want)))
         if full:
             np.testing.assert_array_equal(np.argsort(-results["output"][0])[:5],
                                           np.argsort(-expected["output"][0])[:5])
-    print(json.dumps({"report": report, "torchvisionMaxAbsError": errors}, sort_keys=True))
+    evidence = dict(report=report, torchvisionMaxAbsError=errors)
+    if full:
+        evidence["top5"] = np.argsort(-expected["output"][0])[:5].tolist()
+    print(json.dumps(evidence, sort_keys=True))
 
     (tmp_path / "outputs.npz").unlink()
     contract["originalSha256"] = "0" * 64
