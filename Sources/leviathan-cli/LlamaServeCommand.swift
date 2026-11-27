@@ -7,7 +7,7 @@ import Darwin
 #endif
 
 enum LlamaServeCommand {
-    private static let usage = "Usage: leviathan-cli llama-serve --file MODEL.gguf [--backend cpu-scalar|cuda] [--cuda-library PATH]"
+    private static let usage = "Usage: leviathan-cli llama-serve --file MODEL.gguf [--backend cpu-scalar|cuda] [--cuda-library PATH] [--stream jsonl]"
 
     private struct Request: Decodable {
         let id: Int
@@ -32,9 +32,16 @@ enum LlamaServeCommand {
         var error: String?
     }
 
+    private struct TokenEvent: Encodable {
+        let kind = "token"
+        let id: Int
+        let index: Int
+        let tokenId: Int
+    }
+
     private struct Ready: Encodable {
         let kind = "ready"
-        let format = "leviathan-llama-serve-1"
+        let format: String
         let backend: String
         let modelLoadMillis: Double
         let modelPreparationMillis: Double
@@ -80,7 +87,7 @@ enum LlamaServeCommand {
         }
         do {
             guard arguments.count % 2 == 1 else { throw LlamaCPUError.invalid(usage) }
-            let flags: Set<String> = ["--file", "--backend", "--cuda-library"]
+            let flags: Set<String> = ["--file", "--backend", "--cuda-library", "--stream"]
             var options: [String: String] = [:]
             for i in stride(from: 1, to: arguments.count, by: 2) {
                 guard flags.contains(arguments[i]), options[arguments[i]] == nil else {
@@ -89,6 +96,11 @@ enum LlamaServeCommand {
                 options[arguments[i]] = arguments[i + 1]
             }
             guard let file = options["--file"] else { throw LlamaCPUError.invalid(usage) }
+            if let mode = options["--stream"], mode != "jsonl" {
+                throw LlamaCPUError.invalid("--stream must be jsonl")
+            }
+            let streaming = options["--stream"] != nil
+            let format = streaming ? "leviathan-llama-serve-stream-1" : "leviathan-llama-serve-1"
             let backend = options["--backend", default: "cpu-scalar"]
             switch backend {
             case "cpu-scalar":
@@ -96,12 +108,13 @@ enum LlamaServeCommand {
                     throw LlamaCPUError.invalid("--cuda-library requires --backend cuda")
                 }
                 let opened = try CPUGenerationCommand.openCPU(file, timed: true)
-                let ready = Ready(backend: backend, modelLoadMillis: opened.loadMillis,
+                let ready = Ready(format: format, backend: backend, modelLoadMillis: opened.loadMillis,
                                   modelPreparationMillis: opened.preparationMillis)
-                try serve(ready: ready) { request in
+                try serve(ready: ready, streaming: streaming) { request, onToken in
                     var measurements: LlamaCPU.GenerationTiming?
                     let tokens = try opened.model.generate(prompt: request.promptIds, count: request.count,
-                        eos: opened.eos, timing: { measurements = $0 }, cancelAfterTokens: request.cancelAfterTokens)
+                        eos: opened.eos, timing: { measurements = $0 }, cancelAfterTokens: request.cancelAfterTokens,
+                        onToken: onToken)
                     guard let timing = measurements else {
                         throw LlamaCPUError.invalid("missing CPU timing")
                     }
@@ -115,12 +128,12 @@ enum LlamaServeCommand {
                 guard let library = options["--cuda-library"] else {
                     throw LlamaCPUError.invalid("--backend cuda requires --cuda-library")
                 }
-                let session = try CUDAGeneration.Session(library: library, model: file)
-                let ready = Ready(backend: backend, modelLoadMillis: session.loadMillis,
+                let session = try CUDAGeneration.Session(library: library, model: file, streaming: streaming)
+                let ready = Ready(format: format, backend: backend, modelLoadMillis: session.loadMillis,
                                   modelPreparationMillis: session.preparationMillis)
-                try serve(ready: ready) { request in
+                try serve(ready: ready, streaming: streaming) { request, onToken in
                     let result = try session.generate(prompt: request.promptIds, count: request.count,
-                                                      cancelAfterTokens: request.cancelAfterTokens)
+                                                      cancelAfterTokens: request.cancelAfterTokens, onToken: onToken)
                     return Response(kind: "result", id: request.id, tokens: result.tokens,
                                     timing: result.timing, device: result.evidence)
                 }
@@ -134,7 +147,8 @@ enum LlamaServeCommand {
         }
     }
 
-    private static func serve(ready: Ready, execute: (Request) throws -> Response) throws {
+    private static func serve(ready: Ready, streaming: Bool,
+                              execute: (Request, ((Int, Int) throws -> Void)?) throws -> Response) throws {
         let reader = LineReader()
         let decoder = JSONDecoder()
         let requestFields: Set<String> = ["id", "promptIds", "count", "cancelAfterTokens"]
@@ -157,7 +171,10 @@ enum LlamaServeCommand {
                 let request = try decoder.decode(Request.self, from: line)
                 id = request.id
                 try request.validate()
-                response = try execute(request)
+                let onToken: ((Int, Int) throws -> Void)? = streaming ? { token, index in
+                    try write(TokenEvent(id: request.id, index: index, tokenId: token))
+                } : nil
+                response = try execute(request, onToken)
             } catch LlamaCPUError.cancelled {
                 response = Response(kind: "cancelled", id: id)
             } catch {

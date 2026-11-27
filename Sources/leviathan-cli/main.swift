@@ -11,7 +11,7 @@ func usage() -> Never {
 
     Commands:
       llama-generate --file <model.gguf> --prompt-ids 1,2 [--gen-tokens N]
-      llama-serve --file <model.gguf> [--backend cpu-scalar|cuda] [--cuda-library PATH]
+      llama-serve --file <model.gguf> [--backend cpu-scalar|cuda] [--cuda-library PATH] [--stream jsonl]
           Greedy Llama GGUF generation with Swift CPU or llama.cpp CUDA.
           CUDA requires --backend cuda --cuda-library <path>.
       compile --graph <file.json> --out <file.lvi> [--seed N]

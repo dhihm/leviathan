@@ -79,9 +79,12 @@ bool valid_request(int32_t prompt_count, int32_t count) {
         prompt_count + count - 1 <= 512;
 }
 
+using TokenCallback = int32_t (*)(void *, int32_t, int32_t);
+
 int32_t run_request(
     LoadedModel & loaded_model, const int32_t * prompt, int32_t prompt_count, int32_t count,
-    int32_t * output, char * message, int32_t capacity, double * timing, int32_t cancel_after) {
+    int32_t * output, char * message, int32_t capacity, double * timing, int32_t cancel_after,
+    TokenCallback on_token = nullptr, void * opaque = nullptr) {
     auto fail = [&](const char * reason) {
         std::snprintf(message, capacity, "%s", reason);
         return -1;
@@ -138,6 +141,9 @@ int32_t run_request(
             if (timing) {
                 const auto ended = Clock::now();
                 timing[2 + generated] = millis(sample_start, ended);
+            }
+            if (on_token && on_token(opaque, next, generated - 1) != 0) {
+                return fail("token output callback failed");
             }
             if (cancel_after == generated) {
                 std::snprintf(message, capacity, "%s", "cancelled");
@@ -210,10 +216,10 @@ extern "C" void leviathan_llama_cuda_close_v1(void * session) {
     delete static_cast<LoadedModel *>(session);
 }
 
-extern "C" int32_t leviathan_llama_cuda_request_v1(
+static int32_t session_request(
     void * session, const int32_t * prompt, int32_t prompt_count, int32_t count,
     int32_t * output, char * message, int32_t capacity, double * timing, int32_t timing_capacity,
-    int32_t cancel_after) {
+    int32_t cancel_after, TokenCallback on_token, void * opaque) {
     if (!session || !valid_request(prompt_count, count) || !timing || timing_capacity < count + 3 ||
         cancel_after < 0 || cancel_after >= count) {
         std::snprintf(message, capacity, "%s", "invalid CUDA session request");
@@ -221,5 +227,25 @@ extern "C" int32_t leviathan_llama_cuda_request_v1(
     }
     timing[0] = timing[1] = 0;
     return run_request(*static_cast<LoadedModel *>(session), prompt, prompt_count, count, output,
-                       message, capacity, timing, cancel_after);
+                       message, capacity, timing, cancel_after, on_token, opaque);
+}
+
+extern "C" int32_t leviathan_llama_cuda_request_v1(
+    void * session, const int32_t * prompt, int32_t prompt_count, int32_t count,
+    int32_t * output, char * message, int32_t capacity, double * timing, int32_t timing_capacity,
+    int32_t cancel_after) {
+    return session_request(session, prompt, prompt_count, count, output, message, capacity, timing,
+                           timing_capacity, cancel_after, nullptr, nullptr);
+}
+
+extern "C" int32_t leviathan_llama_cuda_request_stream_v1(
+    void * session, const int32_t * prompt, int32_t prompt_count, int32_t count,
+    int32_t * output, char * message, int32_t capacity, double * timing, int32_t timing_capacity,
+    int32_t cancel_after, TokenCallback on_token, void * opaque) {
+    if (!on_token) {
+        std::snprintf(message, capacity, "%s", "missing CUDA token callback");
+        return -1;
+    }
+    return session_request(session, prompt, prompt_count, count, output, message, capacity, timing,
+                           timing_capacity, cancel_after, on_token, opaque);
 }

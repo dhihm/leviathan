@@ -77,14 +77,41 @@ extension CUDAGeneration {
             UnsafeMutablePointer<Double>, Int32, Int32
         ) -> Int32
 
+        private typealias OnToken = @convention(c) (UnsafeMutableRawPointer?, Int32, Int32) -> Int32
+        private typealias StreamingRequest = @convention(c) (
+            OpaquePointer, UnsafePointer<Int32>, Int32, Int32,
+            UnsafeMutablePointer<Int32>, UnsafeMutablePointer<CChar>, Int32,
+            UnsafeMutablePointer<Double>, Int32, Int32, OnToken, UnsafeMutableRawPointer
+        ) -> Int32
+
+        private final class TokenSink {
+            let emit: (Int, Int) throws -> Void
+            var failure: (any Error)?
+
+            init(_ emit: @escaping (Int, Int) throws -> Void) { self.emit = emit }
+
+            static let receive: OnToken = { opaque, token, index in
+                guard let opaque else { return 1 }
+                let sink = Unmanaged<TokenSink>.fromOpaque(opaque).takeUnretainedValue()
+                do {
+                    try sink.emit(Int(token), Int(index))
+                    return 0
+                } catch {
+                    sink.failure = error
+                    return 1
+                }
+            }
+        }
+
         private let library: UnsafeMutableRawPointer
         private let model: OpaquePointer
         private let request: Request
+        private let streamingRequest: StreamingRequest?
         private let close: Close
         let loadMillis: Double
         let preparationMillis: Double
 
-        init(library path: String, model pathToModel: String) throws {
+        init(library path: String, model pathToModel: String, streaming: Bool = false) throws {
             let started = ProcessInfo.processInfo.systemUptime
             guard let handle = dlopen(URL(fileURLWithPath: path).path, RTLD_NOW | RTLD_LOCAL) else {
                 throw LlamaCPUError.unsupported("cannot load llama.cpp CUDA library: " + path)
@@ -96,6 +123,10 @@ extension CUDAGeneration {
                   let closeSymbol = dlsym(handle, "leviathan_llama_cuda_close_v1") else {
                 throw LlamaCPUError.unsupported("CUDA serving requires the resident library ABI")
             }
+            let streamingSymbol = streaming ? dlsym(handle, "leviathan_llama_cuda_request_stream_v1") : nil
+            if streaming && streamingSymbol == nil {
+                throw LlamaCPUError.unsupported("CUDA streaming requires the streaming library ABI")
+            }
             let libraryMillis = (ProcessInfo.processInfo.systemUptime - started) * 1000
             var message = [CChar](repeating: 0, count: 1024)
             var timing = [Double](repeating: 0, count: 2)
@@ -106,6 +137,7 @@ extension CUDAGeneration {
             library = handle
             model = opened
             request = unsafeBitCast(requestSymbol, to: Request.self)
+            streamingRequest = streamingSymbol.map { unsafeBitCast($0, to: StreamingRequest.self) }
             close = unsafeBitCast(closeSymbol, to: Close.self)
             loadMillis = timing[0]
             preparationMillis = timing[1] + libraryMillis
@@ -121,7 +153,8 @@ extension CUDAGeneration {
             String(decoding: bytes.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
         }
 
-        func generate(prompt: [Int], count: Int, cancelAfterTokens: Int?) throws
+        func generate(prompt: [Int], count: Int, cancelAfterTokens: Int?,
+                      onToken: ((Int, Int) throws -> Void)? = nil) throws
             -> (tokens: [Int], timing: CPUGenerationCommand.TimingReport, evidence: String) {
             let prompt32 = prompt.compactMap(Int32.init(exactly:))
             guard prompt32.count == prompt.count, prompt32.allSatisfy({ $0 >= 0 }) else {
@@ -131,8 +164,23 @@ extension CUDAGeneration {
             var message = [CChar](repeating: 0, count: 1024)
             var t = [Double](repeating: 0, count: count + 3)
             let timingCapacity = Int32(t.count)
-            let length = request(model, prompt32, Int32(prompt32.count), Int32(count), &tokens, &message,
-                                 1024, &t, timingCapacity, Int32(cancelAfterTokens ?? 0))
+            let cancel = Int32(cancelAfterTokens ?? 0)
+            let length: Int32
+            if let onToken {
+                guard let streamingRequest else {
+                    throw LlamaCPUError.unsupported("CUDA session was opened without streaming")
+                }
+                let sink = TokenSink(onToken)
+                length = withExtendedLifetime(sink) {
+                    streamingRequest(model, prompt32, Int32(prompt32.count), Int32(count), &tokens, &message,
+                                     1024, &t, timingCapacity, cancel, TokenSink.receive,
+                                     Unmanaged.passUnretained(sink).toOpaque())
+                }
+                if let failure = sink.failure { throw failure }
+            } else {
+                length = request(model, prompt32, Int32(prompt32.count), Int32(count), &tokens, &message,
+                                 1024, &t, timingCapacity, cancel)
+            }
             if length == -2 { throw LlamaCPUError.cancelled }
             guard (1...count).contains(Int(length)) else {
                 throw LlamaCPUError.unsupported(Self.text(message))

@@ -201,7 +201,8 @@ public struct LlamaCPU {
 
     public func generate(prompt: [Int], count: Int, eos: Int? = nil,
                          timing: ((GenerationTiming) -> Void)?,
-                         cancelAfterTokens: Int? = nil) throws -> [Int] {
+                         cancelAfterTokens: Int? = nil,
+                         onToken: ((Int, Int) throws -> Void)? = nil) throws -> [Int] {
         let setupStart = timing == nil ? 0 : ProcessInfo.processInfo.systemUptime
         let limit = min(context, 512)
         guard count > 0, count <= 128, !prompt.isEmpty, prompt.count <= limit - count + 1,
@@ -250,7 +251,6 @@ public struct LlamaCPU {
             guard logits.allSatisfy(\.isFinite) else { throw LlamaCPUError.invalid("non-finite logits") }
             let next = logits.indices.max { logits[$0] < logits[$1] }!
             generated.append(next)
-            if generated.count == cancelAfterTokens { throw LlamaCPUError.cancelled }
             if timing != nil {
                 let ended = ProcessInfo.processInfo.systemUptime
                 if position == prompt.count - 1 {
@@ -259,6 +259,8 @@ public struct LlamaCPU {
                     measurements.decodeMillis.append((ended - decodeStart) * 1000)
                 }
             }
+            try onToken?(next, generated.count - 1)
+            if generated.count == cancelAfterTokens { throw LlamaCPUError.cancelled }
             if next == eos { break }
         }
         timing?(measurements)

@@ -312,3 +312,37 @@ path with the same CPU golden tokens. It samples host RSS at ready and
 after the requests and macOS physical footprint when available. It reports per-process GPU memory when the driver
 exposes it. These are idle endpoint samples. They exclude transient
 memory peaks during loading or decode.
+
+### Stream token events to a pipe consumer
+
+Pass `--stream jsonl` to `llama-serve` to opt into the
+`leviathan-llama-serve-stream-1` ready format. Requests use the
+same fields as above. Each generated token is written immediately to
+stdout as a newline-terminated `token` event with the request `id`,
+zero-based `index`, and integer `tokenId`. The terminal `result`
+contains the same full token list and timings as the default mode.
+The default emits no token events.
+
+A cancelled stream can contain tokens already delivered before the
+terminal `cancelled` event. A terminal error or cancellation does not
+carry a completed token list. Complete frames after a recoverable
+request error still run with fresh request state. Clean stdin EOF closes
+the session after its complete frames. A truncated frame at EOF ends
+with an error. The worker writes synchronously to the output pipe,
+so a slow consumer can stall its serial request loop. Cancellation
+still uses the request's `cancelAfterTokens` budget.
+
+```sh
+python3 tools/test_llama_stream.py --cli .build/release/leviathan-cli \
+  --fixture stories15m --model stories15M.gguf
+python3 tools/test_llama_stream.py --cli .build/release/leviathan-cli \
+  --fixture smollm2-135m --model smol.gguf
+```
+
+Add `--library PATH` to the harness on NVIDIA hardware. The adapter
+must provide the streaming request ABI for opt-in CUDA streaming.
+The harness is a separate process from the worker and records receipt
+of complete JSON lines from the stdout pipe before parsing. It
+measures first token event and terminal result against the start of
+the request write. It runs both warm resident modes with six requests
+per prompt and verifies the pinned token lists, IDs and EOF behavior.
