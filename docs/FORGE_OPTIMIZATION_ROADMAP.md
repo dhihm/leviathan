@@ -89,3 +89,64 @@ binary and passed actual Metal/source parity.
 **Next gate.** Prototype an explicit declarative model input with a closed
 operator and dependency contract. Keep strict export for arbitrary Python
 and compare five independent warm rebuild pairs before enabling reuse.
+
+## Stage 3 — Opt-in declarative Metal BUILD
+
+`tools/forge_run/dag_build_declared.py` accepts a versioned JSON declaration
+and two separate files: a `leviathan-value-dag-1` graph and its packed
+little-endian FP32 weights. The declaration contains exactly
+`format: "leviathan-declared-dag-1"`, `graphSha256`, `weightsSha256`,
+`inputShape`, and `outputShape`. Shapes are `[1, features]`. Dense
+weights use row-major `[in, out]` followed by the bias, in graph order.
+The supported operators are Dense, ReLU, and same-shape Add. A verified
+legacy Metal bundle's graph and weight files can seed a declaration.
+
+```sh
+python3 tools/forge_run/dag_build_declared.py \
+  --contract /tmp/declared.json --graph /tmp/model.graph.json \
+  --weights /tmp/model.weights.f32 --example-input /tmp/example.json \
+  --input /tmp/input.json --helper .build/debug/leviathan-dag-helper \
+  --cache /tmp/private-forge-plans --out /tmp/declared-bundle
+```
+
+The optional cache has a caller-owned private directory. Its plan key
+binds the schema, graph and weights, qualification input and reference,
+helper binary, macOS version, NumPy version, CLI source and diagnostic
+option. The helper checks its live device and toolchain and validates all
+bundle files. A miss runs the existing candidate qualification and
+benchmark. A hit uses its prior selection evidence and runs the requested
+input in a fresh helper, gated against an independent NumPy CPU evaluator.
+Each build computes CPU references from the declared parameters. A changed
+request input reuses the tuning decision and gets fresh verification.
+Changed qualification input or options select another key. A corrupted
+cache record or rejected hardware binding triggers a new tune. Publication
+uses exclusive rename after verification.
+
+The strict-export Python and CUDA paths retain their existing entry points
+and bundle validation. The declarative path has its own provenance contract
+and emits Metal helper bundles. It does not execute Python model source.
+
+### Independent process results
+
+Five fresh-process triples per model alternated the execution order of
+the `603f4fa` strict-export BUILD and the declarative cold and warm BUILDs.
+Each cold build used an empty cache and each warm build used a primed
+cache. Input, weights, helper and output checks were equivalent for the
+declared graph. Strict export additionally establishes provenance for
+executable Python. Times below include interpreter startup.
+
+| Model | Strict-export baseline | Declared cold | Declared warm |
+|---|---:|---:|---:|
+| Residual | 2,794 (2,466–3,288) ms | 843 (544–1,032) ms | 497 (364–646) ms |
+| MLP tower | 3,069 (2,858–4,267) ms | 1,059 (949–1,474) ms | 549 (464–635) ms |
+| Handwritten-digit classifier | 2,877 (2,358–2,998) ms | 660 (569–853) ms | 435 (315–497) ms |
+
+The digit model is a 64→32→10 classifier trained locally on the public
+[scikit-learn digits dataset](https://scikit-learn.org/stable/modules/generated/sklearn.datasets.load_digits.html).
+The benchmark freezes the learned weights before either path runs and
+excludes training and one-time declaration export. All 15 triples had
+exactly matching Metal outputs, fresh parity, a cold miss and a warm hit.
+The warm path reduced the declared cold median by 41%, 48% and 34%,
+respectively. It reduced the strict-export medians by 82%, 82% and 85%.
+The cold medians also met the +5% bound. These results apply to the tested
+Metal DAGs and do not indicate quantized LLM build performance.
