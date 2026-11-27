@@ -628,3 +628,57 @@ was a few milliseconds in this run. Next, isolate helper-side input I/O,
 memory transfers and snapshot publication, then evaluate a staging
 change that preserves the original digest and every boundary check.
 CUDA performance was outside this comparison.
+
+## Stage 13 — Folded-weight cache verdict
+
+The production baseline is `d1873d9`. On Apple M1 Max, eight balanced,
+seeded randomized pairs per input compared that exact CLI with a scratch
+folded-weight cache candidate. Each arm used a separate empty directory
+for cold BUILD and reused it for warm BUILD. Every BUILD ran in a new
+process with one OpenBLAS thread and the same Metal helper. The synthetic
+ramp and pinned NASA photograph matched the prior milestone's inputs.
+All runs retained the original source digest, the independent unfused
+CPU oracle, and comparison with unmodified TorchVision at all nine
+boundaries and for ordered top-5. The folded and output digests matched
+between arms.
+
+| Input / state | `d1873d9` median (range), ms | Candidate median (range), ms | Median change |
+|---|---:|---:|---:|
+| Synthetic cold | 641 (503–1665) | 685 (524–1283) | +6.7% |
+| Synthetic warm | 606 (485–748) | 622 (511–698) | +2.7% |
+| Photo cold | 567 (444–630) | 587 (525–625) | +3.6% |
+| Photo warm | 556 (502–748) | 562 (499–588) | +1.1% |
+
+Each input split four faster and four slower warm pairs. The median of
+the paired percent changes was −1.6% synthetic and +0.5% photo,
+distinct from the percent changes between medians above. Neither
+summary supports a 20% win. Synthetic cold also breached the +5% limit.
+
+The prototype keyed the cache on the complete declaration, including
+source bytes digest, epsilon, op descriptor and folding identifier,
+plus the Python implementation and NumPy/machine identity. It checked
+the cached byte digest and verified the FP32 result of folding each
+tensor against the original source, bit for bit. The latter catches
+a forged digest on a changed payload and preserves binding independently
+of a single test input. Original-weight and epsilon changes caused
+misses, and a deliberately modified, rehashed payload caused a rebuild
+followed by a verified hit. The candidate used about 44.6 MiB per entry.
+
+The original folding segment took 71.5 ms synthetic and 60.7 ms photo
+on warm baseline runs. Cache read, hash and exact folding verification
+together took 75.6 and 82.7 ms. Skipping serialized copies did not
+offset those costs, and cold runs added a cache write. The largest
+measured warm component on the baseline remained independent CPU
+reference at 240–241 ms, compared with GPU command time of 36–40 ms
+and pipeline preparation around 3 ms. Temporary write times varied
+widely across pairs.
+
+The prototype was discarded. The retained improvement is Stage 12's
+same-session comparison of `d1873d9` with the serial `20204fc` route:
+24.4% synthetic and 14.9% photo warm. There is no additional cumulative
+gain from this milestone. The historical serial medians were measured
+in a different session and are not a new comparison against today's
+baseline. Keep the production path at `d1873d9` behavior and close this
+folded-cache candidate. A later BUILD optimization should measure
+snapshot or helper-side staging separately and preserve exact source
+binding and all parity gates.
