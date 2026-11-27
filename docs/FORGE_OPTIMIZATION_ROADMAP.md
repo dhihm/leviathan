@@ -473,3 +473,50 @@ transition, global average pooling, flatten, and the Dense classifier.
 Require layer-boundary parity and final logits against TorchVision before
 claiming full ResNet-18 support. CUDA hardware remains unverified for these
 new operators.
+
+## Stage 10 — 224×224 ResNet-18 through layer1
+
+The stage declaration runs folded stem convolution and ReLU, padded
+max pool, then both layer1 identity blocks in one Metal command buffer.
+It reuses the residual scheduler and keeps intermediates on the device
+until the command completes. The CLI compares all four boundary
+tensors with an independent, unfused FP64 reference before publication.
+The pinned TorchVision checkpoint regression also compares those
+boundaries with the unfused PyTorch sequence.
+
+| Boundary | Shape | Maximum absolute error vs. PyTorch |
+|---|---|---:|
+| Stem after ReLU | 1×64×112×112 | 7.15e-7 |
+| Max pool | 1×64×56×56 | 5.96e-7 |
+| First identity block | 1×64×56×56 | 3.10e-6 |
+| Second identity block | 1×64×56×56 | 1.01e-5 |
+
+The fixed MaxPool2D contract uses kernel 3, stride 2, padding 1 and
+dilation 1, floor output size, and values only. Out-of-bounds samples
+are excluded. A direct Metal run with negative edge values verifies
+the absence of implicit zero padding. Unsupported operation
+descriptors are rejected before lookup. Source-statistic changes,
+helper-binary changes, and damaged plan records produced misses.
+
+On Apple M1 Max, five fresh-process cold/warm pairs measured these
+medians and min–max ranges. Checkpoint extraction and the external
+PyTorch comparison are outside the timed CLI. The CLI includes the
+internal CPU reference, Metal execution, readback and publication.
+
+| Phase | Cold median (range), ms | Warm median (range), ms |
+|---|---:|---:|
+| Full BUILD wall | 1688 (1654–1911) | 1689 (1689–1717) |
+| Metal command buffer | 18.23 (9.06–18.46) | 12.38 (10.49–20.06) |
+| Independent CPU reference | 1462 (1441–1467) | 1474 (1454–1518) |
+
+CPU reference accounts for roughly 87% of wall time in this test.
+The dispatch-plan cache did not establish an end-to-end warm speedup.
+
+The next unit is layer2 through layer4, reusing the tested projection
+block with channel transitions and stage-size guards. Then add
+global average pooling, flatten and the Dense head. External boundary
+snapshots and unfused verification must remain available for complete
+224×224 logits parity. Measure an independent CPU reference that uses
+optimized convolution before attempting to improve BUILD latency.
+The timed stage does not establish end-to-end model support or CUDA
+parity.

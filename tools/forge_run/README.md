@@ -129,3 +129,15 @@ Use the same pinned TorchVision checkpoint as above and run
 with `LEVIATHAN_RESNET18_CHECKPOINT` set. The test covers both skip
 paths and prints cold/warm medians, ranges, and the maximum PyTorch
 comparison error.
+
+For the complete stem and layer1 at 224×224, use the same helper and CLI
+with format `leviathan-declared-resnet18-stage1-1`. The exact `ops`
+descriptor is `STAGE_OPS` in `resnet_block_declared.py`. Set input to
+`[1,3,224,224]`, output to `[1,64,56,56]`, and provide five epsilons.
+Pack original convolution and BatchNorm groups in order: stem, both
+convolutions of layer1 block 0, then both of block 1. The same FP32
+layout, folding, and source-digest rules apply. Successful builds also
+publish `stem.f32`, `pool.f32`, and `block1.f32` after GPU completion
+and boundary validation. The public checkpoint test, with
+`LEVIATHAN_RESNET18_CHECKPOINT` set as above, is
+`python3 -m pytest -q -s tools/forge_run/test_resnet_stage1_declared.py`.

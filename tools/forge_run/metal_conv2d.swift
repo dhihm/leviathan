@@ -45,6 +45,21 @@ let convolutionSource = """
                                       uint i [[thread_position_in_grid]]) {
             output[i] = max(main[i] + skip[i], 0.0f);
         }
+        kernel void maxpool_3x3_s2_p1(device const float *x [[buffer(0)]],
+                                       device float *y [[buffer(1)]],
+                                       constant uint *p [[buffer(2)]],
+                                       uint index [[thread_position_in_grid]]) {
+            uint h = p[0], w = p[1], oh = p[2], ow = p[3];
+            uint channel = index / (oh * ow);
+            int iy = int((index / ow) % oh) * 2 - 1;
+            int ix = int(index % ow) * 2 - 1;
+            // Every window has a valid sample for this fixed geometry.
+            float peak = x[(channel * h + uint(max(iy, 0))) * w + uint(max(ix, 0))];
+            for (int y = max(iy, 0); y < min(iy + 3, int(h)); ++y)
+                for (int x0 = max(ix, 0); x0 < min(ix + 3, int(w)); ++x0)
+                    peak = max(peak, x[(channel * h + uint(y)) * w + uint(x0)]);
+            y[index] = peak;
+        }
         """
 
 func run() throws {
@@ -109,8 +124,9 @@ func run() throws {
 }
 
 do {
-    if CommandLine.arguments.dropFirst().first == "--residual" {
-        try runResidual()
+    let mode = CommandLine.arguments.dropFirst().first
+    if mode == "--residual" || mode == "--stage1" {
+        try runResidual(stage1: mode == "--stage1")
     } else {
         try run()
     }
@@ -130,7 +146,7 @@ private struct BlockCommand: Decodable {
     let cachedWidth: Int
 }
 
-func runResidual() throws {
+func runResidual(stage1: Bool) throws {
     let args = CommandLine.arguments
     guard args.count == 6 else { throw Invalid.arguments }
     let configHandle = try FileHandle(forReadingFrom: URL(fileURLWithPath: args[2]))
@@ -141,14 +157,21 @@ func runResidual() throws {
     let ci = cfg.channels, co = cfg.outputChannels, h = cfg.height, w = cfg.width
     guard (1...256).contains(ci), (1...256).contains(co),
           (1...512).contains(h), (1...512).contains(w),
-          cfg.projection ? cfg.stride == 2 : (cfg.stride == 1 && ci == co) else {
+          stage1 || (cfg.projection ? cfg.stride == 2 : (cfg.stride == 1 && ci == co)) else {
         throw Invalid.arguments
     }
-    let oh = (h - 1) / cfg.stride + 1, ow = (w - 1) / cfg.stride + 1
+    if stage1 {
+        guard ci == 3, co == 64, h == 224, w == 224, cfg.stride == 2, !cfg.projection else {
+            throw Invalid.arguments
+        }
+    }
+    let oh = stage1 ? 56 : (h - 1) / cfg.stride + 1
+    let ow = stage1 ? 56 : (w - 1) / cfg.stride + 1
     let inputCount = ci * h * w, outputCount = co * oh * ow
-    let filterCount = co * ci * 9 + co + co * co * 9 + co + (cfg.projection ? co * ci + co : 0)
+    let filterCount = stage1 ? (64 * 3 * 49 + 64) + 4 * (64 * 64 * 9 + 64)
+        : co * ci * 9 + co + co * co * 9 + co + (cfg.projection ? co * ci + co : 0)
     guard inputCount <= 1 << 20, outputCount <= 1 << 20,
-          outputCount * (ci * 9 + co * 9 + (cfg.projection ? ci : 0)) <= 200_000_000 else {
+          stage1 || outputCount * (ci * 9 + co * 9 + (cfg.projection ? ci : 0)) <= 200_000_000 else {
         throw Invalid.arguments
     }
     let x = try tensor(args[3], count: inputCount)
@@ -173,52 +196,89 @@ func runResidual() throws {
           let second = device.makeBuffer(length: outputCount * 4),
           let output = device.makeBuffer(length: outputCount * 4, options: .storageModeShared),
           let command = queue.makeCommandBuffer() else { throw Invalid.metal }
-    let skip: MTLBuffer
-    if cfg.projection {
-        guard let projected = device.makeBuffer(length: outputCount * 4) else { throw Invalid.metal }
-        skip = projected
-    } else {
-        skip = input
-    }
-
     var offset = 0
     func dispatch(_ source: MTLBuffer, _ dest: MTLBuffer, _ channels: Int,
-                  _ height: Int, _ columns: Int, _ kernel: Int, _ stride: Int, _ relu: Bool) throws {
+                  _ height: Int, _ columns: Int, _ kernel: Int, _ stride: Int, _ relu: Bool,
+                  outHeight: Int, outWidth: Int) throws {
         guard let enc = command.makeComputeCommandEncoder() else { throw Invalid.metal }
         let count = co * channels * kernel * kernel
         let params = [channels, height, columns, co, kernel, kernel, stride, kernel / 2,
-                      oh, ow, 1, relu ? 1 : 0].map(UInt32.init)
+                      outHeight, outWidth, 1, relu ? 1 : 0].map(UInt32.init)
         enc.setComputePipelineState(convPipe)
         enc.setBuffer(source, offset: 0, index: 0)
         enc.setBuffer(filters, offset: offset * 4, index: 1)
         enc.setBuffer(dest, offset: 0, index: 2)
         params.withUnsafeBytes { enc.setBytes($0.baseAddress!, length: $0.count, index: 3) }
         enc.setBuffer(filters, offset: (offset + count) * 4, index: 4)
-        enc.dispatchThreads(MTLSize(width: outputCount, height: 1, depth: 1),
+        enc.dispatchThreads(MTLSize(width: co * outHeight * outWidth, height: 1, depth: 1),
                             threadsPerThreadgroup: MTLSize(width: dispatchWidth, height: 1, depth: 1))
         enc.endEncoding()
         offset += count + co
     }
-    try dispatch(input, first, ci, h, w, 3, cfg.stride, true)
-    try dispatch(first, second, co, oh, ow, 3, 1, false)
-    if cfg.projection {
-        try dispatch(input, skip, ci, h, w, 1, cfg.stride, false)
+    func block(_ source: MTLBuffer, _ dest: MTLBuffer, channels: Int, height: Int,
+               columns: Int, stride: Int, projection: Bool) throws {
+        try dispatch(source, first, channels, height, columns, 3, stride, true, outHeight: oh, outWidth: ow)
+        try dispatch(first, second, co, oh, ow, 3, 1, false, outHeight: oh, outWidth: ow)
+        let skip: MTLBuffer
+        if projection {
+            guard let projected = device.makeBuffer(length: outputCount * 4) else { throw Invalid.metal }
+            try dispatch(source, projected, channels, height, columns, 1, stride, false,
+                         outHeight: oh, outWidth: ow)
+            skip = projected
+        } else {
+            skip = source
+        }
+        guard let enc = command.makeComputeCommandEncoder() else { throw Invalid.metal }
+        enc.setComputePipelineState(addPipe)
+        enc.setBuffer(second, offset: 0, index: 0)
+        enc.setBuffer(skip, offset: 0, index: 1)
+        enc.setBuffer(dest, offset: 0, index: 2)
+        enc.dispatchThreads(MTLSize(width: outputCount, height: 1, depth: 1),
+                            threadsPerThreadgroup: MTLSize(width: addPipe.threadExecutionWidth, height: 1, depth: 1))
+        enc.endEncoding()
     }
-    guard let enc = command.makeComputeCommandEncoder() else { throw Invalid.metal }
-    enc.setComputePipelineState(addPipe)
-    enc.setBuffer(second, offset: 0, index: 0)
-    enc.setBuffer(skip, offset: 0, index: 1)
-    enc.setBuffer(output, offset: 0, index: 2)
-    enc.dispatchThreads(MTLSize(width: outputCount, height: 1, depth: 1),
-                        threadsPerThreadgroup: MTLSize(width: addPipe.threadExecutionWidth, height: 1, depth: 1))
-    enc.endEncoding()
+    var snapshots: [(String, MTLBuffer, Int)] = []
+    if stage1 {
+        let stemCount = 64 * 112 * 112
+        guard let stem = device.makeBuffer(length: stemCount * 4, options: .storageModeShared),
+              let pooled = device.makeBuffer(length: outputCount * 4, options: .storageModeShared),
+              let block1 = device.makeBuffer(length: outputCount * 4, options: .storageModeShared),
+              let pool = library.makeFunction(name: "maxpool_3x3_s2_p1") else { throw Invalid.metal }
+        let poolPipe = try device.makeComputePipelineState(function: pool)
+        try dispatch(input, stem, ci, h, w, 7, 2, true, outHeight: 112, outWidth: 112)
+        try encodePool(command, poolPipe, source: stem, output: pooled, channels: 64, height: 112, width: 112)
+        try block(pooled, block1, channels: co, height: oh, columns: ow, stride: 1, projection: false)
+        try block(block1, output, channels: co, height: oh, columns: ow, stride: 1, projection: false)
+        snapshots = [("stem.f32", stem, stemCount), ("pool.f32", pooled, outputCount),
+                     ("block1.f32", block1, outputCount)]
+    } else {
+        try block(input, output, channels: ci, height: h, columns: w, stride: cfg.stride, projection: cfg.projection)
+    }
     command.commit()
     command.waitUntilCompleted()
     let micros = (command.gpuEndTime - command.gpuStartTime) * 1e6
     guard command.status == .completed, micros.isFinite, micros > 0 else { throw Invalid.metal }
     try Data(bytes: output.contents(), count: outputCount * 4).write(to: URL(fileURLWithPath: args[5]))
-    let evidence: [String: Any] = ["kernel": "resnet_basic_block_fp32", "device": device.name,
+    for (name, buffer, count) in snapshots {
+        let dir = URL(fileURLWithPath: args[5]).deletingLastPathComponent()
+        try Data(bytes: buffer.contents(), count: count * 4).write(to: dir.appendingPathComponent(name))
+    }
+    let evidence: [String: Any] = ["kernel": stage1 ? "resnet_stage1_fp32" : "resnet_basic_block_fp32", "device": device.name,
                                   "registryID": deviceID, "width": width,
                                   "reused": reused, "gpuMicros": micros]
     FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: evidence))
+}
+
+func encodePool(_ command: MTLCommandBuffer, _ pipeline: MTLComputePipelineState,
+                source: MTLBuffer, output: MTLBuffer, channels: Int, height: Int, width: Int) throws {
+    guard let enc = command.makeComputeCommandEncoder() else { throw Invalid.metal }
+    let oh = (height + 1) / 2, ow = (width + 1) / 2
+    let params = [height, width, oh, ow].map(UInt32.init)
+    enc.setComputePipelineState(pipeline)
+    enc.setBuffer(source, offset: 0, index: 0)
+    enc.setBuffer(output, offset: 0, index: 1)
+    params.withUnsafeBytes { enc.setBytes($0.baseAddress!, length: $0.count, index: 2) }
+    enc.dispatchThreads(MTLSize(width: channels * oh * ow, height: 1, depth: 1),
+                        threadsPerThreadgroup: MTLSize(width: pipeline.threadExecutionWidth, height: 1, depth: 1))
+    enc.endEncoding()
 }
